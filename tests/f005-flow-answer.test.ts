@@ -143,7 +143,7 @@ describe("citation verification", () => {
   it("labels a symbol that is not near the cited line as unverified", () => {
     const summary = verifyCitations(answer, reader({ "src/route.ts": "a\nb\nc\nd\ne\nf\ng\nh\ni\n" }));
     expect(summary.citations[0]!.state).toBe("unverified");
-    expect(summary.citations[0]!.reason).toMatch(/is not at or around/);
+    expect(summary.citations[0]!.reason).toMatch(/neither at, around, nor inside/);
   });
 
   it("accepts a symbol a couple of lines away, because signatures wrap", () => {
@@ -240,5 +240,46 @@ describe("entry point ranking", () => {
 
   it("returns nothing to choose from when the question matches no entry point", () => {
     expect(rankEntryPoints("how does the moon work?", entryPoints).candidates).toEqual([]);
+  });
+});
+
+describe("range-aware verification", () => {
+  const answer = validateStructure({
+    ...base(),
+    steps: [
+      {
+        id: "s1",
+        phaseId: "p1",
+        from: "customer",
+        to: "api",
+        kind: "sync",
+        label: "creates the hold",
+        citations: [{ path: "src/holds.ts", line: 56, symbol: "createPaymentHold" }],
+      },
+    ],
+  }).answer!;
+
+  const file = { "src/holds.ts": Array.from({ length: 70 }, (_, i) => `line ${i + 1}`).join("\n") };
+
+  it("labels a citation inside a function as unverified when no index is available", () => {
+    // The name is declared at 49 and not written at 56, so text alone cannot confirm it.
+    const summary = verifyCitations(answer, reader(file));
+    expect(summary.citations[0]!.state).toBe("unverified");
+  });
+
+  it("verifies it when the index says the line falls inside the declared range", () => {
+    const summary = verifyCitations(answer, reader(file), {
+      rangeOf: (path, symbol) =>
+        path === "src/holds.ts" && symbol === "createPaymentHold" ? { start: 49, end: 70 } : undefined,
+    });
+    expect(summary.citations[0]!.state).toBe("verified");
+  });
+
+  it("still refuses a line outside the declared range — the range is not a loophole", () => {
+    const summary = verifyCitations(answer, reader(file), {
+      rangeOf: () => ({ start: 10, end: 20 }),
+    });
+    expect(summary.citations[0]!.state).toBe("unverified");
+    expect(summary.citations[0]!.reason).toMatch(/neither at, around, nor inside/);
   });
 });

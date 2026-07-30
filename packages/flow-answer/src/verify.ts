@@ -29,13 +29,29 @@ export interface FileReader {
 }
 
 /**
+ * Declared line ranges from the index, when available.
+ *
+ * Without this, a citation pointing at the interesting line *inside* a function is marked unverified
+ * because the function's name is not written there — which is technically true and useless. A real
+ * run produced exactly that: line 56 cited for `createPaymentHold`, declared at 49. Inside the range
+ * is the honest answer, and it is stricter than widening the text window, which would verify anything.
+ */
+export interface SymbolRanges {
+  rangeOf(path: string, symbol: string): { start: number; end: number } | undefined;
+}
+
+/**
  * Verification labels; it does not gate.
  *
  * Every citation is checked against the files as they are, and the result is recorded as state. The
  * answer keeps its verified ratio, so "57 of 60 claims verified" is a number on the answer rather
  * than a hidden difference in quality.
  */
-export function verifyCitations(answer: FlowAnswer, reader: FileReader): VerificationSummary {
+export function verifyCitations(
+  answer: FlowAnswer,
+  reader: FileReader,
+  ranges?: SymbolRanges,
+): VerificationSummary {
   const citations: VerifiedCitation[] = [];
   const lineCache = new Map<string, string[] | undefined>();
 
@@ -64,13 +80,20 @@ export function verifyCitations(answer: FlowAnswer, reader: FileReader): Verific
         reason: `${citation.path} has ${lines.length} lines, citation points at ${citation.line}`,
       };
     }
-    if (citation.symbol && !nearbyContains(lines, citation.line, citation.symbol)) {
-      return {
-        subject,
-        citation,
-        state: "unverified",
-        reason: `symbol ${citation.symbol} is not at or around ${citation.path}:${citation.line}`,
-      };
+    if (citation.symbol) {
+      const declared = ranges?.rangeOf(citation.path, citation.symbol);
+      const insideDeclaredRange =
+        declared !== undefined && citation.line >= declared.start && citation.line <= declared.end;
+      if (!insideDeclaredRange && !nearbyContains(lines, citation.line, citation.symbol)) {
+        return {
+          subject,
+          citation,
+          state: "unverified",
+          reason:
+            `symbol ${citation.symbol} is neither at, around, nor inside a declared range ` +
+            `at ${citation.path}:${citation.line}`,
+        };
+      }
     }
     return {
       subject,

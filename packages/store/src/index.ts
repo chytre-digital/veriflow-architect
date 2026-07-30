@@ -598,6 +598,17 @@ export class Store {
       .all(snapshotId, `%${query}%`, limit) as Array<Record<string, unknown>>;
   }
 
+  /** Declared range of a named symbol in a file, for range-aware citation verification. */
+  symbolRange(snapshotId: string, path: string, name: string): { start: number; end: number } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT line_start, line_end FROM symbols
+         WHERE snapshot_id = ? AND path = ? AND name = ? ORDER BY line_start LIMIT 1`,
+      )
+      .get(snapshotId, path, name) as { line_start: number; line_end: number } | undefined;
+    return row ? { start: row.line_start, end: row.line_end } : undefined;
+  }
+
   readCallers(snapshotId: string, symbolId: string): Array<Record<string, unknown>> {
     return this.db
       .prepare(

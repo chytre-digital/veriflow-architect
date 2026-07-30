@@ -248,17 +248,21 @@ export function createRunServer(options: RunServerOptions): McpServer {
       }
 
       const parsed = FlowAnswerSchema.parse(withIds);
-      const summary = verifyCitations(parsed, {
-        read: (p) => {
-          const safe = safeJoin(options.root, p);
-          if (!safe || isSecretPath(p)) return undefined;
-          try {
-            return readFileSync(safe, "utf8");
-          } catch {
-            return undefined;
-          }
+      const summary = verifyCitations(
+        parsed,
+        {
+          read: (p) => {
+            const safe = safeJoin(options.root, p);
+            if (!safe || isSecretPath(p)) return undefined;
+            try {
+              return readFileSync(safe, "utf8");
+            } catch {
+              return undefined;
+            }
+          },
         },
-      });
+        { rangeOf: (path, symbol) => store.symbolRange(snapshotId, path, symbol) },
+      );
 
       const answerId = randomUUID();
       store.insertAnswer({
