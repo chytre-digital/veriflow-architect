@@ -240,3 +240,122 @@ describe("the local server", () => {
     void app;
   });
 });
+
+describe("architecture and modules screens", () => {
+  function indexedProject(): string {
+    const root = mkdtempSync(join(tmpdir(), "veriflow-arch-"));
+    made.push(root);
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    initWorkspace(root);
+
+    const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    store.upsertProject("p", root, "p");
+    store.insertSnapshot(
+      { id: "s1", projectId: "p", path: root, dirty: false, fileCount: 2, createdAt: new Date().toISOString() },
+      null,
+    );
+    store.insertModules("s1", [
+      {
+        id: "src-modules-payments",
+        label: "Payments",
+        paths: ["src/modules/payments"],
+        source: "explicit-module-root",
+        fileCount: 29,
+        symbolCount: 82,
+        communityIds: [3, 7],
+        cohesionWarning: "provider communities disagree with this path boundary",
+      },
+      {
+        id: "src-app",
+        label: "App",
+        paths: ["src/app"],
+        source: "app-route-tree",
+        fileCount: 216,
+        symbolCount: 202,
+        communityIds: [],
+      },
+    ]);
+    store.insertEntryPoints("s1", [
+      {
+        id: "e1",
+        symbolId: "src/app/api/checkout/route.ts::POST",
+        kind: "http-route",
+        label: "POST /api/checkout",
+        path: "src/app/api/checkout/route.ts",
+        line: 15,
+      },
+    ]);
+    store.close();
+    return root;
+  }
+
+  it("shows the architecture derived from the index, before any agent has run", async () => {
+    const root = indexedProject();
+    const html = await (await createApp(root).request("/architecture")).text();
+
+    expect(html).toContain("src/modules/payments");
+    expect(html).toContain("29 files");
+    expect(html).toContain("explicit-module-root");
+    expect(html).toContain("0 stored answers");
+    expect(html).toContain("No agent ran to produce this");
+  });
+
+  it("attributes an entry point to the module that owns its path", async () => {
+    const root = indexedProject();
+    const html = await (await createApp(root).request("/architecture")).text();
+    expect(html).toContain("POST /api/checkout");
+    // It belongs to src/app, not to payments.
+    const appSection = html.slice(html.indexOf("src/app"));
+    expect(appSection).toContain("POST /api/checkout");
+  });
+
+  it("surfaces a cohesion warning rather than hiding the disagreement", async () => {
+    const root = indexedProject();
+    const html = await (await createApp(root).request("/architecture")).text();
+    expect(html).toContain("provider communities disagree");
+  });
+
+  it("says what crosses each module edge, and marks an inferred one", async () => {
+    const { root } = (() => {
+      const r = mkdtempSync(join(tmpdir(), "veriflow-mod-"));
+      made.push(r);
+      execFileSync("git", ["init", "-q"], { cwd: r });
+      initWorkspace(r);
+      const store = new Store({ file: join(r, ".veriflow", "veriflow.db") });
+      store.upsertProject("p", r, "p");
+      store.insertSnapshot(
+        { id: "s1", projectId: "p", path: r, dirty: false, fileCount: 0, createdAt: new Date().toISOString() },
+        null,
+      );
+      store.insertAnswer({
+        id: "a-2",
+        questionId: "q",
+        runId: "r",
+        snapshotId: "s1",
+        title: "Booking",
+        verified: 0,
+        unverified: 0,
+        openQuestions: 0,
+        body: answer({
+          moduleEdges: [
+            { from: "payments", to: "gateway", contract: "checkout session creation", kind: "port", inferred: true, rule: "port-unique-definition", citations: [] },
+            { from: "app", to: "payments", contract: "the checkout request", kind: "call", inferred: false, citations: [] },
+          ],
+          externalSystems: [
+            { id: "stripe", name: "Stripe", boundaryPath: "src/modules/stripe-gateway/stripe.ts", failureBehavior: "hold is released, seat returns to the pool", citations: [] },
+          ],
+        }),
+        citations: [],
+      });
+      store.close();
+      return { root: r };
+    })();
+
+    const html = await (await createApp(root).request("/answers/a-2/modules")).text();
+    expect(html).toContain("checkout session creation");
+    expect(html).toContain("port-unique-definition");
+    expect(html).toContain("inferred");
+    expect(html).toContain("src/modules/stripe-gateway/stripe.ts");
+    expect(html).toContain("hold is released");
+  });
+});

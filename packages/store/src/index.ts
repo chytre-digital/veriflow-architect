@@ -335,6 +335,14 @@ export class Store {
     }
   }
 
+  /** The most recent snapshot of any project in this store — the UI opens one workspace at a time. */
+  latestSnapshotAny(): { id: string } | undefined {
+    const row = this.db.prepare("SELECT id FROM snapshots ORDER BY created_at DESC LIMIT 1").get() as
+      | { id: string }
+      | undefined;
+    return row;
+  }
+
   latestSnapshot(projectId: string): Snapshot | undefined {
     const row = this.db
       .prepare("SELECT * FROM snapshots WHERE project_id = ? ORDER BY created_at DESC LIMIT 1")

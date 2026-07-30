@@ -237,9 +237,128 @@ export function pathsPage(answer: FlowAnswer, row: AnswerRow): string {
 }
 
 function nav(id: string, on: "flow" | "paths"): string {
+  return navFull(id, on);
+}
+
+export interface ModuleRow {
+  id: string;
+  label: string;
+  paths: string[];
+  source: string;
+  files: number;
+  symbols: number;
+  cohesionWarning?: string;
+}
+
+export interface EntryPointRow {
+  id: string;
+  kind: string;
+  label: string;
+  path: string;
+}
+
+/**
+ * The project's architecture, derived from the index alone. This screen exists after `veriflow index`
+ * and before any agent has run — it is the deliverable that needs no AI at all.
+ */
+export function architecturePage(
+  project: string,
+  modules: ModuleRow[],
+  entryPoints: EntryPointRow[],
+  answers: number,
+): string {
+  const byModule = new Map<string, EntryPointRow[]>();
+  for (const entry of entryPoints) {
+    const owner = modules
+      .filter((m) => m.paths.some((p) => entry.path === p || entry.path.startsWith(p + "/")))
+      .sort((a, b) => Math.max(...b.paths.map((p) => p.length)) - Math.max(...a.paths.map((p) => p.length)))[0];
+    const key = owner?.id ?? "unassigned";
+    const list = byModule.get(key);
+    if (list) list.push(entry);
+    else byModule.set(key, [entry]);
+  }
+
+  const rows = modules
+    .map((m) => {
+      const entries = byModule.get(m.id) ?? [];
+      return `<div class="card">
+        <h2>${esc(m.paths.join(", "))}</h2>
+        <div class="meta">
+          <span class="pill">${m.files} files</span>
+          <span class="pill">${m.symbols} symbols</span>
+          <span class="pill">${esc(m.source)}</span>
+          ${entries.length ? `<span class="pill good">${entries.length} entry point${entries.length === 1 ? "" : "s"}</span>` : ""}
+        </div>
+        ${m.cohesionWarning ? `<div class="inv" style="margin-top:6px">⚠ ${esc(m.cohesionWarning)}</div>` : ""}
+        ${
+          entries.length
+            ? `<div class="ev" style="margin-top:8px;border:0">${entries
+                .slice(0, 6)
+                .map((e) => esc(e.label))
+                .join("<br>")}${entries.length > 6 ? `<br>… and ${entries.length - 6} more` : ""}</div>`
+            : ""
+        }
+      </div>`;
+    })
+    .join("\n");
+
+  return page(
+    `${project} — architecture`,
+    `<header><h1>${esc(project)}</h1>
+       <div class="meta">${modules.length} modules derived from paths · ${entryPoints.length} entry points ·
+       ${answers} stored answer${answers === 1 ? "" : "s"}</div>
+       <div class="meta" style="margin-top:6px">Derived from the index alone. No agent ran to produce this.</div>
+     </header>
+     <nav><a href="/">Answers</a><a href="/architecture" class="on">Architecture</a></nav>
+     <main><div class="list">${rows}</div></main>`,
+  );
+}
+
+export function modulesPage(answer: FlowAnswer, row: AnswerRow): string {
+  const edges = answer.moduleEdges.length
+    ? answer.moduleEdges
+        .map(
+          (e) => `<div class="branch ${e.inferred ? "compensated" : ""}">
+        <h3>${esc(e.from)} → ${esc(e.to)}</h3>
+        <div class="inv"><b>Carries:</b> ${esc(e.contract)}</div>
+        <div class="meta">${esc(e.kind)}${e.inferred ? ` · <span class="pill warn">inferred${e.rule ? `: ${esc(e.rule)}` : ""}</span>` : ""} · ${e.citations.length} citation${e.citations.length === 1 ? "" : "s"}</div>
+      </div>`,
+        )
+        .join("")
+    : `<p class="meta">This answer declared no module edges.</p>`;
+
+  const external = answer.externalSystems.length
+    ? answer.externalSystems
+        .map(
+          (s) => `<div class="branch">
+        <h3>${esc(s.name)}</h3>
+        <div class="inv"><b>Boundary enforced at:</b> ${esc(s.boundaryPath)}</div>
+        <div class="inv"><b>When it fails:</b> ${esc(s.failureBehavior)}</div>
+      </div>`,
+        )
+        .join("")
+    : `<p class="meta">No external systems declared.</p>`;
+
+  return page(
+    `${answer.title} — modules`,
+    `<header><h1>${esc(answer.title)}</h1>
+       <div class="meta">${answer.moduleEdges.length} module edge${answer.moduleEdges.length === 1 ? "" : "s"} ·
+       ${answer.externalSystems.length} external system${answer.externalSystems.length === 1 ? "" : "s"}</div>
+     </header>
+     ${navFull(row.id, "modules")}
+     <main style="max-width:900px">
+       <h2 style="font-size:16px;margin:0 0 10px">What crosses each module edge</h2>${edges}
+       <h2 style="font-size:16px;margin:26px 0 10px">Outside the repository</h2>${external}
+     </main>`,
+  );
+}
+
+function navFull(id: string, on: "flow" | "paths" | "modules"): string {
   return `<nav>
     <a href="/">All answers</a>
+    <a href="/architecture">Architecture</a>
     <a href="/answers/${id}" class="${on === "flow" ? "on" : ""}">Flow</a>
     <a href="/answers/${id}/paths" class="${on === "paths" ? "on" : ""}">Paths</a>
+    <a href="/answers/${id}/modules" class="${on === "modules" ? "on" : ""}">Modules</a>
   </nav>`;
 }

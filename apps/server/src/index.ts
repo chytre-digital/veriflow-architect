@@ -5,7 +5,19 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { FlowAnswerSchema } from "@veriflow/flow-answer";
 import { Store } from "@veriflow/store";
-import { answersPage, flowPage, pathsPage, page, type AnswerRow, type CitationRow, type Freshness } from "./views.js";
+import {
+  answersPage,
+  architecturePage,
+  flowPage,
+  modulesPage,
+  pathsPage,
+  page,
+  type AnswerRow,
+  type CitationRow,
+  type EntryPointRow,
+  type Freshness,
+  type ModuleRow,
+} from "./views.js";
 
 export interface ServerOptions {
   root: string;
@@ -34,6 +46,31 @@ export function createApp(root: string): Hono {
     withStore((store) => {
       const rows = store.listAnswers() as unknown as AnswerRow[];
       return c.html(answersPage(rows, projectName));
+    }),
+  );
+
+  app.get("/architecture", (c) =>
+    withStore((store) => {
+      const snapshot = store.latestSnapshotAny();
+      if (!snapshot) {
+        return c.html(page("Architecture", "<main><p>Nothing indexed yet. Run <code>veriflow index</code>.</p></main>"), 404);
+      }
+      const modules = store.readModules(snapshot.id) as unknown as ModuleRow[];
+      const entryPoints = (store.readEntryPoints(snapshot.id) as Array<Record<string, unknown>>).map((r) => ({
+        id: String(r["id"]),
+        kind: String(r["kind"]),
+        label: String(r["label"]),
+        path: String(r["path"]),
+      })) as EntryPointRow[];
+      return c.html(architecturePage(projectName, modules, entryPoints, store.listAnswers().length));
+    }),
+  );
+
+  app.get("/answers/:id/modules", (c) =>
+    withStore((store) => {
+      const found = loadAnswer(store, root, c.req.param("id"));
+      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
+      return c.html(modulesPage(found.answer, found.row));
     }),
   );
 
