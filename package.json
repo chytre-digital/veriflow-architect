@@ -17,6 +17,7 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.12",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^12.1.0",
     "zod": "^3.24.1"

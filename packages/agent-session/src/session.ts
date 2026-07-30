@@ -20,6 +20,14 @@ export interface RunSink {
 export interface RunPersistence {
   appendEvents(runId: string, events: RunEvent[]): void;
   finishRun(runId: string, outcome: AgentRunOutcome): void;
+  /**
+   * Did an answer land for this run?
+   *
+   * The submit tool runs inside the MCP server, which is a child of the agent in its own process, so
+   * the session never sees the call. Without asking, a run that submitted a perfectly good answer is
+   * recorded as `completed-without-answer` — the product stating something untrue about its own work.
+   */
+  submittedAnswerId?(runId: string): string | undefined;
   startRun(run: {
     id: string;
     questionId: string;
@@ -113,7 +121,13 @@ export class AgentSession {
         }
       }
       await Promise.allSettled(pending);
-      const outcome = await handle.result;
+      let outcome = await handle.result;
+
+      const submittedAnswerId = persistence?.submittedAnswerId?.(runId);
+      if (submittedAnswerId && outcome.status === "completed-without-answer") {
+        outcome = { ...outcome, status: "submitted", submittedAnswerId };
+      }
+
       persistence?.finishRun(runId, outcome);
       return { runId, outcome, events: collected };
     } finally {

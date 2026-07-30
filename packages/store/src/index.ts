@@ -542,6 +542,27 @@ export class Store {
       .all() as Array<Record<string, unknown>>;
   }
 
+  findAnswerByPrefix(prefix: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM answers WHERE id LIKE ? LIMIT 1").get(`${prefix}%`) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  readAnswerCitations(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT subject_kind, subject_id, path, line, symbol, state, reason
+         FROM answer_citations WHERE answer_id = ? ORDER BY seq`,
+      )
+      .all(answerId) as Array<Record<string, unknown>>;
+  }
+
+  readSnapshot(id: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM snapshots WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
   readAnswer(id: string): Record<string, unknown> | undefined {
     return this.db.prepare("SELECT * FROM answers WHERE id = ?").get(id) as
       | Record<string, unknown>

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@hono/node-server':
+        specifier: ^2.0.12
+        version: 2.0.12(hono@4.12.32)
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@3.25.76)
@@ -54,6 +57,9 @@ importers:
       '@veriflow/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@veriflow/server':
+        specifier: workspace:*
+        version: link:../server
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../../packages/snapshot
@@ -66,6 +72,21 @@ importers:
       commander:
         specifier: ^12.1.0
         version: 12.1.0
+
+  apps/server:
+    dependencies:
+      '@veriflow/diagram':
+        specifier: workspace:*
+        version: link:../../packages/diagram
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../../packages/flow-answer
+      '@veriflow/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+      hono:
+        specifier: ^4.6.14
+        version: 4.12.32
 
   packages/agent-session:
     dependencies:
@@ -80,6 +101,12 @@ importers:
         version: link:../contracts
 
   packages/contracts: {}
+
+  packages/diagram:
+    dependencies:
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../flow-answer
 
   packages/flow-answer:
     dependencies:

@@ -1,0 +1,13 @@
+{
+  "name": "@veriflow/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@veriflow/diagram": "workspace:*",
+    "@veriflow/flow-answer": "workspace:*",
+    "@veriflow/store": "workspace:*",
+    "hono": "^4.6.14"
+  }
+}

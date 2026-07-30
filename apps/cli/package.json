@@ -17,6 +17,7 @@
     "@veriflow/providers": "workspace:*",
     "@veriflow/agent-session": "workspace:*",
     "@veriflow/flow-answer": "workspace:*",
-    "@veriflow/mcp-server": "workspace:*"
+    "@veriflow/mcp-server": "workspace:*",
+    "@veriflow/server": "workspace:*"
   }
 }
