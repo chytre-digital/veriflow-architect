@@ -1,11 +1,15 @@
 import { Command } from "commander";
 import { basename, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
 import { createProvider } from "@veriflow/providers";
 import { AgentSession, ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
+import { serveRun } from "@veriflow/mcp-server";
+import { classifyQuestion, rankEntryPoints } from "@veriflow/flow-answer";
+import { createInterface } from "node:readline/promises";
 import { captureSnapshot, diffHashes, readGitFacts } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { InitError, ProjectLock, initWorkspace, readConfig } from "@veriflow/workspace";
@@ -230,6 +234,8 @@ program
     );
     const modules = deriveModules(symbols, { communityBySymbol });
     ctx.store.insertModules(snapshot.id, modules);
+    const entryPoints = detectEntryPoints(symbols);
+    ctx.store.insertEntryPoints(snapshot.id, entryPoints);
 
     log(``);
     log(`Indexed ${basename(ctx.root)} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
@@ -237,6 +243,7 @@ program
     log(`  graph        ${stats.files} files · ${stats.nodes} nodes · ${stats.edges} edges`);
     log(`  ingested     ${symbols.length} symbols · ${callSites.length} call sites`);
     log(`  modules      ${modules.length} derived from paths`);
+    log(`  entry points ${entryPoints.length} detected`);
     log(`  tree state   ${snapshot.fileCount} files hashed${snapshot.dirty ? " (working tree dirty)" : ""}`);
     if (previous) {
       const changed = diffHashes(ctx.store.readFileHashes(previous.id), captured.hashes);
@@ -388,6 +395,26 @@ program
     ctx.close();
   });
 
+/* ------------------------------------------------------------------ mcp-run */
+
+program
+  .command("mcp-run")
+  .argument("[path]")
+  .requiredOption("--run <id>")
+  .requiredOption("--question <id>")
+  .requiredOption("--snapshot <id>")
+  .description("MCP server exposed to the agent for one run (launched by veriflow ask)")
+  .action(async (pathArg: string | undefined, options: { run: string; question: string; snapshot: string }) => {
+    // No lock and no banner: this process is a child of the agent and speaks MCP on stdio, so any
+    // stray stdout would corrupt the protocol.
+    await serveRun({
+      root: resolve(pathArg ?? process.cwd()),
+      runId: options.run,
+      questionId: options.question,
+      snapshotId: options.snapshot,
+    });
+  });
+
 /* ------------------------------------------------------------------ ask */
 
 program
@@ -395,38 +422,119 @@ program
   .argument("<question>")
   .argument("[path]")
   .option("--client <id>", "agent client", "claude-code")
-  .option("--timeout <ms>", "run timeout in milliseconds", "600000")
+  .option("--timeout <ms>", "run timeout in milliseconds", "900000")
+  .option("--entry <id>", "force an entry point instead of ranking")
+  .option("--force", "run even when the question looks like a location question")
   .description("run your agent over the indexed project, streaming as it works")
-  .action(async (question: string, pathArg: string | undefined, options: { client: string; timeout: string }) => {
+  .action(async (
+    question: string,
+    pathArg: string | undefined,
+    options: { client: string; timeout: string; entry?: string; force?: boolean },
+  ) => {
     const ctx = open(pathArg);
-    const client = options.client === "codex" ? new CodexAdapter() : new ClaudeCodeAdapter();
 
+    const classification = classifyQuestion(question);
+    if (classification.kind === "location" && !options.force) {
+      log(`This looks like a location question, not a flow question.`);
+      log(`  why: ${classification.reason}`);
+      if (classification.suggestion) log(`  ${classification.suggestion}`);
+      log(``);
+      log(`  A flow answer would be the wrong shape here. Override with --force.`);
+      ctx.close();
+      return;
+    }
+
+    const snapshot = ctx.store.latestSnapshot(ctx.projectId);
+    if (!snapshot) {
+      ctx.close();
+      fail("no snapshot yet - run: veriflow index");
+    }
+
+    const stored = ctx.store.readEntryPoints(snapshot.id).map((row) => ({
+      id: String(row["id"]),
+      symbolId: String(row["symbol_id"]),
+      kind: String(row["kind"]) as never,
+      label: String(row["label"]),
+      path: String(row["path"]),
+      line: Number(row["line"]),
+    }));
+    const ranking = rankEntryPoints(question, stored);
+    let chosen = ranking.autoSelected?.entryPoint;
+    if (options.entry) {
+      chosen = stored.find((e) => e.label.toLowerCase().includes(options.entry!.toLowerCase()));
+      if (!chosen) {
+        ctx.close();
+        fail(`no entry point matches ${options.entry}`);
+      }
+    }
+
+    log(`Entry points ranked (auto-start margin ${ranking.threshold}, actual ${ranking.margin.toFixed(2)}):`);
+    for (const candidate of ranking.candidates.slice(0, 5)) {
+      const mark = candidate.entryPoint === chosen ? "->" : "  ";
+      log(`  ${mark} ${candidate.score.toFixed(1)}  ${candidate.entryPoint.label}`);
+    }
+    if (!chosen) log(`  ranking is ambiguous - the agent picks, and says so in the transcript`);
+
+    const client = options.client === "codex" ? new CodexAdapter() : new ClaudeCodeAdapter();
     const capabilities = await client.probe();
     if (!capabilities) {
       ctx.close();
       fail(`agent client "${options.client}" is not available on this machine`);
     }
 
-    const snapshot = ctx.store.latestSnapshot(ctx.projectId);
-    if (!snapshot) {
-      ctx.close();
-      fail("no snapshot yet — run: veriflow index");
-    }
-
     const questionId = randomUUID();
+    const runId = randomUUID();
     ctx.store.createQuestion(questionId, ctx.projectId, question);
 
-    log(`${capabilities.id} ${capabilities.version} · ${capabilities.transport}`);
-    log(`permission mode: ${capabilities.readOnlyMode ?? "client default"}  ·  cwd: ${ctx.root}`);
-    log(`snapshot ${snapshot.id.slice(0, 8)}${snapshot.dirty ? " (dirty tree)" : ""}\n`);
+    log(``);
+    log(`${capabilities.id} ${capabilities.version} - ${capabilities.transport}`);
+    log(`permission mode: ${capabilities.readOnlyMode ?? "client default"}  -  cwd: ${ctx.root}`);
+    log(`snapshot ${snapshot.id.slice(0, 8)}${snapshot.dirty ? " (dirty tree)" : ""}`);
+    log(``);
+
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const answered = new Set<string>();
+    const poller = setInterval(() => {
+      for (const pending of ctx.store.pendingQuestions(runId)) {
+        if (answered.has(pending.id)) continue;
+        answered.add(pending.id);
+        void (async () => {
+          log(``);
+          log(`? ${pending.question}`);
+          if (pending.options?.length) log(`  options: ${pending.options.join(" | ")}`);
+          const value = await rl.question("> ");
+          ctx.store.answerQuestion(runId, pending.id, value);
+        })();
+      }
+    }, 300);
 
     const session = new AgentSession({
       client,
       cwd: ctx.root,
-      prompt: question,
+      prompt: buildPrompt(question, chosen?.label),
       questionId,
       snapshotId: snapshot.id,
+      runId,
       timeoutMs: Number(options.timeout),
+      mcpServers: {
+        veriflow: {
+          command: process.execPath,
+          args: [
+            "--no-warnings=ExperimentalWarning",
+            "--import",
+            "tsx",
+            fileURLToPath(import.meta.url),
+            "mcp-run",
+            ctx.root,
+            "--run",
+            runId,
+            "--question",
+            questionId,
+            "--snapshot",
+            snapshot.id,
+          ],
+        },
+      },
       sink: {
         onEvent(event) {
           const payload = event.payload as Record<string, unknown>;
@@ -435,9 +543,7 @@ program
               if (typeof payload["text"] === "string") log(payload["text"] as string);
               break;
             case "tool-call":
-              log(`  → ${String(payload["name"])}`);
-              break;
-            case "tool-result":
+              log(`  -> ${String(payload["name"])}`);
               break;
             case "stderr":
               log(`  ! ${String(payload["text"])}`);
@@ -446,16 +552,11 @@ program
               break;
           }
         },
-        async onQuestion(pending) {
-          log(`\n? ${pending.question}`);
-          log(`  (no interactive answer channel yet — see F005; the run continues unanswered)`);
-          return "";
-        },
       },
       persistence: {
         startRun: (run) => ctx.store.startRun(run),
-        appendEvents: (runId, events) => ctx.store.appendRunEvents(runId, events),
-        finishRun: (runId, outcome) => ctx.store.finishRun(runId, outcome),
+        appendEvents: (id, events) => ctx.store.appendRunEvents(id, events),
+        finishRun: (id, outcome) => ctx.store.finishRun(id, outcome),
       },
     });
 
@@ -464,13 +565,43 @@ program
     });
 
     const result = await session.run();
-    log(`\nRun ${result.runId.slice(0, 8)} — ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
-    log(`  ${result.events.length} events stored; reopen with: veriflow transcript ${result.runId.slice(0, 8)}`);
-    if (result.outcome.status === "completed-without-answer") {
-      log(`  No structured answer was submitted — the submit tool arrives with F005.`);
+    clearInterval(poller);
+    rl.close();
+
+    log(``);
+    log(`Run ${result.runId.slice(0, 8)} - ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
+    log(`  ${result.events.length} events stored; replay with: veriflow transcript ${result.runId}`);
+
+    const answers = ctx.store.listAnswers().filter((a) => a["run_id"] === result.runId);
+    for (const answer of answers) {
+      const total = Number(answer["verified"]) + Number(answer["unverified"]);
+      log(`  answer ${String(answer["id"]).slice(0, 8)} - ${answer["title"]}`);
+      log(`    ${answer["verified"]}/${total} citations verified - ${answer["open_questions"]} open question(s)`);
     }
+    if (answers.length === 0) log(`  No answer was submitted.`);
     ctx.close();
   });
+
+function buildPrompt(question: string, entryPointLabel?: string): string {
+  return [
+    `You are answering one question about this repository for VeriFlow.`,
+    ``,
+    `Question: ${question}`,
+    entryPointLabel ? `Suggested entry point: ${entryPointLabel}` : `Entry point: choose one and say why.`,
+    ``,
+    `Use the veriflow MCP tools. get_architecture and get_entry_points orient you; search_symbols,`,
+    `get_callers and get_callees follow the code; read_evidence confirms a line before you cite it.`,
+    ``,
+    `Then call submit_flow_answer with: lanes (the participants), phases, ordered steps citing`,
+    `file:line, branches for every alternative outcome each stating the invariant it protects,`,
+    `moduleEdges saying what crosses them, externalSystems with where the boundary is enforced and`,
+    `what happens when they fail, and openQuestions for anything the repository cannot answer.`,
+    ``,
+    `Rules: cite what you claim. If evidence is missing, use record_open_question rather than`,
+    `narrating a guess. If only a person can decide, use ask_user and wait. Citations are labelled,`,
+    `not gated - an honest unverified claim is better than a removed one.`,
+  ].join("\n");
+}
 
 program
   .command("transcript")
@@ -486,6 +617,28 @@ program
     }
     for (const event of events) {
       log(`${String(event.seq).padStart(4)} ${event.channel.padEnd(12)} ${JSON.stringify(event.payload).slice(0, 160)}`);
+    }
+    ctx.close();
+  });
+
+program
+  .command("answers")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("list stored answers")
+  .action((pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const answers = ctx.store.listAnswers();
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, answers }, null, 2));
+    } else if (answers.length === 0) {
+      log("no answers yet - run: veriflow ask");
+    } else {
+      for (const a of answers) {
+        const total = Number(a["verified"]) + Number(a["unverified"]);
+        log(`${String(a["id"]).slice(0, 8)}  ${a["title"]}`);
+        log(`          ${a["verified"]}/${total} verified - ${a["open_questions"]} open - ${a["review_state"]}`);
+      }
     }
     ctx.close();
   });

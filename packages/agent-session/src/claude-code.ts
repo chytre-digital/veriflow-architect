@@ -11,6 +11,12 @@ import {
 } from "./contracts.js";
 import { EventStream, LineSplitter } from "./stream.js";
 
+/** What the agent may do: read the repository and talk to VeriFlow. */
+export const READ_TOOLS = ["Read", "Grep", "Glob", "WebFetch", "TodoWrite"];
+
+/** What it may never do. Named explicitly as well, so a client default cannot widen the allowlist. */
+export const WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "Task"];
+
 /**
  * Claude Code adapter. Capability is probed, never assumed: structured-output flags move between
  * client versions, and a client upgrade must not silently degrade a run to unparsed text.
@@ -35,8 +41,7 @@ export class ClaudeCodeAdapter implements AgentClientAdapter {
     const supportsStreamJson = help.includes("stream-json");
     const supportsMcpConfig = help.includes("--mcp-config");
     const supportsPermissionMode = help.includes("--permission-mode");
-    // `plan` is Claude Code's read-only mode: it can read and reason, and cannot write or execute.
-    const readOnlyMode = supportsPermissionMode && help.includes('"plan"') ? "plan" : undefined;
+    const supportsToolLists = help.includes("--allowedTools") && help.includes("--disallowedTools");
 
     return {
       id: this.id,
@@ -45,7 +50,11 @@ export class ClaudeCodeAdapter implements AgentClientAdapter {
       transport: supportsStreamJson ? "stream-json" : "pty",
       supportsMcpConfig,
       supportsPermissionMode,
-      readOnlyMode,
+      supportsToolLists,
+      // An explicit allow/deny list, not a coarse mode. `plan` looks like the right answer and is
+      // not: it blocks every MCP call, so the agent cannot reach ask_user or submit_flow_answer and
+      // the run can only end without an answer. Found by running it, not by reasoning about it.
+      readOnlyMode: supportsToolLists ? "allowlist" : undefined,
     };
   }
 
@@ -59,11 +68,15 @@ export class ClaudeCodeAdapter implements AgentClientAdapter {
     if (capabilities.transport === "stream-json") {
       args.push("--output-format", "stream-json", "--verbose");
     }
-    if (capabilities.readOnlyMode) {
-      args.push("--permission-mode", capabilities.readOnlyMode);
-    }
     if (request.mcpConfigPath && capabilities.supportsMcpConfig) {
       args.push("--mcp-config", request.mcpConfigPath);
+    }
+    if (capabilities.supportsToolLists) {
+      // Read the repository, reach VeriFlow, and nothing else. Naming what is allowed is stricter
+      // than naming what is forbidden, and it leaves the MCP surface reachable.
+      args.push("--allowedTools", [...READ_TOOLS, "mcp__veriflow"].join(","));
+      args.push("--disallowedTools", WRITE_TOOLS.join(","));
+      args.push("--permission-mode", "dontAsk");
     }
 
     const child = spawn(this.command, args, {

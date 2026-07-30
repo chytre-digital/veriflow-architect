@@ -15,6 +15,8 @@
     "commander": "^12.1.0",
     "@veriflow/workspace": "workspace:*",
     "@veriflow/providers": "workspace:*",
-    "@veriflow/agent-session": "workspace:*"
+    "@veriflow/agent-session": "workspace:*",
+    "@veriflow/flow-answer": "workspace:*",
+    "@veriflow/mcp-server": "workspace:*"
   }
 }

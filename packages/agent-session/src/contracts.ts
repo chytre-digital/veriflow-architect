@@ -43,6 +43,8 @@ export interface ClientCapabilities {
   transport: "stream-json" | "pty";
   supportsMcpConfig: boolean;
   supportsPermissionMode: boolean;
+  /** Client supports an explicit allow/deny tool list. */
+  supportsToolLists?: boolean;
   /** The most restrictive read-only mode this client offers, shown to the user before the run. */
   readOnlyMode?: string;
 }

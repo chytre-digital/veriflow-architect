@@ -120,6 +120,48 @@ CREATE TABLE IF NOT EXISTS run_events (
   PRIMARY KEY (run_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS run_questions (
+  run_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  options_json TEXT,
+  asked_at TEXT NOT NULL,
+  answer TEXT,
+  answered_at TEXT,
+  PRIMARY KEY (run_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS answers (
+  id TEXT PRIMARY KEY,
+  question_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  parent_answer_id TEXT,
+  contract_version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  review_state TEXT NOT NULL DEFAULT 'unreviewed',
+  verified INTEGER NOT NULL,
+  unverified INTEGER NOT NULL,
+  open_questions INTEGER NOT NULL,
+  body_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS answer_citations (
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  seq INTEGER NOT NULL,
+  subject_kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  symbol TEXT,
+  state TEXT NOT NULL,
+  line_hash TEXT,
+  reason TEXT,
+  PRIMARY KEY (answer_id, seq)
+);
+
 CREATE TABLE IF NOT EXISTS entry_points (
   snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
   id TEXT NOT NULL,
@@ -379,6 +421,199 @@ export class Store {
     return this.db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as
       | Record<string, unknown>
       | undefined;
+  }
+
+  /* ------------------------------------------------- ask_user, across processes */
+
+  /**
+   * The MCP server runs as a child of the agent, in its own process. The store is the channel: the
+   * server writes a question and polls for its answer; the session sees it and asks the user.
+   */
+  askQuestion(runId: string, id: string, question: string, options?: string[]): void {
+    this.db
+      .prepare("INSERT OR REPLACE INTO run_questions (run_id, id, question, options_json, asked_at) VALUES (?, ?, ?, ?, ?)")
+      .run(runId, id, question, options ? JSON.stringify(options) : null, new Date().toISOString());
+  }
+
+  pendingQuestions(runId: string): Array<{ id: string; question: string; options?: string[] }> {
+    return (
+      this.db
+        .prepare("SELECT id, question, options_json FROM run_questions WHERE run_id = ? AND answer IS NULL ORDER BY asked_at")
+        .all(runId) as Array<{ id: string; question: string; options_json: string | null }>
+    ).map((r) => ({
+      id: r.id,
+      question: r.question,
+      options: r.options_json ? (JSON.parse(r.options_json) as string[]) : undefined,
+    }));
+  }
+
+  answerQuestion(runId: string, id: string, answer: string): void {
+    this.db
+      .prepare("UPDATE run_questions SET answer = ?, answered_at = ? WHERE run_id = ? AND id = ?")
+      .run(answer, new Date().toISOString(), runId, id);
+  }
+
+  readAnswerToQuestion(runId: string, id: string): string | undefined {
+    const row = this.db
+      .prepare("SELECT answer FROM run_questions WHERE run_id = ? AND id = ?")
+      .get(runId, id) as { answer: string | null } | undefined;
+    return row?.answer ?? undefined;
+  }
+
+  /* ------------------------------------------------------------ answers (F005) */
+
+  insertAnswer(answer: {
+    id: string;
+    questionId: string;
+    runId: string;
+    snapshotId: string;
+    parentAnswerId?: string;
+    title: string;
+    verified: number;
+    unverified: number;
+    openQuestions: number;
+    body: unknown;
+    citations: Array<{
+      subjectKind: string;
+      subjectId: string;
+      path: string;
+      line: number;
+      symbol?: string;
+      state: string;
+      lineHash?: string;
+      reason?: string;
+    }>;
+  }): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO answers
+           (id, question_id, run_id, snapshot_id, parent_answer_id, contract_version, title, status,
+            review_state, verified, unverified, open_questions, body_json, created_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, 'draft', 'unreviewed', ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          answer.id,
+          answer.questionId,
+          answer.runId,
+          answer.snapshotId,
+          answer.parentAnswerId ?? null,
+          answer.title,
+          answer.verified,
+          answer.unverified,
+          answer.openQuestions,
+          JSON.stringify(answer.body),
+          new Date().toISOString(),
+        );
+      const stmt = this.db.prepare(
+        `INSERT INTO answer_citations
+         (answer_id, seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      answer.citations.forEach((c, i) => {
+        stmt.run(
+          answer.id,
+          i,
+          c.subjectKind,
+          c.subjectId,
+          c.path,
+          c.line,
+          c.symbol ?? null,
+          c.state,
+          c.lineHash ?? null,
+          c.reason ?? null,
+        );
+      });
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  listAnswers(): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT id, question_id, run_id, snapshot_id, title, status, review_state,
+                verified, unverified, open_questions, created_at
+         FROM answers ORDER BY created_at DESC`,
+      )
+      .all() as Array<Record<string, unknown>>;
+  }
+
+  readAnswer(id: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM answers WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  /* ------------------------------------------------- reads for the MCP surface */
+
+  readModules(snapshotId: string): Array<Record<string, unknown>> {
+    return (
+      this.db
+        .prepare("SELECT id, label, paths_json, source, file_count, symbol_count, cohesion_warning FROM modules WHERE snapshot_id = ? ORDER BY id")
+        .all(snapshotId) as Array<Record<string, unknown>>
+    ).map((r) => ({
+      id: r["id"],
+      label: r["label"],
+      paths: JSON.parse(r["paths_json"] as string),
+      source: r["source"],
+      files: r["file_count"],
+      symbols: r["symbol_count"],
+      cohesionWarning: r["cohesion_warning"] ?? undefined,
+    }));
+  }
+
+  readEntryPoints(snapshotId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare("SELECT id, symbol_id, kind, label, path, line FROM entry_points WHERE snapshot_id = ? ORDER BY label")
+      .all(snapshotId) as Array<Record<string, unknown>>;
+  }
+
+  insertEntryPoints(
+    snapshotId: string,
+    entryPoints: Array<{ id: string; symbolId: string; kind: string; label: string; path: string; line: number }>,
+  ): void {
+    const stmt = this.db.prepare(
+      "INSERT OR REPLACE INTO entry_points (snapshot_id, id, symbol_id, kind, label, path, line) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    );
+    this.db.exec("BEGIN");
+    try {
+      for (const e of entryPoints) stmt.run(snapshotId, e.id, e.symbolId, e.kind, e.label, e.path, e.line);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  searchSymbols(snapshotId: string, query: string, limit = 50): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT id, name, kind, path, line_start, line_end FROM symbols
+         WHERE snapshot_id = ? AND name LIKE ? ORDER BY LENGTH(name), name LIMIT ?`,
+      )
+      .all(snapshotId, `%${query}%`, limit) as Array<Record<string, unknown>>;
+  }
+
+  readCallers(snapshotId: string, symbolId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT from_symbol AS symbolId, path, line, resolution FROM call_sites
+         WHERE snapshot_id = ? AND to_symbol = ? ORDER BY path, line LIMIT 200`,
+      )
+      .all(snapshotId, symbolId) as Array<Record<string, unknown>>;
+  }
+
+  readCallees(snapshotId: string, symbolId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT to_symbol AS symbolId, to_name AS name, path, line, resolution FROM call_sites
+         WHERE snapshot_id = ? AND from_symbol = ? ORDER BY line LIMIT 400`,
+      )
+      .all(snapshotId, symbolId) as Array<Record<string, unknown>>;
   }
 
   counts(snapshotId: string): { symbols: number; callSites: number; modules: number } {

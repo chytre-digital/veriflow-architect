@@ -1,0 +1,14 @@
+{
+  "name": "@veriflow/mcp-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@veriflow/flow-answer": "workspace:*",
+    "@veriflow/snapshot": "workspace:*",
+    "@veriflow/store": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

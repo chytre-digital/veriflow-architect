@@ -42,6 +42,12 @@ importers:
       '@veriflow/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../../packages/flow-answer
+      '@veriflow/mcp-server':
+        specifier: workspace:*
+        version: link:../../packages/mcp-server
       '@veriflow/provider-protocol':
         specifier: workspace:*
         version: link:../../packages/provider-protocol
@@ -74,6 +80,33 @@ importers:
         version: link:../contracts
 
   packages/contracts: {}
+
+  packages/flow-answer:
+    dependencies:
+      '@veriflow/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+
+  packages/mcp-server:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@3.25.76)
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../flow-answer
+      '@veriflow/snapshot':
+        specifier: workspace:*
+        version: link:../snapshot
+      '@veriflow/store':
+        specifier: workspace:*
+        version: link:../store
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
 
   packages/provider-crg:
     dependencies:
