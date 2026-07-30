@@ -39,7 +39,7 @@ Three views, because one picture could not carry it:
 
 | View | What it is for |
 | --- | --- |
-| **Function map** | One dot per function, inside its file box, inside its folder box, ordered by module. Where the code is, and how much of each file the flow uses. Selecting a function draws its own calls and nothing else. |
+| **Function map** | One dot per function, inside its file box, inside its folder box, ordered by module. Where the code is, and how much of each file the flow uses. Selecting a function draws its own calls and nothing else; clicking an API route filters the map to what that route reaches. |
 | **Module traffic** | A dependency structure matrix: the 577 edges folded into 27 cells. Axes in dependency order, so a cell below the diagonal is a layer calling back up. |
 | **Call hierarchy** | Callers on the left, callees on the right, one hop each way, every card named with its file and call-site lines. Click a card to re-centre. |
 
@@ -55,6 +55,15 @@ The matrix earns its place: two of its 27 cells sit below the diagonal.
 (calendar sync, waitlist and payment notifications) plus three real pricing
 calls. `modules → stripe-gateway` is 2 calls from `billing/priceMigration` into
 price-slot helpers. Nothing else in the flow calls back up a layer.
+
+Clicking one of the five API routes narrows the map to the transitive closure of
+that route: `POST /api/marketplace/checkout` reaches **194 of the 329**
+functions, and the webhook route, the two cron sweeps, fulfilment,
+reconciliation and the wallet all fade out. Reaching a function also reaches its
+file's top level, because importing a module runs it — that is how
+`createLogger` sits on every path without anyone calling it. Out-of-scope dots
+fade rather than disappear, so the map never reflows and you can see how much of
+the repository one door does *not* touch.
 
 Every call site lands in exactly one bucket, and the buckets add up:
 

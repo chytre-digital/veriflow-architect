@@ -1087,11 +1087,14 @@ export function CallHierarchy({
 export function FunctionMap({
   selected,
   hover,
+  scope,
   onSelect,
   onHover,
 }: {
   selected: number;
   hover: number | null;
+  /** When set, only these functions are live; the rest fade to context. */
+  scope: Set<number> | null;
   onSelect: (index: number) => void;
   onHover: (index: number | null) => void;
 }) {
@@ -1116,6 +1119,19 @@ export function FunctionMap({
 
   const labelX = Math.min(Math.max(shown.x, 90), CALL_MAP.width - 90);
 
+  // A file or folder is in scope when anything inside it is.
+  const live = useMemo(() => {
+    if (!scope) return null;
+    const files = new Set<string>();
+    const folders = new Set<string>();
+    for (const index of scope) {
+      const item = CALL_NODES[index];
+      files.add(item.file);
+      folders.add(item.file.slice(0, item.file.lastIndexOf("/")));
+    }
+    return { files, folders };
+  }, [scope]);
+
   return (
     <div className="diagram-scroll">
       <svg
@@ -1127,7 +1143,11 @@ export function FunctionMap({
         aria-label={`${CALL_TOTALS.functions} functions in ${CALL_MAP.files} files, ${shown.fn} selected`}
       >
         {CALL_FOLDERS.map((box) => (
-          <g key={box.full} className="fnmap-folder" data-cluster={box.cluster}>
+          <g
+            key={box.full}
+            className={`fnmap-folder ${live && !live.folders.has(box.full) ? "is-faded" : ""}`}
+            data-cluster={box.cluster}
+          >
             <rect className="fnmap-folder-box" x={box.x} y={box.y} width={box.w} height={box.h} rx={7} />
             <rect className="fnmap-folder-tag" x={box.x} y={box.y + 1} width={3} height={box.h - 2} />
             <text className="fnmap-folder-label" x={box.x + 9} y={box.y + 12}>
@@ -1137,7 +1157,10 @@ export function FunctionMap({
         ))}
 
         {CALL_FILES.map((box) => (
-          <g key={`${box.x}-${box.y}`} className="fnmap-file">
+          <g
+            key={`${box.x}-${box.y}`}
+            className={`fnmap-file ${live && !live.files.has(box.full) ? "is-faded" : ""}`}
+          >
             <rect className="fnmap-file-box" x={box.x} y={box.y} width={box.w} height={box.h} rx={5} />
             <text className="fnmap-file-label" x={box.x + 6} y={box.y + 11}>
               {truncate(box.label, 21)}
@@ -1162,10 +1185,11 @@ export function FunctionMap({
           const r = 2.4 + Math.min(3, Math.sqrt(degree[item.i]));
           const state =
             item.i === shown.i ? "is-selected" : near.has(item.i) ? "is-near" : "";
+          const faded = scope !== null && !scope.has(item.i);
           return (
             <g
               key={item.i}
-              className={`fnmap-node ${state}`}
+              className={`fnmap-node ${state} ${faded ? "is-faded" : ""}`}
               data-cluster={item.cluster}
               aria-label={`${item.fn} in ${item.file}`}
             >

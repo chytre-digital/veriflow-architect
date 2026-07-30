@@ -1321,6 +1321,39 @@ svg text {
   stroke-width: 1.6;
 }
 
+.cg-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 8px;
+}
+
+.cg-scope-note {
+  flex: 1 1 320px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* Out of the current entry point's reach: kept as context, not removed, so the
+   map does not reflow and you can see how much of the repo the door misses. */
+.fnmap-node.is-faded {
+  opacity: 0.16;
+}
+
+.fnmap-node.is-faded .fnmap-hit {
+  pointer-events: none;
+}
+
+.fnmap-file.is-faded,
+.fnmap-folder.is-faded {
+  opacity: 0.4;
+}
+
+.fnmap-folder.is-faded .fnmap-folder-tag {
+  fill: var(--line-strong);
+}
+
 .fnmap-ray {
   stroke: var(--accent);
   stroke-width: 1.1;

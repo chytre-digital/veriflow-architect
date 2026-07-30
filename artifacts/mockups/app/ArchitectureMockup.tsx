@@ -966,6 +966,7 @@ function CallScreen() {
   const [pair, setPair] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [hover, setHover] = useState<number | null>(null);
+  const [scopeRoot, setScopeRoot] = useState<number | null>(null);
 
   const { callers, callees } = useMemo(() => {
     const callers: HierNode[][] = CALL_NODES.map(() => []);
@@ -987,6 +988,55 @@ function CallScreen() {
         (item) => item.from === pairDetail.from && item.to === pairDetail.to,
       ) ?? null
     : null;
+
+  const moduleBody = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of CALL_NODES) if (item.fn === "<module>") map.set(item.file, item.i);
+    return map;
+  }, []);
+
+  /**
+   * Everything one entry point reaches, transitively. Reaching a function also
+   * reaches its file's top level — importing a module runs it, which is how
+   * `createLogger` ends up on every path without anyone calling it.
+   */
+  const scope = useMemo(() => {
+    if (scopeRoot === null) return null;
+    const seen = new Set<number>([scopeRoot]);
+    const queue = [scopeRoot];
+    while (queue.length) {
+      const at = queue.shift() as number;
+      const body = moduleBody.get(CALL_NODES[at].file);
+      if (body !== undefined && !seen.has(body)) {
+        seen.add(body);
+        queue.push(body);
+      }
+      for (const next of callees[at]) {
+        if (!seen.has(next.node.i)) {
+          seen.add(next.node.i);
+          queue.push(next.node.i);
+        }
+      }
+    }
+    return seen;
+  }, [callees, moduleBody, scopeRoot]);
+
+  const scopeNode = scopeRoot === null ? null : CALL_NODES[scopeRoot];
+
+  /**
+   * Clicking a door filters the map to what that door reaches. Clicking a
+   * function outside the current filter clears it rather than showing a
+   * selection the map has faded out.
+   */
+  function pick(index: number) {
+    onSelect(index);
+    const item = CALL_NODES[index];
+    if (item.depth === 0 && item.cluster === "route" && item.fn !== "<module>") {
+      setScopeRoot(index === scopeRoot ? null : index);
+      return;
+    }
+    if (scope && !scope.has(index)) setScopeRoot(null);
+  }
 
   const found = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1067,12 +1117,45 @@ function CallScreen() {
         <div className="cg-block-head">
           <span className="col-label">Where the {CALL_TOTALS.functions} functions live</span>
           <span className="cg-block-hint">
-            one dot per function, inside its file, inside its folder · hover to name it, click to
-            pull it into the hierarchy below · {CALL_MAP.files} files in {CALL_MAP.folders} folders
+            one dot per function, inside its file, inside its folder · click an API route to keep
+            only what it reaches · {CALL_MAP.files} files in {CALL_MAP.folders} folders
           </span>
         </div>
 
-        <FunctionMap selected={selected} hover={hover} onSelect={onSelect} onHover={setHover} />
+        <div className="cg-scope">
+          <button
+            type="button"
+            className={`chip ${scopeRoot === null ? "is-active" : ""}`}
+            onClick={() => setScopeRoot(null)}
+          >
+            everything · {CALL_TOTALS.functions}
+          </button>
+          {CALL_BOOKMARKS[0].nodes.map((index) => (
+            <button
+              key={index}
+              type="button"
+              className={`chip ${index === scopeRoot ? "is-active" : ""}`}
+              onClick={() => pick(index)}
+            >
+              {nodeLabel(CALL_NODES[index])}
+            </button>
+          ))}
+          {scope && scopeNode ? (
+            <span className="cg-scope-note">
+              {scope.size} of {CALL_TOTALS.functions} functions are reachable from{" "}
+              <strong>{nodeLabel(scopeNode)}</strong>, transitively. The rest belong to the other
+              doors — the webhook route alone dispatches 16 event types.
+            </span>
+          ) : null}
+        </div>
+
+        <FunctionMap
+          selected={selected}
+          hover={hover}
+          scope={scope}
+          onSelect={pick}
+          onHover={setHover}
+        />
 
         <div className="cg-legend">
           {CALL_CLUSTERS.map((cluster) => (
@@ -1145,7 +1228,7 @@ function CallScreen() {
                     key={index}
                     type="button"
                     className={`chip ${index === selected ? "is-active" : ""}`}
-                    onClick={() => onSelect(index)}
+                    onClick={() => pick(index)}
                   >
                     {nodeLabel(CALL_NODES[index])}
                   </button>
@@ -1169,7 +1252,7 @@ function CallScreen() {
                     key={item.i}
                     type="button"
                     className={`chip ${item.i === selected ? "is-active" : ""}`}
-                    onClick={() => onSelect(item.i)}
+                    onClick={() => pick(item.i)}
                   >
                     {nodeLabel(item)}
                     <span className="cg-chip-file">{item.file.split("/").pop()}</span>
@@ -1187,7 +1270,7 @@ function CallScreen() {
           selected={selected}
           callers={callerCards}
           callees={calleeCards}
-          onSelect={onSelect}
+          onSelect={pick}
         />
       </div>
 
@@ -1216,7 +1299,7 @@ function CallScreen() {
             {spine.map((index, position) => (
               <span key={index}>
                 {position > 0 ? <em>→</em> : null}
-                <button type="button" className="cg-hop" onClick={() => onSelect(index)}>
+                <button type="button" className="cg-hop" onClick={() => pick(index)}>
                   {nodeLabel(CALL_NODES[index])}
                 </button>
               </span>
