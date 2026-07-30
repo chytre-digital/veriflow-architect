@@ -1084,10 +1084,17 @@ export function CallHierarchy({
  * No background edges. 577 lines over this would bury it; the selected
  * function's own calls are drawn, and nothing else.
  */
+/** Shared by the selected function's rays and the in-scope link mesh. */
+function callCurve(a: (typeof CALL_NODES)[number], b: (typeof CALL_NODES)[number]) {
+  const lift = Math.abs(a.x - b.x) * 0.08;
+  return `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${(a.y + b.y) / 2 - lift} ${b.x} ${b.y}`;
+}
+
 export function FunctionMap({
   selected,
   hover,
   scope,
+  links,
   onSelect,
   onHover,
 }: {
@@ -1095,6 +1102,8 @@ export function FunctionMap({
   hover: number | null;
   /** When set, only these functions are live; the rest fade to context. */
   scope: Set<number> | null;
+  /** Draw every call between in-scope functions, not just the selected one's. */
+  links: boolean;
   onSelect: (index: number) => void;
   onHover: (index: number | null) => void;
 }) {
@@ -1168,18 +1177,30 @@ export function FunctionMap({
           </g>
         ))}
 
-        {rays.map((ray) => {
-          const other = CALL_NODES[ray.i];
-          const mid = (shown.y + other.y) / 2 - Math.abs(shown.x - other.x) * 0.08;
-          return (
-            <path
-              key={`${ray.dir}-${ray.i}`}
-              className={`fnmap-ray is-${ray.dir} ${ray.kind !== "call" ? "is-inferred" : ""}`}
-              d={`M ${shown.x} ${shown.y} Q ${(shown.x + other.x) / 2} ${mid} ${other.x} ${other.y}`}
-              fill="none"
-            />
-          );
-        })}
+        {/* The mesh first, so the selected function's own calls stay on top of it. */}
+        {scope && links
+          ? CALL_EDGES.map((edge, index) => {
+              if (!scope.has(edge.a) || !scope.has(edge.b)) return null;
+              if (edge.a === shown.i || edge.b === shown.i) return null;
+              return (
+                <path
+                  key={index}
+                  className={`fnmap-link ${edge.kind !== "call" ? "is-inferred" : ""}`}
+                  d={callCurve(CALL_NODES[edge.a], CALL_NODES[edge.b])}
+                  fill="none"
+                />
+              );
+            })
+          : null}
+
+        {rays.map((ray) => (
+          <path
+            key={`${ray.dir}-${ray.i}`}
+            className={`fnmap-ray is-${ray.dir} ${ray.kind !== "call" ? "is-inferred" : ""}`}
+            d={callCurve(shown, CALL_NODES[ray.i])}
+            fill="none"
+          />
+        ))}
 
         {CALL_NODES.map((item) => {
           const r = 2.4 + Math.min(3, Math.sqrt(degree[item.i]));

@@ -1354,6 +1354,21 @@ svg text {
   fill: var(--line-strong);
 }
 
+/* Every call inside the current filter, opt-in. Off by default because 577 of
+   these was the unreadable first version of this screen; scoped to one entry
+   point and asked for explicitly, it earns its keep. */
+.fnmap-link {
+  stroke: var(--ink-2);
+  stroke-width: 0.6;
+  opacity: 0.3;
+}
+
+.fnmap-link.is-inferred {
+  stroke: var(--warn);
+  stroke-dasharray: 3 2;
+  opacity: 0.8;
+}
+
 .fnmap-ray {
   stroke: var(--accent);
   stroke-width: 1.1;

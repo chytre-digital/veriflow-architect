@@ -967,6 +967,7 @@ function CallScreen() {
   const [query, setQuery] = useState("");
   const [hover, setHover] = useState<number | null>(null);
   const [scopeRoot, setScopeRoot] = useState<number | null>(null);
+  const [showLinks, setShowLinks] = useState(false);
 
   const { callers, callees } = useMemo(() => {
     const callers: HierNode[][] = CALL_NODES.map(() => []);
@@ -1022,6 +1023,11 @@ function CallScreen() {
   }, [callees, moduleBody, scopeRoot]);
 
   const scopeNode = scopeRoot === null ? null : CALL_NODES[scopeRoot];
+
+  const scopeLinks = useMemo(
+    () => (scope ? CALL_EDGES.filter((edge) => scope.has(edge.a) && scope.has(edge.b)) : []),
+    [scope],
+  );
 
   /**
    * Clicking a door filters the map to what that door reaches. Clicking a
@@ -1140,6 +1146,16 @@ function CallScreen() {
               {nodeLabel(CALL_NODES[index])}
             </button>
           ))}
+          {scope ? (
+            <button
+              type="button"
+              className={`chip chip-toggle ${showLinks ? "is-active" : ""}`}
+              aria-pressed={showLinks}
+              onClick={() => setShowLinks((on) => !on)}
+            >
+              {showLinks ? "hide" : "show"} the {scopeLinks.length} calls between them
+            </button>
+          ) : null}
           {scope && scopeNode ? (
             <span className="cg-scope-note">
               {scope.size} of {CALL_TOTALS.functions} functions are reachable from{" "}
@@ -1153,6 +1169,7 @@ function CallScreen() {
           selected={selected}
           hover={hover}
           scope={scope}
+          links={showLinks}
           onSelect={pick}
           onHover={setHover}
         />

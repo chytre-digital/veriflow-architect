@@ -65,6 +65,11 @@ file's top level, because importing a module runs it — that is how
 fade rather than disappear, so the map never reflows and you can see how much of
 the repository one door does *not* touch.
 
+A toggle then draws every call *between* the functions in the filter — 281 of
+them for the checkout route, against 577 for the whole graph. It is off by
+default: all 577 at once was the unreadable first version of this screen, and
+the mesh only becomes worth looking at once a single door has narrowed it.
+
 Every call site lands in exactly one bucket, and the buckets add up:
 
 | Bucket | Sites | |
