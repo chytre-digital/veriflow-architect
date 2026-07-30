@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@veriflow/flow-answer": "workspace:*" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@veriflow/flow-answer": "workspace:*",
+    "@veriflow/contracts": "workspace:*"
+  }
 }

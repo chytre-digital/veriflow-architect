@@ -162,6 +162,38 @@ CREATE TABLE IF NOT EXISTS answer_citations (
   PRIMARY KEY (answer_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS call_nodes (
+  snapshot_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  module_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  PRIMARY KEY (snapshot_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS call_edges (
+  snapshot_id TEXT NOT NULL,
+  from_node TEXT NOT NULL,
+  to_node TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  inferred INTEGER NOT NULL,
+  rule TEXT,
+  sites INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS call_edges_from ON call_edges(snapshot_id, from_node);
+CREATE INDEX IF NOT EXISTS call_edges_to ON call_edges(snapshot_id, to_node);
+
+CREATE TABLE IF NOT EXISTS call_graph_meta (
+  snapshot_id TEXT PRIMARY KEY,
+  layout_json TEXT NOT NULL,
+  traffic_json TEXT NOT NULL,
+  buckets_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS entry_points (
   snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
   id TEXT NOT NULL,
@@ -654,6 +686,82 @@ export class Store {
          WHERE snapshot_id = ? AND from_symbol = ? ORDER BY line LIMIT 400`,
       )
       .all(snapshotId, symbolId) as Array<Record<string, unknown>>;
+  }
+
+  /* --------------------------------------------------- call graph (F003 + F006) */
+
+  saveCallGraph(
+    snapshotId: string,
+    nodes: Array<{ id: string; symbol: string; path: string; line: number; moduleId: string; kind: string }>,
+    edges: Array<{ from: string; to: string; kind: string; inferred: boolean; rule?: string; sites: number }>,
+    layout: unknown,
+    traffic: unknown,
+    buckets: unknown,
+    positions: Map<string, { x: number; y: number }>,
+  ): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("DELETE FROM call_nodes WHERE snapshot_id = ?").run(snapshotId);
+      this.db.prepare("DELETE FROM call_edges WHERE snapshot_id = ?").run(snapshotId);
+      const n = this.db.prepare(
+        "INSERT INTO call_nodes (snapshot_id, id, symbol, path, line, module_id, kind, x, y) VALUES (?,?,?,?,?,?,?,?,?)",
+      );
+      for (const node of nodes) {
+        const pos = positions.get(node.id) ?? { x: 0, y: 0 };
+        n.run(snapshotId, node.id, node.symbol, node.path, node.line, node.moduleId, node.kind, pos.x, pos.y);
+      }
+      const e = this.db.prepare(
+        "INSERT INTO call_edges (snapshot_id, from_node, to_node, kind, inferred, rule, sites) VALUES (?,?,?,?,?,?,?)",
+      );
+      for (const edge of edges) {
+        e.run(snapshotId, edge.from, edge.to, edge.kind, edge.inferred ? 1 : 0, edge.rule ?? null, edge.sites);
+      }
+      this.db
+        .prepare("INSERT OR REPLACE INTO call_graph_meta (snapshot_id, layout_json, traffic_json, buckets_json) VALUES (?,?,?,?)")
+        .run(snapshotId, JSON.stringify(layout), JSON.stringify(traffic), JSON.stringify(buckets));
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  readCallGraph(snapshotId: string):
+    | { nodes: Array<Record<string, unknown>>; layout: unknown; traffic: unknown; buckets: unknown }
+    | undefined {
+    const meta = this.db.prepare("SELECT * FROM call_graph_meta WHERE snapshot_id = ?").get(snapshotId) as
+      | { layout_json: string; traffic_json: string; buckets_json: string }
+      | undefined;
+    if (!meta) return undefined;
+    return {
+      nodes: this.db
+        .prepare("SELECT id, symbol, path, line, module_id, kind FROM call_nodes WHERE snapshot_id = ? ORDER BY id")
+        .all(snapshotId) as Array<Record<string, unknown>>,
+      layout: JSON.parse(meta.layout_json),
+      traffic: JSON.parse(meta.traffic_json),
+      buckets: JSON.parse(meta.buckets_json),
+    };
+  }
+
+  callNeighbours(snapshotId: string, nodeId: string): {
+    callers: Array<Record<string, unknown>>;
+    callees: Array<Record<string, unknown>>;
+  } {
+    const callers = this.db
+      .prepare(
+        `SELECT n.id, n.symbol, n.path, n.line, e.kind, e.inferred, e.rule, e.sites FROM call_edges e
+         JOIN call_nodes n ON n.snapshot_id = e.snapshot_id AND n.id = e.from_node
+         WHERE e.snapshot_id = ? AND e.to_node = ? ORDER BY n.symbol LIMIT 60`,
+      )
+      .all(snapshotId, nodeId) as Array<Record<string, unknown>>;
+    const callees = this.db
+      .prepare(
+        `SELECT n.id, n.symbol, n.path, n.line, e.kind, e.inferred, e.rule, e.sites FROM call_edges e
+         JOIN call_nodes n ON n.snapshot_id = e.snapshot_id AND n.id = e.to_node
+         WHERE e.snapshot_id = ? AND e.from_node = ? ORDER BY n.symbol LIMIT 60`,
+      )
+      .all(snapshotId, nodeId) as Array<Record<string, unknown>>;
+    return { callers, callees };
   }
 
   counts(snapshotId: string): { symbols: number; callSites: number; modules: number } {

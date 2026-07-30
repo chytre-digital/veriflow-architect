@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { layoutFlow, renderFlowSvg } from "@veriflow/diagram";
+import { layoutCallMap, layoutFlow, renderCallMapSvg, renderFlowSvg } from "@veriflow/diagram";
 import { FlowAnswerSchema, type FlowAnswer } from "@veriflow/flow-answer";
 import { createApp } from "@veriflow/server";
 import { Store } from "@veriflow/store";
@@ -357,5 +357,73 @@ describe("architecture and modules screens", () => {
     expect(html).toContain("inferred");
     expect(html).toContain("src/modules/stripe-gateway/stripe.ts");
     expect(html).toContain("hold is released");
+  });
+});
+
+describe("call map layout", () => {
+  const graph = {
+    modules: [
+      { id: "m-app", label: "App", paths: ["src/app"], source: "app-route-tree" as const, fileCount: 1, symbolCount: 2, communityIds: [] },
+      { id: "m-pay", label: "Payments", paths: ["src/modules/payments"], source: "explicit-module-root" as const, fileCount: 2, symbolCount: 3, communityIds: [] },
+    ],
+    nodes: [
+      { id: "src/app/route.ts::POST", symbol: "POST", path: "src/app/route.ts", line: 1, moduleId: "m-app", kind: "entry" as const },
+      { id: "src/app/route.ts::helper", symbol: "helper", path: "src/app/route.ts", line: 9, moduleId: "m-app", kind: "function" as const },
+      { id: "src/modules/payments/a.ts::pay", symbol: "pay", path: "src/modules/payments/a.ts", line: 3, moduleId: "m-pay", kind: "function" as const },
+      { id: "src/modules/payments/b.ts::refund", symbol: "refund", path: "src/modules/payments/b.ts", line: 4, moduleId: "m-pay", kind: "function" as const },
+    ],
+  };
+
+  const layout = layoutCallMap(graph);
+
+  it("gives every function a dot", () => {
+    expect(layout.dots).toHaveLength(4);
+    expect(new Set(layout.dots.map((d) => d.id)).size).toBe(4);
+  });
+
+  it("nests every dot inside its file box, and every file box inside its module box", () => {
+    for (const node of graph.nodes) {
+      const dot = layout.dots.find((d) => d.id === node.id)!;
+      const file = layout.files.find((f) => f.id === node.path)!;
+      const mod = layout.modules.find((m) => m.id === node.moduleId)!;
+
+      expect(dot.x).toBeGreaterThanOrEqual(file.x);
+      expect(dot.x).toBeLessThanOrEqual(file.x + file.width);
+      expect(dot.y).toBeGreaterThanOrEqual(file.y);
+      expect(dot.y).toBeLessThanOrEqual(file.y + file.height);
+
+      expect(file.x).toBeGreaterThanOrEqual(mod.x);
+      expect(file.x + file.width).toBeLessThanOrEqual(mod.x + mod.width + 1);
+      expect(file.y).toBeGreaterThanOrEqual(mod.y);
+    }
+  });
+
+  it("keeps module boxes from overlapping", () => {
+    for (let i = 0; i < layout.modules.length; i += 1) {
+      for (let j = i + 1; j < layout.modules.length; j += 1) {
+        const a = layout.modules[i]!;
+        const b = layout.modules[j]!;
+        const apart =
+          a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+        expect(apart).toBe(true);
+      }
+    }
+  });
+
+  it("is deterministic — two layouts of one graph are byte-identical", () => {
+    expect(JSON.stringify(layoutCallMap(graph))).toBe(JSON.stringify(layoutCallMap(graph)));
+  });
+
+  it("fits everything inside the canvas", () => {
+    for (const box of [...layout.modules, ...layout.files]) {
+      expect(box.x + box.width).toBeLessThanOrEqual(layout.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(layout.height);
+    }
+  });
+
+  it("dims out-of-scope dots instead of removing them, so the map never reflows", () => {
+    const svg = renderCallMapSvg(layout, { inScope: new Set(["src/app/route.ts::POST"]) });
+    expect((svg.match(/is-dim/g) ?? []).length).toBe(3);
+    expect((svg.match(/<circle/g) ?? []).length).toBe(4);
   });
 });

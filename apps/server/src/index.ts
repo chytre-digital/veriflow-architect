@@ -10,6 +10,7 @@ import {
   architecturePage,
   flowPage,
   modulesPage,
+  callGraphPage,
   pathsPage,
   page,
   type AnswerRow,
@@ -63,6 +64,30 @@ export function createApp(root: string): Hono {
         path: String(r["path"]),
       })) as EntryPointRow[];
       return c.html(architecturePage(projectName, modules, entryPoints, store.listAnswers().length));
+    }),
+  );
+
+  app.get("/callgraph", (c) =>
+    withStore((store) => {
+      const snapshot = store.latestSnapshotAny();
+      const graph = snapshot ? store.readCallGraph(snapshot.id) : undefined;
+      if (!snapshot || !graph) {
+        return c.html(page("Call graph", "<main><p>No call graph yet. Run <code>veriflow index</code>.</p></main>"), 404);
+      }
+      const selected = c.req.query("fn");
+      const neighbours = selected ? store.callNeighbours(snapshot.id, selected) : { callers: [], callees: [] };
+      return c.html(
+        callGraphPage({
+          project: projectName,
+          nodes: graph.nodes as never,
+          layout: graph.layout as never,
+          traffic: graph.traffic as never,
+          buckets: graph.buckets as never,
+          selected,
+          callers: neighbours.callers,
+          callees: neighbours.callees,
+        }),
+      );
     }),
   );
 

@@ -104,6 +104,9 @@ importers:
 
   packages/diagram:
     dependencies:
+      '@veriflow/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../flow-answer

@@ -1,4 +1,5 @@
-import { layoutFlow, renderFlowSvg } from "@veriflow/diagram";
+import { layoutFlow, renderCallMapSvg, renderFlowSvg, renderTrafficTable } from "@veriflow/diagram";
+import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
 
 export interface CitationRow {
@@ -84,6 +85,19 @@ svg.flow { display:block; min-width:100%; }
 .step.is-unverified .step-label { fill:var(--warn); }
 .step.is-bare .arrow { stroke-dasharray:1 4; opacity:.65; }
 .legend { color:var(--dim); font-size:12px; margin:10px 0 0; }
+svg.callmap { display:block; }
+.cm-module { fill:color-mix(in srgb, var(--fg) 3%, transparent); stroke:var(--line); }
+.cm-module-label { font-size:11px; fill:var(--dim); font-family:ui-monospace,monospace; }
+.cm-file { fill:var(--card); stroke:var(--line); }
+.cm-file-label { font-size:7px; fill:var(--dim); font-family:ui-monospace,monospace; }
+.cm-dot { fill:var(--accent); }
+.cm-dot.is-dim { fill:var(--dim); opacity:.25; }
+.cm-dot.is-on { fill:var(--warn); r:5; }
+.cm-dot:hover { fill:var(--warn); }
+table.traffic { border-collapse:collapse; width:100%; max-width:900px; font-size:13px; }
+table.traffic th { text-align:left; color:var(--dim); font-weight:500; border-bottom:1px solid var(--line); padding:5px 8px; }
+table.traffic td { border-bottom:1px solid var(--line); padding:5px 8px; }
+table.traffic tr.backward td { background:color-mix(in srgb, var(--bad) 8%, transparent); }
 `;
 
 export function page(title: string, body: string): string {
@@ -361,4 +375,99 @@ function navFull(id: string, on: "flow" | "paths" | "modules"): string {
     <a href="/answers/${id}/paths" class="${on === "paths" ? "on" : ""}">Paths</a>
     <a href="/answers/${id}/modules" class="${on === "modules" ? "on" : ""}">Modules</a>
   </nav>`;
+}
+
+export interface CallGraphPageInput {
+  project: string;
+  nodes: Array<{ id: string; symbol: string; path: string; line: number; module_id: string; kind: string }>;
+  layout: Parameters<typeof renderCallMapSvg>[0];
+  traffic: TrafficCell[];
+  buckets: {
+    total: number;
+    resolved: number;
+    database: number;
+    stdlib: number;
+    unresolved: number;
+    packages: Array<{ name: string; sites: number }>;
+    externalSdk: Array<{ name: string; sites: number }>;
+    exact: boolean;
+    degradedReason?: string;
+  };
+  selected?: string;
+  callers: Array<Record<string, unknown>>;
+  callees: Array<Record<string, unknown>>;
+}
+
+export function callGraphPage(input: CallGraphPageInput): string {
+  const { buckets } = input;
+  const labels = new Map(input.nodes.map((n) => [n.id, `${n.symbol} — ${n.path}:${n.line}`]));
+  const svg = renderCallMapSvg(input.layout, {
+    selected: input.selected,
+    labelOf: (id) => labels.get(id) ?? id,
+  });
+
+  const sum =
+    buckets.resolved +
+    buckets.database +
+    buckets.stdlib +
+    buckets.unresolved +
+    buckets.packages.reduce((a, b) => a + b.sites, 0) +
+    buckets.externalSdk.reduce((a, b) => a + b.sites, 0);
+
+  const selectedNode = input.nodes.find((n) => n.id === input.selected);
+  const side = selectedNode
+    ? `<h3>${esc(selectedNode.symbol)}</h3>
+       <div class="ev">${esc(selectedNode.path)}:${selectedNode.line}</div>
+       <h3 style="margin-top:12px">Called by (${input.callers.length})</h3>
+       ${hierarchy(input.callers)}
+       <h3 style="margin-top:12px">Calls (${input.callees.length})</h3>
+       ${hierarchy(input.callees)}`
+    : `<h3>Call hierarchy</h3><p class="meta">Click a dot to see who calls it and what it calls.
+       Each dot is a function, inside its file, inside its module.</p>`;
+
+  return page(
+    `${input.project} — call graph`,
+    `<header><h1>${esc(input.project)} — call graph</h1>
+       <div class="meta">${input.nodes.length} functions actually reached from the entry points ·
+       ${input.traffic.length} module traffic cells ·
+       ${input.traffic.filter((t) => t.backward).length} running back up a layer</div>
+     </header>
+     <nav><a href="/">Answers</a><a href="/architecture">Architecture</a><a href="/callgraph" class="on">Call graph</a></nav>
+     <main>
+       <div class="split">
+         <div class="scroll">${svg}</div>
+         <aside>${side}</aside>
+       </div>
+
+       <h2 style="font-size:16px;margin:26px 0 8px">Where the calls go — ${buckets.total} sites</h2>
+       <p class="meta">${
+         buckets.exact
+           ? "Every site lands in exactly one bucket and the buckets add up."
+           : `⚠ not exact: ${esc(buckets.degradedReason ?? "")}`
+       } ${sum === buckets.total ? `<span class="pill good">${sum} = ${buckets.total}</span>` : `<span class="pill bad">${sum} ≠ ${buckets.total}</span>`}</p>
+       <table class="traffic"><tbody>
+         <tr><td>resolved to a definition</td><td style="text-align:right">${buckets.resolved}</td></tr>
+         <tr><td>database verbs</td><td style="text-align:right">${buckets.database}</td></tr>
+         <tr><td>stdlib and local</td><td style="text-align:right">${buckets.stdlib}</td></tr>
+         <tr><td>packages</td><td style="text-align:right">${buckets.packages.reduce((a, b) => a + b.sites, 0)}</td></tr>
+         <tr><td>external SDK</td><td style="text-align:right">${buckets.externalSdk.reduce((a, b) => a + b.sites, 0)}</td></tr>
+         <tr><td>unresolved — counted, never guessed into a bucket</td><td style="text-align:right">${buckets.unresolved}</td></tr>
+       </tbody></table>
+
+       <h2 style="font-size:16px;margin:26px 0 8px">Module traffic</h2>
+       ${renderTrafficTable(input.traffic)}
+     </main>`,
+  );
+}
+
+function hierarchy(rows: Array<Record<string, unknown>>): string {
+  if (rows.length === 0) return `<p class="meta">none</p>`;
+  return rows
+    .slice(0, 24)
+    .map(
+      (r) => `<div class="ev"><a href="?fn=${encodeURIComponent(String(r["id"]))}">${esc(String(r["symbol"]))}</a>
+      ${r["inferred"] ? `<span class="pill warn">inferred${r["rule"] ? `: ${esc(String(r["rule"]))}` : ""}</span>` : ""}
+      <div class="why">${esc(String(r["path"]))}:${String(r["line"])} · ${String(r["sites"])} site(s)</div></div>`,
+    )
+    .join("");
 }

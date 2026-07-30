@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
+import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
 import { AgentSession, ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
 import { serveRun } from "@veriflow/mcp-server";
@@ -238,6 +239,27 @@ program
     const entryPoints = detectEntryPoints(symbols);
     ctx.store.insertEntryPoints(snapshot.id, entryPoints);
 
+    // Computed once here and stored with coordinates, so opening the browser recomputes nothing and
+    // the picture is identical on every render.
+    const graphProbe = provider.probe({ path: ctx.root });
+    const graph = buildCallGraph(symbols, callSites, {
+      snapshotId: snapshot.id,
+      entryPoints,
+      callSiteLinesExact: graphProbe.callSiteLines,
+      degradedReason: graphProbe.callSiteLines ? undefined : graphProbe.reason,
+      inference: { port: true, callback: true, source: sourceReader(ctx.root) },
+    });
+    const map = layoutCallMap(graph);
+    ctx.store.saveCallGraph(
+      snapshot.id,
+      graph.nodes,
+      graph.edges,
+      map,
+      graph.traffic,
+      graph.buckets,
+      new Map(map.dots.map((d) => [d.id, { x: d.x, y: d.y }])),
+    );
+
     log(``);
     log(`Indexed ${basename(ctx.root)} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     log(`  provider     ${provider.id} ${health.version} (${incremental ? "incremental" : "full build"})`);
@@ -245,6 +267,7 @@ program
     log(`  ingested     ${symbols.length} symbols · ${callSites.length} call sites`);
     log(`  modules      ${modules.length} derived from paths`);
     log(`  entry points ${entryPoints.length} detected`);
+    log(`  call graph   ${graph.nodes.length} reachable nodes · ${graph.edges.length} edges · ${graph.traffic.filter((t) => t.backward).length} backward`);
     log(`  tree state   ${snapshot.fileCount} files hashed${snapshot.dirty ? " (working tree dirty)" : ""}`);
     if (previous) {
       const changed = diffHashes(ctx.store.readFileHashes(previous.id), captured.hashes);
