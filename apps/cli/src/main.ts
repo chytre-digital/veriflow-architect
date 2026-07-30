@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
 import { createProvider } from "@veriflow/providers";
+import { AgentSession, ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
 import { captureSnapshot, diffHashes, readGitFacts } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { InitError, ProjectLock, initWorkspace, readConfig } from "@veriflow/workspace";
@@ -383,6 +384,108 @@ program
     log(`\n  module traffic — ${graph.traffic.length} cells, ${backward.length} backward`);
     for (const cell of graph.traffic.slice(0, 12)) {
       log(`    ${cell.from} → ${cell.to}  ${cell.calls} calls${cell.backward ? "   ← backward" : ""}`);
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ ask */
+
+program
+  .command("ask")
+  .argument("<question>")
+  .argument("[path]")
+  .option("--client <id>", "agent client", "claude-code")
+  .option("--timeout <ms>", "run timeout in milliseconds", "600000")
+  .description("run your agent over the indexed project, streaming as it works")
+  .action(async (question: string, pathArg: string | undefined, options: { client: string; timeout: string }) => {
+    const ctx = open(pathArg);
+    const client = options.client === "codex" ? new CodexAdapter() : new ClaudeCodeAdapter();
+
+    const capabilities = await client.probe();
+    if (!capabilities) {
+      ctx.close();
+      fail(`agent client "${options.client}" is not available on this machine`);
+    }
+
+    const snapshot = ctx.store.latestSnapshot(ctx.projectId);
+    if (!snapshot) {
+      ctx.close();
+      fail("no snapshot yet — run: veriflow index");
+    }
+
+    const questionId = randomUUID();
+    ctx.store.createQuestion(questionId, ctx.projectId, question);
+
+    log(`${capabilities.id} ${capabilities.version} · ${capabilities.transport}`);
+    log(`permission mode: ${capabilities.readOnlyMode ?? "client default"}  ·  cwd: ${ctx.root}`);
+    log(`snapshot ${snapshot.id.slice(0, 8)}${snapshot.dirty ? " (dirty tree)" : ""}\n`);
+
+    const session = new AgentSession({
+      client,
+      cwd: ctx.root,
+      prompt: question,
+      questionId,
+      snapshotId: snapshot.id,
+      timeoutMs: Number(options.timeout),
+      sink: {
+        onEvent(event) {
+          const payload = event.payload as Record<string, unknown>;
+          switch (event.channel) {
+            case "assistant":
+              if (typeof payload["text"] === "string") log(payload["text"] as string);
+              break;
+            case "tool-call":
+              log(`  → ${String(payload["name"])}`);
+              break;
+            case "tool-result":
+              break;
+            case "stderr":
+              log(`  ! ${String(payload["text"])}`);
+              break;
+            default:
+              break;
+          }
+        },
+        async onQuestion(pending) {
+          log(`\n? ${pending.question}`);
+          log(`  (no interactive answer channel yet — see F005; the run continues unanswered)`);
+          return "";
+        },
+      },
+      persistence: {
+        startRun: (run) => ctx.store.startRun(run),
+        appendEvents: (runId, events) => ctx.store.appendRunEvents(runId, events),
+        finishRun: (runId, outcome) => ctx.store.finishRun(runId, outcome),
+      },
+    });
+
+    process.once("SIGINT", () => {
+      void session.cancel("interrupted");
+    });
+
+    const result = await session.run();
+    log(`\nRun ${result.runId.slice(0, 8)} — ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
+    log(`  ${result.events.length} events stored; reopen with: veriflow transcript ${result.runId.slice(0, 8)}`);
+    if (result.outcome.status === "completed-without-answer") {
+      log(`  No structured answer was submitted — the submit tool arrives with F005.`);
+    }
+    ctx.close();
+  });
+
+program
+  .command("transcript")
+  .argument("<runId>")
+  .argument("[path]")
+  .description("replay a stored run exactly as it happened")
+  .action((runId: string, pathArg: string | undefined) => {
+    const ctx = open(pathArg);
+    const events = ctx.store.readRunEvents(runId);
+    if (events.length === 0) {
+      ctx.close();
+      fail(`no transcript for run ${runId}`);
+    }
+    for (const event of events) {
+      log(`${String(event.seq).padStart(4)} ${event.channel.padEnd(12)} ${JSON.stringify(event.payload).slice(0, 160)}`);
     }
     ctx.close();
   });

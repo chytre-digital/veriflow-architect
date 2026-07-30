@@ -20,6 +20,7 @@ export default defineConfig({
       "@veriflow/callgraph": p("./packages/callgraph/src/index.ts"),
       "@veriflow/workspace": p("./packages/workspace/src/index.ts"),
       "@veriflow/providers": p("./packages/providers/src/index.ts"),
+      "@veriflow/agent-session": p("./packages/agent-session/src/index.ts"),
     },
   },
 });

@@ -89,6 +89,37 @@ CREATE TABLE IF NOT EXISTS modules (
   PRIMARY KEY (snapshot_id, id)
 );
 
+CREATE TABLE IF NOT EXISTS questions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  text TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY,
+  question_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  client_version TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  status TEXT NOT NULL,
+  exit_code INTEGER,
+  reason TEXT,
+  duration_ms INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS run_events (
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  seq INTEGER NOT NULL,
+  ts TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (run_id, seq)
+);
+
 CREATE TABLE IF NOT EXISTS entry_points (
   snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
   id TEXT NOT NULL,
@@ -281,6 +312,73 @@ export class Store {
           : { id: row["provider_id"] as string, version: (row["provider_version"] as string) ?? "" },
       createdAt: row["created_at"] as string,
     };
+  }
+
+  /* -------------------------------------------------------------- runs (F004) */
+
+  createQuestion(id: string, projectId: string, text: string): void {
+    this.db
+      .prepare("INSERT OR REPLACE INTO questions (id, project_id, text, status, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, projectId, text, "asked", new Date().toISOString());
+  }
+
+  startRun(run: {
+    id: string;
+    questionId: string;
+    snapshotId: string;
+    clientId: string;
+    clientVersion: string;
+    startedAt: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO runs (id, question_id, snapshot_id, client_id, client_version, started_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'running')`,
+      )
+      .run(run.id, run.questionId, run.snapshotId, run.clientId, run.clientVersion, run.startedAt);
+  }
+
+  appendRunEvents(
+    runId: string,
+    events: Array<{ seq: number; ts: string; channel: string; payload: unknown }>,
+  ): void {
+    const stmt = this.db.prepare(
+      "INSERT OR REPLACE INTO run_events (run_id, seq, ts, channel, payload_json) VALUES (?, ?, ?, ?, ?)",
+    );
+    for (const event of events) {
+      stmt.run(runId, event.seq, event.ts, event.channel, JSON.stringify(event.payload ?? null));
+    }
+  }
+
+  finishRun(
+    runId: string,
+    outcome: { status: string; exitCode?: number; reason?: string; durationMs: number },
+  ): void {
+    this.db
+      .prepare("UPDATE runs SET ended_at = ?, status = ?, exit_code = ?, reason = ?, duration_ms = ? WHERE id = ?")
+      .run(
+        new Date().toISOString(),
+        outcome.status,
+        outcome.exitCode ?? null,
+        outcome.reason ?? null,
+        outcome.durationMs,
+        runId,
+      );
+  }
+
+  /** Replay a stored transcript in order, so an old answer can be reopened with how it was produced. */
+  readRunEvents(runId: string): Array<{ seq: number; ts: string; channel: string; payload: unknown }> {
+    return (
+      this.db
+        .prepare("SELECT seq, ts, channel, payload_json FROM run_events WHERE run_id = ? ORDER BY seq")
+        .all(runId) as Array<{ seq: number; ts: string; channel: string; payload_json: string }>
+    ).map((r) => ({ seq: r.seq, ts: r.ts, channel: r.channel, payload: JSON.parse(r.payload_json) }));
+  }
+
+  readRun(runId: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as
+      | Record<string, unknown>
+      | undefined;
   }
 
   counts(snapshotId: string): { symbols: number; callSites: number; modules: number } {

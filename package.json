@@ -17,6 +17,7 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^12.1.0",
     "zod": "^3.24.1"
   }
