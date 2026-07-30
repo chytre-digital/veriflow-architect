@@ -338,9 +338,13 @@ structure.
 
 No fallback is triggered. A first-party TypeScript indexer stays a post-MVP item.
 
-### Q14 — May the adapter read `graph.db` directly for call-site lines and confidence?
+### Q14 — May the adapter read `graph.db` directly for call-site lines and confidence? — **answered 2026-07-30: yes, read-only and version-pinned**
 
-**Status: open, and it blocks F003's call-site bucketing.**
+**Decision.** The adapter reads `graph.db` read-only for edge-level `line`, `confidence` and
+`confidence_tier`, pins the schema version it was written against, verifies it at startup, and degrades to
+edge-level counting with a visible note when the version does not match. It never writes to that file.
+Filing an upstream request to expose these fields through a command stays on the list, because a supported
+surface would let this narrow again.
 
 The `edges` table carries `line`, `confidence` and `confidence_tier`. No supported command returns them.
 

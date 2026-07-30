@@ -1,0 +1,16 @@
+{
+  "name": "@veriflow/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "veriflow": "./src/main.ts" },
+  "dependencies": {
+    "@veriflow/callgraph": "workspace:*",
+    "@veriflow/contracts": "workspace:*",
+    "@veriflow/provider-crg": "workspace:*",
+    "@veriflow/provider-protocol": "workspace:*",
+    "@veriflow/snapshot": "workspace:*",
+    "@veriflow/store": "workspace:*",
+    "commander": "^12.1.0"
+  }
+}
