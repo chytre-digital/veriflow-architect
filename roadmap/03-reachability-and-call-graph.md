@@ -1,17 +1,21 @@
 ---
 id: F003
-title: Reachability and function-level call graph
+title: Reachability, module registry, and function-level call graph
 milestone: M1-answer
 status: ready
 depends_on: [F002]
 ---
 
-# F003 — Reachability and function-level call graph
+# F003 — Reachability, module registry, and function-level call graph
 
 ## Goal
 
-From a set of entry points, VeriFlow computes what a flow **actually reaches** — not what lives in the
-files it opens — and stores it as a deterministic, renderable graph with numbers that reconcile.
+VeriFlow derives the application's architecture from the index — the modules it is made of and the traffic
+between them — and, from a set of entry points, what a flow **actually reaches** rather than what lives in
+the files it opens. All of it deterministic, renderable, and stored.
+
+This is the feature that answers "generate the architecture of this app" before any agent has run. The
+agent later names and refines it; the skeleton is computed.
 
 ## User story
 
@@ -129,6 +133,11 @@ A mismatch is a build failure, not a rounding difference.
 - [ ] Filtering to `POST /api/marketplace/checkout` yields a strict subset of the full closure, and the
       other routes' subtrees are absent from it.
 - [ ] The traffic matrix's backward-edge list is explicit, with counts and a note per edge.
+- [ ] Indexing `main-panel` alone — with no agent run at all — produces a module registry that a developer
+      recognizes as the application's architecture: its layers, its explicit modules, and the traffic
+      between them.
+- [ ] Module ids survive a re-index after unrelated files change, so an answer stored earlier still
+      resolves.
 - [ ] Two runs on the same snapshot produce byte-identical layout coordinates.
 - [ ] A symbol that exists in two snapshots keeps its node identity.
 - [ ] `--json` output is versioned and complete enough to rebuild every view.

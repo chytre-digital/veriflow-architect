@@ -95,6 +95,21 @@ agent adapter; Codex follows as the second adapter and is what proves the abstra
 cost: F006 is the largest single feature and the first real answer arrives later than a CLI-only slice
 would have delivered it.
 
+### D11a — The agent has latitude and a toolset
+
+VeriFlow states the task and the contract of the result; **how** the agent gets there is its own business.
+It is not driven through a fixed script of steps.
+
+When something it needs is missing — an unresolved dispatch, a symbol the index does not carry, a branch
+whose trigger is not in the code — it has tools to resolve it rather than a dead end: full read and search
+over the tree, the provider's graph and impact queries, `ask_user` for what only a person knows, and
+`record_open_question` for what nothing can answer. Recording an open question is a legitimate,
+first-class outcome, not a failure state.
+
+The consequence VeriFlow accepts: two runs on the same question may take different routes and produce
+differently shaped answers. What is held constant is the contract of the result and the evidence attached
+to each claim, not the path taken to it.
+
 ### D11 — The evidence bundle is a brief, not a cage
 
 The agent runs in the working tree with its own read tools, so VeriFlow cannot limit what it reads and
@@ -102,18 +117,30 @@ will not pretend otherwise. VeriFlow supplies a brief — ranked entry points, s
 clusters — and the agent reads further as it needs to. In place of a false promise of control, the run
 transcript records every file the agent opened, so the reading is auditable after the fact.
 
-### D12 — Strict validation, two retries, then demotion
+### D12 — Verification labels, it does not gate
 
-A submission that fails citation verification is rejected with the failing items named, and the agent
-corrects it inside the same run while it still has context. After two failed attempts the offending steps
-are demoted to open questions and the rest of the answer is stored. Nothing is thrown away, and the
-invariant survives in its honest form: **what is marked verified is verified**.
+Citation verification runs on every claim and the result is **stored as state, not enforced as a barrier**:
+`verified`, `unverified`, or `open-question`. The answer is kept either way, and the UI, the export, and
+MCP show each claim's state plus the answer's overall verified ratio.
 
-### D13 — Human corrections are an attributed layer
+Only structural validity is hard: an unknown lane, a branch forking from a nonexistent step, an unsupported
+contract version. Those mean the answer is malformed rather than partly unevidenced, and they are cheap to
+reject.
 
-The submitted answer is immutable. Corrections are stored as separate records with author and timestamp;
-the UI, the export, and MCP show the corrected text marked as edited, with the original reachable. This is
-how an open question gets closed by hand.
+This replaces the earlier reject-and-retry design, for the same reason as
+[D17](#d17--mcp-serves-everything-labelled): in this product a label is a better instrument than a gate.
+A hard verification gate can be added later if labels prove too weak; going the other way would mean
+throwing away work the user already paid for.
+
+### D13 — Human corrections are an attributed layer, and are not MVP-critical
+
+The submitted answer is immutable; corrections are separate records with author and timestamp, and the
+corrected text is what the UI, the export, and MCP serve. The schema carries this from the start because
+retrofitting provenance is expensive.
+
+The **editing surface itself is deferred**: iteration 1 needs no correction UI beyond closing an open
+question. Whether a correction may add a step the agent missed entirely is deliberately unanswered — see
+[Q5](#q5--may-a-correction-add-a-step-or-only-amend-one).
 
 ### D14 — Non-flow questions are classified and redirected
 
@@ -147,6 +174,34 @@ shape are proposed deterministically, then the agent may rename, merge, split, o
 a project-level module registry with provenance, not inside one answer, so a second answer cannot disagree
 about what Payments is. Answers reference module **ids**, never names, so a later rename cannot break an
 earlier answer. Human corrections use the D13 layer.
+
+### D19 — The MVP is deliberately partial, and says where
+
+The point of the MVP is to **generate an application's architecture and make review possible**. Everything
+that only makes those two things more rigorous is allowed to arrive later, as long as the data model does
+not have to change to admit it.
+
+Full in the MVP:
+
+- indexing a repository and deriving the architecture — module registry, reachability, call graph;
+- an agent run that produces a flow answer with evidence attached to its claims;
+- storing all of it locally and reopening it without recomputation;
+- reading it in the UI, and reading it over MCP for design and review.
+
+Deliberately partial, with the shape reserved:
+
+| Area | MVP | Later |
+|---|---|---|
+| citation verification | computed and labelled per claim | a hard gate, if labels prove too weak |
+| corrections | schema and provenance, closing open questions | a full editing surface |
+| freshness | which cited files changed, per-citation drift | ranking, notification, auto re-verification |
+| metrics | the deterministic core over the flow's files | the full CodeScene-grade set |
+| export | one markdown document with mermaid | templates, indexes, round-trip |
+| module registry | deterministic proposal plus agent authoring | expected-vs-actual rules over it |
+
+The rule that keeps this honest: **partial is fine, silently partial is not**. Anything measured
+approximately says so where it is displayed, and anything not measured at all is absent rather than
+estimated.
 
 ## Blocking before F002
 
@@ -194,13 +249,18 @@ rather than assume, and a client upgrade must not silently degrade a run to unpa
 Open: which minimum client versions VeriFlow claims to support, and whether an unsupported version blocks
 the run or falls back with a warning.
 
-### Q5 — What happens when the agent's answer is valid but wrong? — **answered by [D13](#d13--human-corrections-are-an-attributed-layer)**
+### Q5 — May a correction add a step, or only amend one?
 
-Validation guarantees evidence, not truth. Corrections are an attributed layer over an immutable answer.
+Corrections are an attributed layer ([D13](#d13--human-corrections-are-an-attributed-layer-and-are-not-mvp-critical)),
+but their reach is deliberately unanswered, because the MVP does not need the editing surface at all.
 
-Still open, and cheap to defer: whether a correction should be able to *add* a step or branch the agent
-missed entirely, or only amend what is there. Adding raises the question of what verifies the new
-citation — the same verifier, presumably, which makes this smaller than it looks.
+**Working default when it is built:** amending is enough. If adding is wanted later, the added claim goes
+through the same verifier as an agent claim and is attributed to its human author — which makes this a
+smaller question than it looks.
+
+**Why it can wait:** in the MVP an agent that lacks evidence has tools to go and find it, and records an
+open question when it genuinely cannot. The hole a manual "add step" would fill should be rare, and if it
+turns out not to be, that is information about the agent's toolset rather than about the editor.
 
 ### Q6 — Does an approved answer also get a machine-readable file in the repository?
 

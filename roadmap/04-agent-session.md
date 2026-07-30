@@ -35,6 +35,7 @@ wrong way — instead of staring at a spinner and hoping.
 - MCP server exposed **to the agent** for the duration of the run:
   - evidence reads scoped to the run's snapshot;
   - `ask_user(question, options?)` — blocks the agent, surfaces the question, returns the answer;
+  - `record_open_question(question, attempted)` — what nothing in the repository can answer;
   - `submit_flow_answer(answer)` — the submission tool F005 validates;
 - registration of the provider's MCP server for the run, **read tools only** — `refactor_tool` and
   `apply_refactor_tool` are filtered out — so the agent has real code intelligence and no write path;
@@ -54,6 +55,25 @@ wrong way — instead of staring at a spinner and hoping.
 - logging into a vendor CLI on the user's behalf;
 - a general chat surface — this is a task run with a defined output;
 - any agent tool that writes canonical state, edits source, runs a command, or touches Git.
+
+## Latitude and toolset
+
+VeriFlow states the task and the contract of the result. **How** the agent gets there is its own business:
+it is given a brief and a toolset, not a script of steps to execute in order.
+
+What it has when something is missing:
+
+| Situation | What it can do |
+|---|---|
+| a dispatch the index cannot resolve | read the adapter and the interface directly, and mark the edge inferred with its reason |
+| a symbol the provider does not carry | full read and search over the working tree |
+| blast radius, callers, clusters | the provider's own graph and impact tools |
+| a trigger that is not in the code at all | `ask_user`, and the run waits |
+| something nothing can answer | `record_open_question`, which is a legitimate outcome and not a failure |
+
+Two runs on the same question may take different routes and return differently shaped answers. What is held
+constant is the contract of the result and the evidence attached to each claim — never the path taken. A run
+is judged by what it returns, not by whether it followed an expected sequence of tool calls.
 
 ## Cost and authentication model
 

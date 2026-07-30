@@ -156,26 +156,33 @@ Expected outcome:
    TypeScript flow quality is weak;
 3. the project is indexed, the tree state is recorded by file hash with `dirty: true`, and a second
    `index` after editing two files takes the incremental path and reports two changed files;
-4. the agent session streams visibly, and a question from the agent blocks the run until answered;
-5. a flow answer is stored covering checkout, the Stripe redirect, the signed webhook return,
+4. **before any agent runs**, the generated architecture of `main-panel` is visible: its layers, its
+   explicit Billing/Payments/Stripe-gateway modules, and the traffic between them;
+5. the agent session streams visibly, and a question from the agent blocks the run until answered;
+6. a flow answer is stored covering checkout, the Stripe redirect, the signed webhook return,
    fulfilment, and the effects that follow;
-6. every alternative outcome states the invariant it protects — closed payment page, expired hold,
+7. every alternative outcome states the invariant it protects — closed payment page, expired hold,
    duplicate webhook, disappeared seat, failed capture;
-7. the money loop is present: value leaves through the gateway port and returns as a signed webhook;
-8. `port` and `callback` edges are labelled inferred with the rule that produced them;
-9. every citation resolves in the indexed commit, or the claim is an open question;
-10. the call graph shows the functions reachable from those entry points, and filtering to
+8. the money loop is present: value leaves through the gateway port and returns as a signed webhook;
+9. `port` and `callback` edges are labelled inferred with the rule that produced them;
+10. every claim carries a citation state — verified, unverified, or an open question — and the answer
+    reports how much of it verified;
+11. the call graph shows the functions reachable from those entry points, and filtering to
     `POST /api/marketplace/checkout` narrows the map to that route's closure without reflowing;
-11. metrics cover the files the flow touches, with the coverage proxy labelled and at least the known
-    contradiction surfaced rather than averaged away;
-12. restarting VeriFlow and reopening the answer recomputes nothing;
-13. after editing one of the flow's files, the answer reports that cited file as changed and shows
-    per-citation drift, while an edit elsewhere in the repository changes nothing;
-14. export writes one new markdown document under `docs/architecture/flows/` with a generated mermaid
+12. restarting VeriFlow and reopening the answer recomputes nothing.
+
+Items 1–12 are iteration 1. Then:
+
+13. `veriflow mcp` lets an agent read the architecture, list answers, and answer a design question and a
+    review question about this flow from tools alone — each response stamped with snapshot, freshness,
+    and review state *(iteration 2)*;
+14. after editing one of the flow's files, the answer reports that cited file as changed and shows
+    per-citation drift, while an edit elsewhere in the repository changes nothing *(iteration 2)*;
+15. metrics cover the files the flow touches, with the coverage proxy labelled and at least the known
+    contradiction surfaced rather than averaged away *(iteration 3)*;
+16. export writes one new markdown document under `docs/architecture/flows/` with a generated mermaid
     diagram, `status: draft`, an owner placeholder, and `last-reviewed`, matching the target's
-    frontmatter conventions — and runs no Git command;
-15. `veriflow mcp` lets an agent list answers, read the flow and its paths, and report which failure
-    paths have no test, each response stamped with snapshot and freshness.
+    frontmatter conventions — and runs no Git command *(iteration 3)*.
 
 ## What mockup parity means
 
@@ -193,8 +200,9 @@ files the flow touches. The reachable-function figure is the one that depends on
 the Q2 spike shows weaker TypeScript resolution, this threshold is renegotiated openly against measured
 capability rather than quietly missed.
 
-**Integrity.** 100% of citations in a stored answer resolve in the snapshot they name. Anything else
-means the answer was rejected. Call-site buckets reconcile exactly to the total.
+**Integrity.** Every claim carries a citation state, the answer reports its verified ratio, and no claim is
+unlabelled. The MVP does not require the ratio to be 100% — it requires the number to be true and visible.
+Call-site buckets reconcile exactly to the total when the provider supports call-site lines.
 
 **Invariants.** Deterministically checkable facts about this flow, independent of wording:
 

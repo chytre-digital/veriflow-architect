@@ -1,7 +1,7 @@
 ---
 id: F007
 title: Freshness, drift, and re-verification
-milestone: M2-trust
+milestone: M2-review
 status: ready
 depends_on: [F005, F006]
 ---

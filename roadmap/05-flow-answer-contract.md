@@ -138,15 +138,27 @@ interface OpenQuestion {
 }
 ```
 
-## Validation rules
+## Validation: labels, not a gate
 
-An answer is rejected when any of these holds. Each produces a stable diagnostic code:
+Verification runs on every claim and its result is **stored as state**, not enforced as a barrier. Each
+citation ends as `verified`, `unverified`, or attached to an `open-question`, and the answer carries its
+overall verified ratio. Nothing is discarded for being partly unevidenced, and the UI, the export, and MCP
+all show the state per claim.
+
+The reason is the same one behind [D17](open-questions.md#d17--mcp-serves-everything-labelled): in this
+product a label is a better instrument than a gate. A hard gate can be added later if labels prove too
+weak; the reverse would mean throwing away work the user already paid for.
+
+An agent that lacks evidence is not stuck — it has read, search, provider and `ask_user` tools, and
+`record_open_question` for what nothing can answer. An open question is a legitimate outcome.
+
+### Structural rejection
+
+Structural faults are still rejected outright, because they mean the answer is malformed rather than partly
+unevidenced, and because they are cheap to catch. Each produces a stable diagnostic code:
 
 | Code | Rule |
 |---|---|
-| `citation.unresolved` | A cited `path:line` does not exist in the snapshot. |
-| `citation.symbol_mismatch` | A cited symbol is not present at or around the cited line. |
-| `step.no_evidence` | A step has no citation and no corresponding open question. |
 | `step.unknown_lane` | A step references a lane that is not declared. |
 | `step.unknown_phase` | A step references a phase that is not declared. |
 | `branch.unknown_fork` | A branch forks from a step that does not exist. |
@@ -158,21 +170,23 @@ An answer is rejected when any of these holds. Each produces a stable diagnostic
 | `answer.over_budget` | The answer exceeds the declared size budget. |
 | `answer.contract_version` | Unsupported contract version. |
 
-Citation verification reads the snapshot's files — never the user's working tree — and stores a hash of
-the cited line, which F007 uses to distinguish a moved line from a deleted one.
+### Citation states
 
-Rejection is returned to the agent inside the run, with the failing items named, so it can correct and
-resubmit while it still has context — which is the cheapest moment to fix anything.
+These are recorded, never a reason to discard the answer:
 
-**After two failed attempts the offending items are demoted rather than the whole answer discarded.** The
-failing steps become open questions, everything that verified is stored, and the answer records how it got
-there. Nothing is thrown away, and the invariant survives in its honest form: *what is marked verified is
-verified*. A run that submits nothing at all ends as `completed-without-answer` and stores its transcript
-anyway.
+| State | Meaning |
+|---|---|
+| `verified` | The cited `path:line` exists and the cited symbol is at or around that line. |
+| `unverified` | The citation does not resolve. The claim is kept and displayed as unverified. |
+| `open-question` | The agent could not evidence the claim and said so, with what it examined. |
 
-Structural failures — an unknown lane, a branch forking from a nonexistent step, an unsupported contract
-version — are never demoted. They mean the answer is malformed rather than partly unevidenced, and the
-retry budget does not apply to them.
+Verification reads the files as they are at submit time and stores a hash of each cited line, which is what
+lets F007 later tell a moved line from a deleted one. The answer carries its verified ratio, so "57 of 60
+claims verified" is a number on the answer rather than a hidden difference in quality.
+
+A structural rejection is returned to the agent inside the run with the failing items named, so it can fix
+and resubmit while it still has context. A run that submits nothing at all ends as
+`completed-without-answer` and stores its transcript anyway.
 
 ## Module registry
 
@@ -215,12 +229,15 @@ an obvious wording error is fixed without spending another run.
       content.
 - [ ] A valid answer stores lanes, phases, steps in order, branches with invariants, module edges with
       contracts, external systems with boundaries, and open questions.
-- [ ] Every citation in a stored answer resolves in its snapshot — asserted for 100% of citations.
-- [ ] Each rejection rule triggers on a crafted fixture and produces its stable diagnostic code.
+- [ ] Every citation is verified at submit time and stored with its state; the answer carries its verified
+      ratio and no claim is silently unlabelled.
+- [ ] An unresolvable citation is stored as `unverified` and displayed as such, rather than discarding the
+      answer.
+- [ ] Each structural rejection rule triggers on a crafted fixture and produces its stable diagnostic code.
 - [ ] A rejected submission is reported back inside the run and a corrected resubmission succeeds.
-- [ ] After two failed attempts the failing steps are demoted to open questions and the rest is stored,
-      with the demotion recorded on the answer.
-- [ ] A structurally malformed submission is rejected outright and never demoted.
+- [ ] A structurally malformed submission is rejected outright, and only for structural reasons.
+- [ ] An agent that cannot evidence a claim reaches `record_open_question`, and that outcome is treated as
+      success rather than failure by the run and by the UI.
 - [ ] A location question is classified before any run starts, redirected with a reason, and the
       classification can be overridden in one click.
 - [ ] A clearly leading entry point starts the run without asking; an ambiguous ranking asks; the margin is
@@ -241,10 +258,10 @@ an obvious wording error is fixed without spending another run.
 1. entry-point ranking on fixtures, including an ambiguous case that requires confirmation;
 2. bundle manifest determinism and exclusion of secret paths;
 3. valid answer round trip: submit, validate, persist, read back;
-4. one fixture per rejection rule, thirteen in total;
+4. one fixture per structural rejection rule;
 5. citation resolution against a snapshot, including a line at end of file and a symbol on a moved line;
-6. resubmission after rejection within one run, and demotion after the second failure;
-7. structural failure is never demoted;
+6. citation state fixtures: verified, unverified, and open-question, plus the verified ratio;
+7. resubmission after a structural rejection within one run;
 8. classifier fixtures: flow question, location question, ambiguous question, and an override;
 9. entry-point auto-start above the margin, ask below it;
 10. follow-up parent link and brief contents;

@@ -352,16 +352,17 @@ interface Citation {
 }
 ```
 
-Validation is a technical boundary, not prompt wording. A submitted answer is rejected when:
+Verification labels; it does not gate. Every citation is checked at submit time and stored as `verified`,
+`unverified`, or attached to an open question, and the answer carries its verified ratio. A partly
+unevidenced answer is kept and shown for what it is, because throwing away a run the user paid for is worse
+than displaying an honest gap.
 
-- any citation does not resolve in the snapshot it claims;
-- a branch forks from a step that does not exist, or states no invariant;
-- a step references a lane that is not declared;
-- a step has no citation and is not recorded as an open question;
-- the generated mermaid would reference a participant that is not declared;
-- the answer exceeds the declared size budget.
+Structural faults are still rejected outright, because they mean the answer is malformed rather than partly
+unevidenced, and they are cheap to catch: a branch forking from a step that does not exist or stating no
+invariant, a step referencing an undeclared lane, mermaid that would use an undeclared participant, an
+answer over its size budget, an unsupported contract version.
 
-A step VeriFlow cannot evidence is reported as an open question. It is never narrated.
+A claim VeriFlow cannot evidence is an open question. It is never narrated as fact.
 
 ## Agent session
 
@@ -388,6 +389,12 @@ Requirements that shape the implementation:
   evidence, and clusters as a starting brief; the agent reads further as it needs to. What replaces the
   false promise of control is a record: the transcript captures every file the agent opened, so the reading
   is auditable afterwards.
+- **The agent has latitude and a toolset.** VeriFlow states the task and the contract of the result; how the
+  agent gets there is its own business. When something is missing — an unresolved dispatch, a symbol the
+  index does not carry, a trigger that is not in the code at all — it has read and search over the tree, the
+  provider's graph and impact queries, `ask_user` for what only a person knows, and `record_open_question`
+  for what nothing can answer. An open question is a legitimate outcome, not a failure. Two runs may take
+  different routes; what is held constant is the contract of the result and the evidence on each claim.
 - **The stream is visible.** Everything the agent emits — assistant text, tool calls, tool results,
   errors, exit status — is surfaced live in the UI and in the CLI, and is persisted so an old answer
   can be reopened together with the transcript that produced it. A run is never a spinner.

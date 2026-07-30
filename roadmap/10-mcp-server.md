@@ -1,9 +1,9 @@
 ---
 id: F010
 title: VeriFlow MCP server for design and review
-milestone: M3-agent-surface
+milestone: M2-review
 status: ready
-depends_on: [F005, F007, F008]
+depends_on: [F005, F006]
 ---
 
 # F010 — VeriFlow MCP server for design and review
@@ -35,14 +35,17 @@ the paths nothing tests.
   get_flow_modules(answerId)
   get_external_systems(answerId)
   get_open_questions(answerId)
+  get_architecture()                  -- the project's module registry and the traffic between modules
   get_call_graph(snapshotId, entryPoint?)
   get_callers(symbol) / get_callees(symbol)
   get_reachability(symbol)
-  get_metrics(answerId, view?)
-  get_coverage_gaps(answerId)
   get_freshness(answerId)
   search_answers(query)
   ```
+
+  `get_metrics(answerId, view?)` and `get_coverage_gaps(answerId)` arrive with F008 in iteration 3. They
+  are absent from the tool list until then rather than present and empty, so an agent never plans around a
+  capability that is not there;
 
 - resources for whole-answer reads, so a client can attach one document instead of ten tool calls;
 - every response carries its snapshot, freshness state, and **review state** — including unreviewed drafts,
@@ -105,7 +108,10 @@ payload is the mitigation.
 - [ ] An answer carrying human corrections reports the correction count, and the corrected text is what is
       served.
 - [ ] `get_flow_paths` returns each alternative outcome with the invariant it protects.
-- [ ] `get_coverage_gaps` returns the outcomes with no test naming their identifier, labelled as a proxy.
+- [ ] `get_architecture` returns the module registry with stable ids and the traffic between modules, so an
+      agent can orient before reading any flow.
+- [ ] Metrics tools are absent from the tool list until F008 ships, rather than present and returning
+      nothing.
 - [ ] `get_call_graph` with an entry point returns that route's closure; inferred edges are labelled in the
       payload.
 - [ ] `get_callers` on an ambiguous symbol returns candidates rather than picking one.
@@ -114,8 +120,9 @@ payload is the mitigation.
 - [ ] The server starts with the provider uninstalled and serves stored answers.
 - [ ] A design question — *"what must I respect before changing `fulfillLessonCheckout`?"* — is answerable
       from tools alone, and the answer names the invariants and the module contract.
-- [ ] A review question — *"which failure paths does this change touch, and which of them are untested?"* —
-      is answerable from tools alone.
+- [ ] A review question — *"which flows and failure paths does this change touch, and what invariants do
+      they protect?"* — is answerable from tools alone. The "and which of them are untested" half of that
+      question becomes answerable when F008 adds the coverage tools.
 - [ ] Both questions are demonstrated with Claude Code and with Codex.
 - [ ] The fake MCP client exercises every tool in CI, with no model and no network.
 
@@ -140,7 +147,7 @@ payload is the mitigation.
 |---|---|---|
 | 1 | Register `veriflow mcp` with Claude Code against `main-panel`. | Tools appear; listing answers works. |
 | 2 | Ask the agent what it must respect before changing a fulfilment function. | It cites the invariants, the module contract, and the flows that reach it — from tools, without grepping. |
-| 3 | Ask which failure paths a proposed change touches. | It names the paths and flags the untested ones as a proxy result. |
+| 3 | Ask which failure paths a proposed change touches. | It names the paths and the invariants they protect, from stored data rather than by re-reading the repository. |
 | 4 | Commit a change that moves cited code, then ask again. | Responses report drift, and the agent can re-verify rather than assert stale facts. |
 | 5 | Repeat steps 2 and 3 with Codex. | Same data, same labels. |
 | 6 | Attempt to make the agent write through VeriFlow's tools. | No such tool exists. |

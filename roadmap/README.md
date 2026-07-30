@@ -10,35 +10,46 @@ verification contract.
 
 The implementation lives in this repository: `apps/` and `packages/` alongside `docs/`, `roadmap/`, and the
 frozen mockup. Git is required — the provider refuses non-repository directories, so there is no Git-less
-path to maintain. The settled decisions behind the specs are recorded as D1–D18 in
+path to maintain. The settled decisions behind the specs are recorded as D1–D19 in
 [open-questions.md](open-questions.md).
+
+**The MVP is deliberately partial.** Its job is to generate an architecture and support review; anything
+that only makes those more rigorous is allowed to arrive later, provided the data model does not have to
+change to admit it. What is full, what is partial, and what is merely reserved is listed in
+[D19](open-questions.md#d19--the-mvp-is-deliberately-partial-and-says-where). The rule that keeps it
+honest: *partial is fine, silently partial is not.*
 
 ## Implementation order
 
 ```text
-Iteration 1 — an answered question
+Iteration 1 — generate the architecture
   F001 workspace, local database, snapshot state
     ↓
   F002 code intelligence provider + code-review-graph adapter
     ↓
-  F003 reachability and function call graph
+  F003 reachability, module registry, function call graph
     ↓
-  F004 streamed agent session
+  F004 streamed agent session with latitude and a toolset
     ↓
-  F005 flow answer contract and citation verification
+  F005 flow answer contract and citation states
     ↓
-  F006 local UI over stored answers
+  F006 local UI: architecture, flows, call graph
 
-Iteration 2 — trust it, commit it
+Iteration 2 — review against it
+  F010 VeriFlow MCP server — design and review over stored results
   F007 freshness, drift, re-verification
+
+Iteration 3 — depth
   F008 flow metrics
   F009 document export
-
-Iteration 3 — agent surface
-  F010 VeriFlow MCP server
 ```
 
-F007–F009 depend on F005/F006 but not on each other and may be implemented in any order.
+The order follows the two things the MVP exists to do: **generate an application's architecture**, then
+**make review possible against it**. Everything that only adds rigour or polish waits for iteration 3.
+
+F010 comes before F007 because an agent reviewing against a stored architecture is the payoff, and it works
+with a freshness figure as simple as "these cited files changed". F007 then makes that figure precise.
+F008 and F009 depend on F005/F006 only, and can be reordered freely.
 
 ## Feature index
 
@@ -46,10 +57,10 @@ F007–F009 depend on F005/F006 but not on each other and may be implemented in 
 |---|---|---|
 | [F001](01-workspace-and-snapshots.md) | Workspace, database, snapshot state | `init`/`doctor`/`status`; the tree state is recorded by file hash without copying or mutating anything. |
 | [F002](02-code-intelligence-provider.md) | Provider protocol + code-review-graph adapter | The project is indexed and queryable through one replaceable adapter. |
-| [F003](03-reachability-and-call-graph.md) | Reachability and call graph | The functions a flow actually reaches, with reconciling buckets and a traffic matrix. |
+| [F003](03-reachability-and-call-graph.md) | Reachability, modules, call graph | The application's module registry, plus the functions a flow actually reaches and the traffic between modules. |
 | [F004](04-agent-session.md) | Streamed agent session | The user's agent runs visibly, can be answered mid-run, and its transcript is stored. |
 | [F005](05-flow-answer-contract.md) | Flow answer and verification | A cited flow answer is validated against the snapshot and stored, or rejected. |
-| [F006](06-answer-ui.md) | Local UI over stored answers | Ask, flow, paths, modules, external systems, and call graph on real data. |
+| [F006](06-answer-ui.md) | Local UI | The generated architecture of the project, plus ask, flow, paths, modules, external systems, and call graph on real data. |
 | [F007](07-freshness-and-drift.md) | Freshness and drift | Changed cited files and per-citation drift, re-verified without re-answering. |
 | [F008](08-flow-metrics.md) | Flow metrics | Debt, structure, coupling, and a labelled coverage proxy for the flow's files. |
 | [F009](09-document-export.md) | Document export | Approved answers become committed markdown with generated mermaid. |
@@ -57,19 +68,18 @@ F007–F009 depend on F005/F006 but not on each other and may be implemented in 
 
 ## Exit gate per iteration
 
-**Iteration 1** is complete when the [`main-panel` acceptance flow](../docs/dogfooding/main-panel.md)
-produces a stored, fully cited flow answer for *"Jak funguje rezervace a zaplacení lekce?"* from nothing
-but a repository path, the target's `git status` is unchanged afterwards, and the answer satisfies the
-shape, integrity, and invariant criteria in that document. The agent step is exercised once with Claude
-Code and once with Codex from the same evidence bundle.
+**Iteration 1** is complete when, from nothing but a repository path, the
+[`main-panel` acceptance flow](../docs/dogfooding/main-panel.md) produces the project's generated
+architecture and a stored flow answer for *"Jak funguje rezervace a zaplacení lekce?"*, every claim carries
+a citation state, the target's `git status` is unchanged afterwards, and the result satisfies the shape and
+invariant criteria in that document. The agent step is exercised once with Claude Code and once with Codex.
 
-**Iteration 2** is complete when an answer whose cited files have changed reports its drift correctly,
-metrics cover the flow's files with contradictions visible rather than averaged, and an approved answer
-exists as a committed markdown document with a rendering mermaid diagram.
+**Iteration 2** is complete when an agent connected to `veriflow mcp` answers a design question and a review
+question using only VeriFlow tools, with snapshot, freshness, and review state on every response — and when
+an answer whose cited files changed reports its drift correctly.
 
-**Iteration 3** is complete when an agent connected to `veriflow mcp` answers a design question and a
-review question about the flow using only VeriFlow tools, with snapshot and freshness on every
-response.
+**Iteration 3** is complete when metrics cover the flow's files with contradictions visible rather than
+averaged, and an approved answer exists as a committed markdown document with a rendering mermaid diagram.
 
 Automated tests run without a model, an account, or a network. Windows is the primary platform;
 F001–F003 and F005 portable tests also run on one Unix-like runner.

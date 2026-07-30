@@ -26,7 +26,10 @@ following a diagram with real file references instead of assembling it in my hea
 - loopback HTTP server hosting the SPA and the API from the technical architecture, bound to
   `127.0.0.1`;
 - `veriflow open` starting the server and printing the exact URL and project root;
-- answers list: question, snapshot, ref, commit, counts, freshness banner, agent client used;
+- **Architecture** — the project's generated architecture from the F003 registry: its modules, what each
+  is made of, and the traffic between them. This screen exists **after indexing and before any agent has
+  run**, because deriving it needs no agent; the answers layer on top of it;
+- answers list: question, snapshot, commit, counts, verified ratio, freshness banner, agent client used;
 - **Ask** — question input; a classification result when the question is aimed at a location rather than a
   flow, with its reason and a one-click override; entry-point candidates with the auto-start margin, shown
   either as "starting with X" or as a choice when ambiguous; the brief manifest; then the live run console:
@@ -78,7 +81,12 @@ following a diagram with real file references instead of assembling it in my hea
 ## Acceptance criteria
 
 - [ ] `veriflow open` serves the SPA on `127.0.0.1` and prints the root and URL.
-- [ ] The answers list shows every stored answer with its snapshot, commit, and freshness banner.
+- [ ] After indexing `main-panel` and before any run, the Architecture screen shows the generated module
+      registry and the traffic between modules.
+- [ ] The answers list shows every stored answer with its snapshot, commit, verified ratio, and freshness
+      banner.
+- [ ] A claim's citation state — verified, unverified, or open question — is visible wherever the claim is,
+      and an unverified claim is never styled as a verified one.
 - [ ] Asking a question from the UI runs the F004 session with live streamed output, a working
       `ask_user` prompt, and a functioning cancel.
 - [ ] A location question is caught before the run, explains itself, and can be overridden in one click.

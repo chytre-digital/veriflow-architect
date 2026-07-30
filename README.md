@@ -2,11 +2,12 @@
 
 VeriFlow answers questions about how a codebase actually works, and keeps the answers.
 
-You give it a path to a repository and describe a flow in your own words. VeriFlow indexes the project,
-hands the evidence to the coding agent you are already signed in to — Claude Code, Codex, or another
-client — and stores a verified answer in a local database: participants, ordered steps, every
+You give it a path to a repository. VeriFlow indexes it and generates the application's architecture —
+its modules and the traffic between them — before any AI is involved. Then you describe a flow in your
+own words, and it hands the evidence to the coding agent you are already signed in to — Claude Code,
+Codex, or another client — and stores the answer in a local database: participants, ordered steps, every
 alternative outcome, module contracts, external systems, the functions the flow actually reaches, and a
-`file:line` reference behind every claim.
+`file:line` reference behind every claim, each labelled with whether it verified.
 
 It is local-first, needs no account, and ships no model API key of its own.
 
@@ -31,13 +32,18 @@ veriflow ask "Jak funguje rezervace a zaplacení lekce?"
 veriflow open
 ```
 
-The agent session streams live and can ask you questions while it runs. What you get back is a
-traced flow with every alternative path, a call graph of what the flow actually reaches, and metrics
-for the files it touches — stored locally, so reopening it costs nothing and VeriFlow can tell you
-how far the code has moved since.
+`veriflow index` alone already produces the project's architecture — no AI involved. `veriflow ask`
+then runs your agent in a live, streamed session that can ask you questions while it works, and
+returns a traced flow with every alternative path and a call graph of what it actually reaches —
+stored locally, so reopening it costs nothing and VeriFlow can tell you how far the code has moved
+since.
 
-Approve it and it becomes a committed markdown document with a generated mermaid diagram. Then
-`veriflow mcp` serves everything to any AI agent for design and review.
+Then `veriflow mcp` serves all of it to any AI agent for design and review. Metrics and a committed
+markdown document with a mermaid diagram follow in the last iteration.
+
+The MVP is deliberately partial: its job is to generate an architecture and support review. What is
+full, what is partial, and what is only reserved is written down — partial is fine, silently partial
+is not.
 
 ## What it depends on
 

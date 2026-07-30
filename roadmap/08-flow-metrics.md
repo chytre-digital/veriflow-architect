@@ -1,7 +1,7 @@
 ---
 id: F008
 title: Flow metrics — debt, structure, coupling, coverage proxy
-milestone: M2-trust
+milestone: M3-depth
 status: ready
 depends_on: [F005, F006]
 ---

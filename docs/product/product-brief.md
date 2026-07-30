@@ -48,10 +48,11 @@ built on. There is no architecture model to author before you get value.
 
 ### 2. Evidence or an open question
 
-Every step, edge, and outcome carries a repository-relative `file:line` reference that VeriFlow
-verifies against the indexed commit. A claim VeriFlow cannot evidence is reported as an open
-question, not narrated. Uncertainty stays visible; inference that cannot be proven — a dispatch
-through an interface, a function passed as a callback — is drawn and labelled as inferred.
+Every step, edge, and outcome carries a repository-relative `file:line` reference, and VeriFlow checks
+it and records what it found: verified, unverified, or an open question the agent could not answer.
+The label is the instrument, not a gate — an answer that is 57-of-60 verified is worth keeping, and it
+says so. What is never acceptable is a claim with no state at all, or inference presented as fact: a
+dispatch through an interface or a function passed as a callback is drawn and labelled inferred.
 
 ### 3. Your agent, your session, visibly
 
@@ -121,6 +122,8 @@ that is also the engine of the synthesis step.
 - initialize a local workspace and a local database in a project directory;
 - record the exact state of the working tree by file hash, without copying or mutating anything;
 - index the project through a code intelligence provider, refreshed incrementally as files change;
+- **generate the application's architecture from the index alone** — the module registry and the traffic
+  between modules — before any agent has run;
 - derive reachability and a function-level call graph from the flow's entry points;
 - ask a question in natural language and rank the entry-point candidates that answer it;
 - run the user's agent client as a live, streamed, interruptible session with evidence tools and an
@@ -160,24 +163,31 @@ reproduce the **shape, the integrity, and the invariants**.
 |---|---|---|
 | 1 | `veriflow init` and `veriflow doctor`. | Workspace and database exist; provider and agent clients are detected or their absence is explained with an install command. |
 | 2 | `veriflow index`. | The project is indexed and the tree state recorded by file hash; the user's working tree is byte-identical afterwards. |
-| 3 | Ask *"Jak funguje rezervace a zaplacení lekce?"* | Entry-point candidates are ranked and the agent session starts. |
-| 4 | Watch the run. | Assistant output, tool calls, and results stream live; a question from the agent appears and waits for an answer. |
-| 5 | The run completes. | A flow answer is stored with lanes, phases, ordered steps, alternative paths, module contracts, and external systems. |
-| 6 | Inspect any step. | Its `file:line` references resolve in the indexed commit; a step with no evidence appears as an open question instead. |
-| 7 | Open the call graph. | Functions reachable from the flow's entry points, with `port` and `callback` edges labelled inferred, and call-site buckets that reconcile to the total. |
-| 8 | Filter to one route. | The map narrows to that route's transitive closure without reflowing, so what the route does *not* touch stays visible. |
-| 9 | Restart VeriFlow and reopen the answer. | It loads from the database with its transcript; nothing is recomputed. |
-| 10 | Change one of the flow's files and return. | The answer reports which cited files changed and per-citation drift; re-verification is a separate, cheap action, and unrelated edits change nothing. |
-| 11 | Open metrics. | Hotspots, per-function complexity, structure, coupling, and coverage proxy for the flow's files, with the proxy labelled and contradictions shown rather than averaged. |
-| 12 | Approve and export. | A markdown document with a generated mermaid diagram is written to a configured documentation root; nothing else in the repository changes and no Git command runs. |
-| 13 | Connect an agent to `veriflow mcp`. | The agent lists answers, reads a flow and its paths, and reports which failure paths have no test — each response stamped with its snapshot and freshness. |
+| 3 | Open the Architecture screen, before running anything. | The application's modules and the traffic between them, generated from the index alone. |
+| 4 | Ask *"Jak funguje rezervace a zaplacení lekce?"* | The question is classified as a flow question, the entry point is chosen, and the agent session starts. |
+| 5 | Watch the run. | Assistant output, tool calls, and results stream live; a question from the agent appears and waits for an answer. |
+| 6 | The run completes. | A flow answer is stored with lanes, phases, ordered steps, alternative paths, module contracts, and external systems. |
+| 7 | Inspect any step. | Its `file:line` references carry a citation state; a claim the agent could not evidence is an open question, and the answer says how much of it verified. |
+| 8 | Open the call graph. | Functions reachable from the flow's entry points, with `port` and `callback` edges labelled inferred. |
+| 9 | Filter to one route. | The map narrows to that route's transitive closure without reflowing, so what the route does *not* touch stays visible. |
+| 10 | Restart VeriFlow and reopen the answer. | It loads from the database with its transcript; nothing is recomputed. |
+
+That is iteration 1 — the architecture is generated and the first flow is answered. Iteration 2 adds
+review, iteration 3 adds depth:
+
+| # | Action | Expected result |
+|---|---|---|
+| 11 | Connect an agent to `veriflow mcp`. | It reads the architecture, a flow and its paths, and answers a design and a review question from tools alone — each response stamped with snapshot, freshness, and review state. |
+| 12 | Change one of the flow's files and return. | The answer reports which cited files changed and per-citation drift; re-verification is cheap and separate, and unrelated edits change nothing. |
+| 13 | Open metrics. | Hotspots, per-function complexity, structure, coupling, and coverage proxy for the flow's files, with the proxy labelled and contradictions shown rather than averaged. |
+| 14 | Approve and export. | A markdown document with a generated mermaid diagram is written to a configured documentation root; nothing else in the repository changes and no Git command runs. |
 
 The concrete target is [`main-panel`](../dogfooding/main-panel.md).
 
 ## Success measures
 
 - a first useful answer on an unfamiliar flow in one session, with no model API key configured;
-- every citation in a stored answer resolves in its snapshot, or the answer was rejected;
+- every claim in a stored answer carries a citation state, and the answer says how much of it verified;
 - reopening a stored answer recomputes nothing and shows how stale it is;
 - the default screen shows no source file or function until asked;
 - an agent working over the MCP surface reaches a correct design or review conclusion with materially

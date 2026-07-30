@@ -1,7 +1,7 @@
 ---
 id: F009
 title: Document export and portable backup
-milestone: M2-trust
+milestone: M3-depth
 status: ready
 depends_on: [F005, F006]
 ---
