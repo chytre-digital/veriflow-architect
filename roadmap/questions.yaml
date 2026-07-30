@@ -1,0 +1,102 @@
+# Open questions and the measurements that closed them. Reasoning lives in open-questions.md.
+
+schemaVersion: 1
+
+questions:
+  Q2:
+    title: Which code-review-graph read surface carries the call graph?
+    status: answered
+    answeredOn: "2026-07-30"
+    blocks: [F002, F003]
+    method: "Installed 2.3.7 and indexed main-panel; measurements below."
+    findings:
+      install: "uv tool install code-review-graph; version 2.3.7 on Python 3.12.4."
+      buildCost: "31 s for 1419 files, producing 6619 nodes and 67778 edges."
+      updateCost: "2.2 s incremental, reporting changed symbols, affected flows, test gaps and a risk score."
+      indexSize: "101 MB in .code-review-graph/, self-ignored by a generated .gitignore containing '*'."
+      symbolQuality: >-
+        Good. createLessonCheckoutSession resolves to its file at lines 329-610, and callers_of finds
+        the real route handlers including src/app/api/marketplace/checkout/route.ts::POST at 15-64.
+      callSiteLines: >-
+        Not through the CLI. query callers_of/callees_of return caller and callee NODES with their own
+        definition ranges, never the line where the call happens. The edges table does carry line,
+        confidence and confidence_tier, so the data exists but no supported command exposes it.
+      edgeKinds: "CALLS 42298, TESTED_BY 13190, IMPORTS_FROM 6079, CONTAINS 5211, REFERENCES 334."
+      flowQuality: >-
+        Weak, as the project itself states. 50 flows, named after their entry symbol so several are
+        just 'GET', typical depth 5 and 13 nodes. Usable as a hint, not as a backbone.
+      communities: >-
+        Too coarse to be modules. 20 communities over 6545 nodes, the largest 1495 nodes at 0.13
+        cohesion. igraph was absent so detection fell back to a file-based heuristic.
+      ambiguity: "A bare symbol name returns status 'ambiguous' with candidates rather than guessing."
+      absolutePaths: >-
+        qualified_name and file_path are absolute Windows paths; the provider documents graph.db as
+        containing absolute paths. The adapter must normalize to repository-relative at the boundary.
+      toolFiltering: "serve --tools / CRG_TOOLS restricts the exposed MCP tool list natively."
+    consequences:
+      - "F003 call-site bucketing cannot use a supported CLI surface — see Q14."
+      - "F003 module registry must be path-derived; provider communities are not module boundaries."
+      - "F002 must normalize absolute paths and disambiguate by qualified_name."
+      - "F004's refactor-tool filtering is supported natively by serve --tools."
+      - "provider capability flowQuality for typescript is 'weak', confirmed by measurement."
+
+  Q3:
+    title: When does the index refresh, and who decides?
+    status: open
+    default: "index.autoUpdate true — run the provider's incremental update before a new question."
+    note: "Measured at 2.2 s on main-panel, so the explicit update is cheap enough to keep."
+    alternatives: ["the provider's watch/daemon mode, at the cost of a background process VeriFlow does not own"]
+
+  Q4:
+    title: Minimum supported agent client versions, and block or warn?
+    status: open
+    affects: [F004]
+    default: "Probe capabilities per client version; prefer structured streaming, fall back to PTY."
+
+  Q5:
+    title: May a correction add a step, or only amend one?
+    status: deferred
+    affects: [F005]
+    default: "Amending is enough; an added claim would go through the same verifier and be attributed."
+    note: "The MVP needs no correction editing surface, so this can wait."
+
+  Q6:
+    title: Markdown only, or markdown plus a YAML model?
+    status: open
+    affects: [F009]
+    default: "Markdown with mermaid; the structured model stays in the database and the JSON dump."
+
+  Q8:
+    title: How strict is the flow/location classifier, and does it rewrite the question?
+    status: open
+    affects: [F005]
+    default: "A small inspectable rule set over question shape and matched symbols, always overridable."
+
+  Q13:
+    title: What is the fallback if the provider's TypeScript resolution disappoints?
+    status: answered
+    answeredOn: "2026-07-30"
+    finding: >-
+      It does not disappoint at symbol and call level. Function nodes carry exact line ranges and
+      callers_of reaches the real route handlers, which is what F003 needs. The weakness is in flows
+      and communities, and the roadmap already treats both as hints.
+    consequence: "No fallback triggered. The first-party indexer stays a post-MVP item."
+
+  Q14:
+    title: May the adapter read graph.db directly for call-site lines and confidence?
+    status: open
+    blocks: [F003]
+    affects: [F002, F003]
+    context: >-
+      The edges table carries line, confidence and confidence_tier, and F003's call-site bucketing
+      needs them, but no supported command returns them. This looks like the GitNexus parse-cache
+      trap and is not the same thing: graph.db is the product's documented primary store, not an
+      eviction cache. It is still a private schema that migrated to version 9 across this project's
+      own history.
+    default: >-
+      Read graph.db read-only for edge-level line and confidence, pin the schema version, verify it
+      at startup, and degrade to edge-level counting with a visible note when it does not match.
+      Never write to it. Ask upstream whether these fields can be exposed through a command.
+    alternatives:
+      - "Ship without call-site lines: buckets degrade to edge level and the UI says so."
+      - "Contribute a flag upstream that emits edge line and confidence, and depend on that version."

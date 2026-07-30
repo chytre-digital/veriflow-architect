@@ -158,41 +158,13 @@ live, so the CLI and the UI never show different histories.
 
 ## Acceptance criteria
 
-- [ ] `veriflow ask` starts the configured client and streams assistant output, tool calls, and tool
-      results to the terminal as they happen.
-- [ ] The same run streams to a consumer that attaches after it started, with no gap and no duplicate.
-- [ ] An `ask_user` call parks the run, appears in both surfaces, and resumes with the user's answer,
-      which is stored.
-- [ ] An unanswered question hits its timeout and ends the run as `timed-out` with a partial transcript.
-- [ ] Cancel terminates the process tree within a bounded time and stores `cancelled`.
-- [ ] The client is launched in read-only permission mode, the mode is displayed before the run, and the
-      registered tool list contains no write, exec, or refactor tool.
-- [ ] After a completed run, the project's tracked files are byte-identical and `git status` is unchanged.
-- [ ] Both Claude Code and Codex complete a run from the same evidence bundle; wording differs, contract
-      and safety behavior do not.
-- [ ] A client whose installed version lacks structured streaming falls back to PTY and produces the
-      same normalized events.
-- [ ] No `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or equivalent is read, requested, or stored.
-- [ ] The exposed MCP surface contains no tool that writes canonical state, edits source, runs a command,
-      or mutates Git — asserted by a test over the tool list.
-- [ ] Killing VeriFlow mid-run leaves no orphan process and no leftover MCP config file.
-- [ ] Reopening a stored run replays its transcript in order.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F004.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. fake client happy path with a full event stream;
-2. late-attaching consumer replay-then-follow;
-3. `ask_user` round trip, including a second question in the same run;
-4. unanswered question timeout;
-5. cancel during a tool call, and process-tree termination;
-6. PTY fallback normalization against the structured path on the same fixture;
-7. capability probe on an old client version;
-8. client not found, client exits non-zero, client emits malformed events;
-9. tool-list assertion: no write, exec, or Git tool;
-10. environment hygiene — no unexpected variable reaches the child;
-11. per-run MCP config generation and cleanup, including after a simulated crash;
-12. transcript rendering treats agent output as untrusted;
-13. read-only mode assertion, filtered provider tool list, and tree-unchanged check after a run.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F004.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

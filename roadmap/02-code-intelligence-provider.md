@@ -88,24 +88,40 @@ registers them with an agent. Only read tools enter an agent run (F004).
 - reachability and the call graph (F003);
 - embeddings, semantic search, wiki generation, refactoring, and cross-repo features.
 
-## Blocking spike before implementation
+## What the spike measured
 
-Record the answers in
-[open questions Q2](open-questions.md#q2--which-code-review-graph-read-surface-carries-the-call-graph)
-before writing the adapter. On `main-panel`:
+Run on `main-panel` on 2026-07-30 with version 2.3.7 on Python 3.12.4; full record in
+[Q2](open-questions.md#q2--which-code-review-graph-read-surface-carries-the-call-graph--answered-2026-07-30).
 
-1. Does any surface return per-call-site `file:line`, and at what cost per query?
-2. Can callers/callees be walked breadth-first from five entry points to full closure within a usable
-   budget, or is `visualize --format json` the only viable bulk path?
-3. What is the actual TypeScript/TSX parse quality — how many of `main-panel`'s roughly 1,600 files and
-   its known symbols are recovered, and are barrel re-exports and dynamic imports resolved?
-4. How long does the first `build` take, and does `update` really land in seconds?
-5. What does `list_flows_tool` return for the checkout route — anything usable, or nothing?
+| Measured | Result |
+|---|---|
+| full `build` | **31 s** — 1419 files, 6,619 nodes, 67,778 edges |
+| incremental `update` | **2.2 s**, reporting changed symbols, affected flows, test gaps, risk score |
+| index footprint | 101 MB in `.code-review-graph/`, self-ignoring via a generated `.gitignore` of `*` |
+| target repository | `git status` byte-identical after indexing |
+| symbol resolution | exact — `createLessonCheckoutSession` at lines 329–610 |
+| call resolution | `callers_of` reaches the real handlers, e.g. `…/marketplace/checkout/route.ts::POST` at 15–64 |
+| edge kinds | `CALLS` 42,298 · `TESTED_BY` 13,190 · `IMPORTS_FROM` 6,079 · `CONTAINS` 5,211 · `REFERENCES` 334 |
+| call-site lines | **not on any supported surface** — see below |
+| flows | 50, several named just `GET`, depth ~5 — hints only, as expected |
+| communities | 20 over 6,545 nodes, largest 1,495 at 0.13 cohesion — **not module boundaries** |
 
-Question 3 is the one that can change the plan. If TypeScript resolution is materially worse than the
-mockup assumed, the honest options are to accept a thinner call graph in F003, to add a second provider,
-or to bring the TypeScript resolution in-house earlier than planned. Decide that with numbers, not
-optimism.
+Four consequences the adapter must carry:
+
+1. **Absolute paths leak by default.** `qualified_name` and `file_path` are absolute Windows paths, and the
+   provider documents `graph.db` as containing them. The adapter normalizes to repository-relative at its
+   boundary; nothing absolute reaches the store, an answer, or an export.
+2. **Names are ambiguous and the provider says so.** A bare symbol returns `status: "ambiguous"` with
+   candidates. The adapter resolves by `qualified_name` and surfaces candidates rather than picking one.
+3. **Confidence is available per edge.** `confidence` and `confidence_tier` sit on every edge, which maps
+   directly onto VeriFlow's inferred/verified distinction — provided [Q14](open-questions.md#q14--may-the-adapter-read-graphdb-directly-for-call-site-lines-and-confidence)
+   is resolved, because no command exposes them either.
+4. **Tool filtering is native.** `serve --tools` and `CRG_TOOLS` restrict the exposed MCP tool list, so
+   F004's requirement to withhold `refactor_tool` and `apply_refactor_tool` is enforced by the provider
+   rather than policed by VeriFlow.
+
+The one open item is **Q14**: `edges.line` exists in `graph.db` and no supported command returns it. Until
+that is settled, `capabilities().callSiteLines` reports **false** and F003 degrades visibly.
 
 ## Contracts
 
@@ -167,40 +183,13 @@ Every record names the snapshot it came from; nothing is cached across snapshots
 
 ## Acceptance criteria
 
-- [ ] `veriflow index` on `main-panel` produces an indexed snapshot with file, symbol, import, and
-      call-site counts in the store, and reports them.
-- [ ] Indexing streams progress and can be cancelled without leaving a half-usable index.
-- [ ] A second `index` after editing a few files uses the incremental path and reports the changed-file
-      count.
-- [ ] Capability probing reports `callSiteLines` from a real probe, and F003 consumes that value.
-- [ ] `flowQuality` records TypeScript as weak, and the UI and `doctor` surface it.
-- [ ] `changedFiles(snapshot)` matches F001's own hash-based change detection, or the difference is
-      explained.
-- [ ] Community and overview data are ingested and queryable.
-- [ ] No source file outside `packages/provider-crg` references the provider by name — asserted by a test.
-- [ ] `refactor_tool` and `apply_refactor_tool` are never invoked and never registered — asserted.
-- [ ] The contract test suite passes against both the real adapter and the fake provider.
-- [ ] Malformed, truncated, or slow provider output is handled with a diagnostic rather than propagated.
-- [ ] With the provider or Python uninstalled, `veriflow index` fails with an actionable message and every
-      other command still works.
-- [ ] `.code-review-graph/` is never written or deleted by VeriFlow — asserted by checksum around a run.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F002.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. contract suite against the fake provider;
-2. contract suite against recorded provider fixtures;
-3. capability probe matrix, including `callSiteLines` false;
-4. degradation when `flows` is false and when `flowQuality` marks a language weak;
-5. index cancellation leaves `unindexed`;
-6. incremental update after a file edit;
-7. store ingestion idempotence — indexing twice does not duplicate rows;
-8. evidence ID stability across two ingestions of one snapshot;
-9. malformed, truncated, and timing-out provider output;
-10. provider absent, Python absent, wrong provider major version;
-11. assertion that no import outside the adapter names the provider;
-12. assertion that no refactor tool is ever invoked;
-13. `changedFiles` cross-check against F001 hashes, including a rename;
-14. provider index directory untouched, by checksum.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F002.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

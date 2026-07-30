@@ -62,19 +62,34 @@ target:
 .code-review-graph/          # provider-owned SQLite graph, gitignored by the provider
 ```
 
+Measured on this repository on 2026-07-30 with version 2.3.7 (full record in
+[Q2](../../roadmap/open-questions.md#q2--which-code-review-graph-read-surface-carries-the-call-graph--answered-2026-07-30)):
+
+- full `build` **31 s** → 1419 files, 6,619 nodes, 67,778 edges; incremental `update` **2.2 s**;
+- index footprint 101 MB, self-ignoring through a generated `.gitignore` containing `*`, so this
+  repository's `git status` was byte-identical afterwards;
+- symbol resolution is exact — `createLessonCheckoutSession` at lines 329–610 — and `callers_of` reaches
+  the real handlers including `src/app/api/marketplace/checkout/route.ts::POST` at 15–64;
+- `CALLS` 42,298 · `TESTED_BY` 13,190 · `IMPORTS_FROM` 6,079 · `CONTAINS` 5,211 · `REFERENCES` 334.
+
 Facts the adapter must respect:
 
 - The provider refuses non-repository directories, so the target must be a Git (or SVN) working tree.
   `main-panel` is.
 - `build` creates the index, `update` re-parses only changed files, `detect-changes` reports what moved,
-  `status` reports health. Reads go through its MCP tools; `visualize --format json` is the bulk export.
-- **Its flow detection is weak for TypeScript.** The project states JavaScript flow detection needs work
-  and reports about 33% flow recall in its own evaluation. So on this target, `list_flows_tool` output is
-  a hint to cross-check, VeriFlow detects entry points itself, and the agent does the sequencing over
-  verified symbol and call evidence. Nothing in the acceptance criteria may depend on provider flows.
-- **Per-call-site line numbers are not documented.** Whether a call site resolves to `file:line` must be
-  probed on this repository before F003 is written — it is the first question of the Q2 spike.
-- `refactor_tool` and `apply_refactor_tool` exist and are never called or registered with an agent.
+  `status` reports health. Node-level reads go through `query`, `search`, `impact`, `flows`,
+  `communities` and `architecture`; `visualize --format json` is the bulk export.
+- **Its flow detection is weak here, as measured.** 50 flows, several named just `GET` after their entry
+  symbol, typical depth 5. Hints to cross-check, never a backbone. Nothing in the acceptance criteria may
+  depend on provider flows.
+- **Its communities are not modules here, as measured.** 20 communities over 6,545 nodes, the largest
+  holding 1,495 at 0.13 cohesion. F003's module registry is path-derived; communities only cross-check.
+- **Call-site lines are not on any supported surface.** `edges.line` exists in `graph.db` and no command
+  returns it, which is [Q14](../../roadmap/open-questions.md#q14--may-the-adapter-read-graphdb-directly-for-call-site-lines-and-confidence).
+- **Absolute paths leak by default.** `qualified_name` and `file_path` are absolute Windows paths; the
+  adapter normalizes to repository-relative at its boundary.
+- `refactor_tool` and `apply_refactor_tool` exist and are never called or registered with an agent —
+  `serve --tools` enforces that natively.
 - VeriFlow never downloads the provider; `veriflow doctor` reports its absence with the install command
   and VeriFlow still starts without it.
 

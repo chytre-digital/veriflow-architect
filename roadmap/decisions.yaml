@@ -1,0 +1,111 @@
+# Settled decisions, as data. The reasoning for each lives in open-questions.md under the same id.
+#
+# `reverses` names an earlier working default this decision overturned — those are the ones worth
+# re-reading before arguing a change.
+
+schemaVersion: 1
+
+decisions:
+  D1:
+    title: The product unit is an answered question about a flow
+    affects: [F005, F006]
+    summary: >-
+      Manual authoring of a declared architecture is deferred; the module view is derived from the
+      index and refined by answers.
+  D2:
+    title: SQLite is canonical; the repository gets exported documents
+    affects: [F001, F009]
+    reverses: files-canonical
+    summary: >-
+      An agent run is not reproducible, so its result is stored rather than derived. config.yaml is
+      the only committed VeriFlow file.
+  D3:
+    title: VeriFlow drives the user's agent as a child process, with the stream visible
+    affects: [F004]
+    reverses: never-launch-a-vendor-cli
+    summary: >-
+      A run the user cannot watch or answer is not usable for work this long. ask_user is the
+      vendor-neutral question channel.
+  D4:
+    title: code-review-graph is the first code intelligence provider, behind an abstraction
+    affects: [F002]
+    summary: >-
+      Python CLI and MCP server, 30+ languages via Tree-sitter, wrapped in packages/provider-crg.
+      Its TypeScript flow detection is weak, so provider flows are hints only.
+  D5:
+    title: A snapshot is the recorded state of the tree that was indexed
+    affects: [F001, F007]
+    reverses: index-a-chosen-ref
+    summary: >-
+      A repository path, indexed in place. Content hash per file plus commit and dirty flag.
+      Freshness is measured on the files an answer cites, not as a commit distance.
+  D6:
+    title: MCP and the function-level call graph are in the MVP
+    affects: [F003, F010]
+  D7:
+    title: Acceptance is shape, integrity and invariants — not the mockup's numbers
+    affects: [F003, F005]
+  D8:
+    title: The implementation lives in this repository
+    affects: [F001]
+  D9:
+    title: Git is mandatory
+    affects: [F001, F007, F008]
+    summary: >-
+      The provider refuses non-repository directories, so there is no Git-less path to maintain.
+  D10:
+    title: Iteration 1 is F001–F006 in full, Claude Code first
+    affects: [F004, F006]
+  D11:
+    title: The evidence bundle is a brief, not a cage
+    affects: [F004, F005]
+    summary: >-
+      The agent reads the tree with its own tools; the transcript records what it opened, which is a
+      record instead of a false promise of control.
+  D11a:
+    title: The agent has latitude and a toolset
+    affects: [F004, F005]
+    summary: >-
+      VeriFlow states the task and the contract of the result, not the steps. record_open_question is
+      a legitimate outcome, not a failure state.
+  D12:
+    title: Verification labels, it does not gate
+    affects: [F005, F006, F010]
+    reverses: strict-reject-then-demote
+    summary: >-
+      Every citation is stored as verified / unverified / open-question and the answer carries its
+      verified ratio. Only structural faults are rejected outright.
+  D13:
+    title: Human corrections are an attributed layer, and are not MVP-critical
+    affects: [F005, F006]
+    summary: >-
+      Schema and provenance from the start because retrofitting them is expensive; the editing
+      surface is deferred.
+  D14:
+    title: Non-flow questions are classified and redirected
+    affects: [F005, F006]
+  D15:
+    title: The run starts by itself when the entry point is clear
+    affects: [F005, F006]
+  D16:
+    title: A follow-up is a new answer linked to its parent
+    affects: [F005, F006]
+  D17:
+    title: MCP serves everything, labelled
+    affects: [F010]
+    summary: >-
+      Drafts are not withheld; the envelope carries review state, open-question count and freshness,
+      and that is asserted by tests because the label now does a gate's job.
+  D18:
+    title: Modules are proposed deterministically and authored by the agent
+    affects: [F003, F005]
+    summary: >-
+      Path-derived stable ids in a project-level registry; answers reference ids, never names, so a
+      later rename cannot break an earlier answer.
+  D19:
+    title: The MVP is deliberately partial, and says where
+    affects: [F005, F007, F008, F009]
+    summary: >-
+      Full - architecture generation, agent answers, storage, UI, MCP. Partial with the shape
+      reserved - verification gating, corrections UI, freshness ranking, metrics breadth, export
+      templates. Rule - partial is fine, silently partial is not.

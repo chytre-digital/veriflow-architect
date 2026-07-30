@@ -100,46 +100,13 @@ payload is the mitigation.
 
 ## Acceptance criteria
 
-- [ ] An agent connected over stdio lists the stored `main-panel` answers and reads one in full.
-- [ ] Every response includes snapshot, freshness, and review state — asserted for every tool, with no
-      exceptions and no tool able to opt out.
-- [ ] An unreviewed answer is served with `review.state === "unreviewed"` and its open-question count, and
-      the tool description tells the agent what that means.
-- [ ] An answer carrying human corrections reports the correction count, and the corrected text is what is
-      served.
-- [ ] `get_flow_paths` returns each alternative outcome with the invariant it protects.
-- [ ] `get_architecture` returns the module registry with stable ids and the traffic between modules, so an
-      agent can orient before reading any flow.
-- [ ] Metrics tools are absent from the tool list until F008 ships, rather than present and returning
-      nothing.
-- [ ] `get_call_graph` with an entry point returns that route's closure; inferred edges are labelled in the
-      payload.
-- [ ] `get_callers` on an ambiguous symbol returns candidates rather than picking one.
-- [ ] A large call graph response truncates with a cursor and reports the totals.
-- [ ] The tool list contains no write, exec, or Git tool — asserted.
-- [ ] The server starts with the provider uninstalled and serves stored answers.
-- [ ] A design question — *"what must I respect before changing `fulfillLessonCheckout`?"* — is answerable
-      from tools alone, and the answer names the invariants and the module contract.
-- [ ] A review question — *"which flows and failure paths does this change touch, and what invariants do
-      they protect?"* — is answerable from tools alone. The "and which of them are untested" half of that
-      question becomes answerable when F008 adds the coverage tools.
-- [ ] Both questions are demonstrated with Claude Code and with Codex.
-- [ ] The fake MCP client exercises every tool in CI, with no model and no network.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F010.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. tool list assertion: no write, exec, or Git tool;
-2. envelope presence on every tool response;
-3. each tool against fixtures, including empty and single-row cases;
-4. truncation and cursor round trip on a large graph;
-5. ambiguous symbol returns candidates;
-6. stale answer served with its state rather than withheld;
-7. provider-absent startup;
-8. resource read for a whole answer;
-9. inferred-edge and proxy labelling inside payloads;
-10. fake client end-to-end for the design workflow;
-11. fake client end-to-end for the review workflow;
-12. no network listener is opened.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F010.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

@@ -223,56 +223,13 @@ an obvious wording error is fixed without spending another run.
 
 ## Acceptance criteria
 
-- [ ] Asking *"Jak funguje rezervace a zaplacení lekce?"* on `main-panel` ranks the checkout and Stripe
-      webhook routes among the top candidates.
-- [ ] The evidence bundle manifest is shown before the run and contains no absolute path or excluded
-      content.
-- [ ] A valid answer stores lanes, phases, steps in order, branches with invariants, module edges with
-      contracts, external systems with boundaries, and open questions.
-- [ ] Every citation is verified at submit time and stored with its state; the answer carries its verified
-      ratio and no claim is silently unlabelled.
-- [ ] An unresolvable citation is stored as `unverified` and displayed as such, rather than discarding the
-      answer.
-- [ ] Each structural rejection rule triggers on a crafted fixture and produces its stable diagnostic code.
-- [ ] A rejected submission is reported back inside the run and a corrected resubmission succeeds.
-- [ ] A structurally malformed submission is rejected outright, and only for structural reasons.
-- [ ] An agent that cannot evidence a claim reaches `record_open_question`, and that outcome is treated as
-      success rather than failure by the run and by the UI.
-- [ ] A location question is classified before any run starts, redirected with a reason, and the
-      classification can be overridden in one click.
-- [ ] A clearly leading entry point starts the run without asking; an ambiguous ranking asks; the margin is
-      printed either way.
-- [ ] A follow-up answer stores its parent reference and receives the parent answer in its brief.
-- [ ] Module edits made by the agent land in the project registry with provenance, and an answer stored
-      before a later rename still resolves correctly because it references ids.
-- [ ] A human correction is stored with author and original value, and the corrected text is what the UI,
-      the export, and MCP serve.
-- [ ] A step the agent cannot evidence appears as an open question rather than as narrated prose.
-- [ ] The generated mermaid source declares every participant it uses.
-- [ ] Persistence is atomic under a simulated failure mid-write.
-- [ ] `veriflow answers --json` lists stored answers with their question, snapshot, and counts.
-- [ ] The same fixtures validate identically on both platforms.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F005.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. entry-point ranking on fixtures, including an ambiguous case that requires confirmation;
-2. bundle manifest determinism and exclusion of secret paths;
-3. valid answer round trip: submit, validate, persist, read back;
-4. one fixture per structural rejection rule;
-5. citation resolution against a snapshot, including a line at end of file and a symbol on a moved line;
-6. citation state fixtures: verified, unverified, and open-question, plus the verified ratio;
-7. resubmission after a structural rejection within one run;
-8. classifier fixtures: flow question, location question, ambiguous question, and an override;
-9. entry-point auto-start above the margin, ask below it;
-10. follow-up parent link and brief contents;
-11. module registry: agent rename, merge, split; id stability across a rename; older answer still resolves;
-12. correction record: author, original value, and precedence in UI, export, and MCP output;
-13. open-question linkage for an unevidenced step;
-14. mermaid participant declaration check;
-15. atomic persistence under an injected write failure;
-16. size budget enforcement;
-17. contract-version rejection;
-18. cross-platform validation parity.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F005.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

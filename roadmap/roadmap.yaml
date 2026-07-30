@@ -1,0 +1,119 @@
+# Machine-readable roadmap index.
+#
+# The reasoning lives in README.md and in each feature's markdown spec. This file carries the
+# structure a tool needs: order, iteration, dependencies, status. Acceptance criteria and test cases
+# live in acceptance.yaml, decisions in decisions.yaml, open questions in questions.yaml.
+
+schemaVersion: 1
+
+project:
+  name: VeriFlow
+  goal: "Generate an application's architecture and make review possible against it."
+  repository: this repository — apps/ and packages/ alongside docs/ and roadmap/
+  requiresGit: true
+
+iterations:
+  - id: M1-answer
+    name: Generate the architecture
+    features: [F001, F002, F003, F004, F005, F006]
+    done: >-
+      From nothing but a repository path: the project's generated architecture plus a stored flow
+      answer for the acceptance question, every claim carrying a citation state, and the target's
+      git status unchanged afterwards. Exercised once with Claude Code and once with Codex.
+  - id: M2-review
+    name: Review against it
+    features: [F010, F007]
+    done: >-
+      An agent on veriflow mcp answers a design question and a review question from tools alone,
+      with snapshot, freshness and review state on every response; an answer whose cited files
+      changed reports its drift correctly.
+  - id: M3-depth
+    name: Depth
+    features: [F008, F009]
+    done: >-
+      Metrics cover the flow's files with contradictions visible rather than averaged, and an
+      approved answer exists as committed markdown with a rendering mermaid diagram.
+
+features:
+  F001:
+    title: Workspace, local database, and snapshot state
+    spec: 01-workspace-and-snapshots.md
+    iteration: M1-answer
+    status: ready
+    dependsOn: []
+    outcome: >-
+      init/doctor/status; the tree state recorded by file hash without copying or mutating anything.
+  F002:
+    title: Code intelligence provider protocol and code-review-graph adapter
+    spec: 02-code-intelligence-provider.md
+    iteration: M1-answer
+    status: ready
+    dependsOn: [F001]
+    outcome: The project is indexed and queryable through one replaceable adapter.
+  F003:
+    title: Reachability, module registry, and function-level call graph
+    spec: 03-reachability-and-call-graph.md
+    iteration: M1-answer
+    status: ready
+    dependsOn: [F002]
+    outcome: >-
+      The application's module registry, plus the functions a flow reaches and the traffic between
+      modules.
+  F004:
+    title: Streamed agent session with the user's own client
+    spec: 04-agent-session.md
+    iteration: M1-answer
+    status: ready
+    dependsOn: [F001, F002]
+    outcome: >-
+      The user's agent runs visibly, can be answered mid-run, and its transcript is stored.
+  F005:
+    title: Flow answer contract, question intake, and citation verification
+    spec: 05-flow-answer-contract.md
+    iteration: M1-answer
+    status: ready
+    dependsOn: [F003, F004]
+    outcome: A cited flow answer is validated, labelled per claim, and stored.
+  F006:
+    title: Local UI over stored answers
+    spec: 06-answer-ui.md
+    iteration: M1-answer
+    status: ready
+    dependsOn: [F005]
+    outcome: >-
+      The generated architecture of the project, plus ask, flow, paths, modules, external systems
+      and call graph on real data.
+  F007:
+    title: Freshness, drift, and re-verification
+    spec: 07-freshness-and-drift.md
+    iteration: M2-review
+    status: ready
+    dependsOn: [F005, F006]
+    outcome: Changed cited files and per-citation drift, re-verified without re-answering.
+  F008:
+    title: Flow metrics — debt, structure, coupling, coverage proxy
+    spec: 08-flow-metrics.md
+    iteration: M3-depth
+    status: ready
+    dependsOn: [F005, F006]
+    outcome: Debt, structure, coupling and a labelled coverage proxy for the flow's files.
+  F009:
+    title: Document export and portable backup
+    spec: 09-document-export.md
+    iteration: M3-depth
+    status: ready
+    dependsOn: [F005, F006]
+    outcome: Approved answers become committed markdown with generated mermaid.
+  F010:
+    title: VeriFlow MCP server for design and review
+    spec: 10-mcp-server.md
+    iteration: M2-review
+    status: ready
+    dependsOn: [F005, F006]
+    outcome: Any agent designs and reviews against stored, freshness-stamped results.
+
+blocking:
+  - question: Q2
+    blocks: [F002, F003]
+    status: answered
+    note: Spike run on 2026-07-30; measurements recorded in questions.yaml and open-questions.md.

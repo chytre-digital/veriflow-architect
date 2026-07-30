@@ -92,37 +92,13 @@ change yields no diff.
 
 ## Acceptance criteria
 
-- [ ] Exporting the `main-panel` answer writes one new markdown file under the configured flow export
-      path, and changes nothing else in the repository.
-- [ ] The generated mermaid renders on GitHub and declares every participant it uses.
-- [ ] The document contains the phases, the alternative outcomes with their invariants, the module
-      contracts, the external systems, the open questions, and the references.
-- [ ] Frontmatter matches the configured convention with `status: draft`, an owner placeholder, and
-      `last-reviewed`.
-- [ ] Approval shows a rendered preview and the exact diff before writing.
-- [ ] Creating over an existing path fails; updating requires the expected revision and returns a conflict
-      when the file changed externally.
-- [ ] A simulated write failure leaves the original file byte-identical.
-- [ ] Re-exporting an unchanged answer produces no diff.
-- [ ] Exporting a stale answer records its freshness in the document and requires confirmation.
-- [ ] Path traversal, symlink escape, and a target outside a documentation root are all rejected.
-- [ ] `veriflow export --json --all` dumps every entity, and importing it into an empty database restores
-      the answers, their citations, verifications, and transcripts.
-- [ ] No Git command runs anywhere in this feature — asserted by a test that fails on any Git invocation.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F009.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. mermaid generation for each step kind, with participant declaration checks;
-2. mermaid generation for an answer with branches, asserting the happy path is what is drawn;
-3. markdown generation determinism, byte equality across two runs;
-4. frontmatter conventions, default and configured;
-5. create on new path, create over existing path, update with correct and stale revision;
-6. atomic write failure preserving the original, on NTFS and POSIX;
-7. path traversal, symlink escape, outside-root rejection;
-8. stale-answer export confirmation gate;
-9. JSON dump and restore round trip, including transcripts and their exclusion flag;
-10. absence of absolute paths in both document and dump;
-11. Git-invocation assertion.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F009.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

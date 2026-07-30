@@ -118,40 +118,13 @@ broken    the flow's entry points no longer exist
 
 ## Acceptance criteria
 
-- [ ] An answer whose cited files are untouched verifies as `fresh`, in well under a second, and says how
-      many files it checked.
-- [ ] Editing a cited file without committing immediately moves the answer off `fresh`.
-- [ ] Editing an unrelated file does not change the state.
-- [ ] Moving a cited function within its file is classified `drifted`, with the new line recorded.
-- [ ] Deleting a cited function is `missing`; deleting or renaming its file is `file-missing`.
-- [ ] A match found at the edge of the search window is reported `low` confidence.
-- [ ] The freshness state matches the printed thresholds for each of the four cases.
-- [ ] Verification with the provider accelerator gives the same result as a full verification, and reports
-      how many files it skipped.
-- [ ] An answer captured from a dirty tree carries `dirtyAtCapture` into every later verification.
-- [ ] Removing the flow's entry point produces `broken`.
-- [ ] The UI shows per-reference drift with a working jump to the new location.
-- [ ] An answer diff between two tree states names moved evidence, lost branches, and vanished nodes.
-- [ ] Re-answering creates a new answer, marks the old one `superseded`, and both remain readable.
-- [ ] `verify --json` is versioned and complete.
-- [ ] No agent process starts during verification — asserted.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F007.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. no-change verification, including the near-free path and its reporting;
-2. uncommitted edit to a cited file, and to an unrelated file;
-3. drift: function moved down, moved up, moved across a large edit;
-4. low-confidence drift at the search-window edge;
-5. missing symbol, missing file, renamed file;
-6. state threshold matrix, all four states;
-7. accelerator parity against full verification, plus skipped-count reporting;
-8. dirty-at-capture propagation;
-9. entry point removed → `broken`;
-10. answer diff fixtures: moved evidence, lost branch, vanished call-graph node;
-11. supersede lifecycle and readability of the old answer;
-12. commits-since reported when Git is present, absent when it is not;
-13. progress streaming and bounded runtime on a large fixture;
-14. assertion that no agent process starts.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F007.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

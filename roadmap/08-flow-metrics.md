@@ -128,40 +128,13 @@ interface PathCoverage {
 
 ## Acceptance criteria
 
-- [ ] Metrics for the `main-panel` answer cover exactly the files the flow touches, and the count is
-      stated.
-- [ ] Hotspot ranking uses snapshot git history and is reproducible.
-- [ ] Per-function CCN, NLOC, nesting, cognitive complexity, and hump count are produced, with Complex
-      Method, Bumpy Road, and Brain Method flags where they apply.
-- [ ] Circular dependencies, fan-in/fan-out, instability, and duplicated blocks are reported for the
-      flow's files.
-- [ ] The spaghetti index prints its formula and band next to the value, and provably ignores history.
-- [ ] At least the known contradiction on `main-panel` is visible: a high structural index alongside a
-      single nesting hump, both shown, not averaged.
-- [ ] Entries where the measure misreads the code carry a caveat, displayed with the number.
-- [ ] Coverage identifies alternative outcomes with no test naming their identifier, and labels the
-      method as a proxy in the view.
-- [ ] Two runs on one snapshot produce identical output.
-- [ ] Without git history, history-based metrics report unavailable with a reason.
-- [ ] `metrics --json` is versioned and complete enough to rebuild every view.
-- [ ] No project script, test, or build is executed.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F008.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. scope selection from reachability and citations;
-2. complexity and hotspot on a fixture with known revision counts;
-3. per-function metrics against hand-computed fixtures for CCN, nesting, and cognitive complexity;
-4. nesting-hump detection: one continuous block versus repeated humps;
-5. Bumpy Road and Brain Method thresholds at and around the boundary;
-6. cycles, fan-in/fan-out, instability on a fixture with a known cycle;
-7. duplication detection with a near-duplicate that must not match;
-8. change coupling ratio from fixture history;
-9. spaghetti index formula, banding, and history-independence assertion;
-10. caveat attachment and rendering;
-11. coverage proxy: covered, partial, and gap fixtures, plus an identifier that appears only in a comment;
-12. determinism across two runs and both platforms;
-13. no-history fallback;
-14. assertion that no project process is spawned.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F008.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

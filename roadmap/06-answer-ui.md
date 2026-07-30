@@ -80,54 +80,13 @@ following a diagram with real file references instead of assembling it in my hea
 
 ## Acceptance criteria
 
-- [ ] `veriflow open` serves the SPA on `127.0.0.1` and prints the root and URL.
-- [ ] After indexing `main-panel` and before any run, the Architecture screen shows the generated module
-      registry and the traffic between modules.
-- [ ] The answers list shows every stored answer with its snapshot, commit, verified ratio, and freshness
-      banner.
-- [ ] A claim's citation state — verified, unverified, or open question — is visible wherever the claim is,
-      and an unverified claim is never styled as a verified one.
-- [ ] Asking a question from the UI runs the F004 session with live streamed output, a working
-      `ask_user` prompt, and a functioning cancel.
-- [ ] A location question is caught before the run, explains itself, and can be overridden in one click.
-- [ ] A clear entry point starts the run without a confirmation click and is visible in the console; an
-      ambiguous one presents the candidates.
-- [ ] Correcting a step marks it as edited, keeps the original reachable, and closing a demoted step's open
-      question by hand works end to end.
-- [ ] A follow-up answer renders under its parent, not as an unrelated sibling.
-- [ ] Opening the UI mid-run shows the run from its beginning and then keeps up.
-- [ ] The flow diagram renders the answer's lanes, phase bands, and ordered steps.
-- [ ] Selecting any step shows its reasoning and its file references, and the references open in the
-      editor.
-- [ ] The paths screen groups outcomes by divergence phase, states each invariant, and dims the shared
-      prefix from the fork.
-- [ ] The modules screen shows the contract on every edge and marks inferred edges.
-- [ ] The external screen names the boundary and the failure behavior for each system.
-- [ ] The call graph's three views render from stored coordinates; entry-point filtering dims rather than
-      reflows; the call mesh is off by default.
-- [ ] Reopening any screen after a restart recomputes nothing — asserted by an absence of provider and
-      layout calls.
-- [ ] Geometry assertions pass: no stray edge crossings, no overlapping boxes, every branch forks from a
-      real step.
-- [ ] Both themes render every screen; server-side rendering of the shell produces the question, the
-      participants, the phase bands, and the freshness banner.
-- [ ] No screen writes to the repository or the model.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F006.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. server starts, binds loopback only, serves the SPA;
-2. rendered shell contains question, participants, phase bands, freshness banner;
-3. run console replay-then-follow, `ask_user` submit, cancel;
-4. step selection resolves the right evidence rows;
-5. paths grouping and prefix dimming for each tone;
-6. module edge contract and inferred marking;
-7. call graph three views from stored coordinates;
-8. entry-point filter produces a dimmed subset without layout change;
-9. node budget degradation path;
-10. geometry assertions over the stored layout;
-11. no-recompute assertion on open;
-12. theme snapshots;
-13. untrusted transcript rendering.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F006.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 

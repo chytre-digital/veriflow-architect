@@ -205,28 +205,43 @@ estimated.
 
 ## Blocking before F002
 
-### Q2 — Which code-review-graph read surface carries the call graph?
+### Q2 — Which code-review-graph read surface carries the call graph? — **answered 2026-07-30**
 
-**Status: needs a spike with measurements, not a decision on paper.**
+The spike ran. `code-review-graph` 2.3.7 installed with `uv tool install`, indexing `main-panel` on
+Python 3.12.4. Raw findings are in [`questions.yaml`](questions.yaml) under `Q2.findings`.
 
-The spike must answer, on `main-panel`:
+**Cost is a non-issue.** A full build took **31 seconds** for 1419 files, producing 6,619 nodes and 67,778
+edges. An incremental `update` took **2.2 seconds** and reported changed symbols, affected flows, test gaps
+and a risk score. The index is 101 MB in `.code-review-graph/`, which self-ignores through a generated
+`.gitignore` containing `*` — the target repository's `git status` was byte-identical afterwards.
 
-1. Does any surface return per-call-site `file:line`, and at what cost per query? F003's call-site
-   bucketing depends on it, and the provider does not document it.
-2. Can callers/callees be walked breadth-first from five entry points to full closure within a usable
-   budget, or is `visualize --format json` the only viable bulk path?
-3. **What is the actual TypeScript/TSX parse quality** — how many of roughly 1,600 files and their symbols
-   are recovered, and are barrel re-exports and dynamic imports resolved?
-4. How long does the first `build` take, and does `update` really land in seconds?
-5. What does `list_flows_tool` return for the checkout route — anything usable, or nothing?
+**Symbol and call resolution is good, which was the real risk.** `createLessonCheckoutSession` resolves to
+its file at lines 329–610, and `query callers_of` on it returns the actual route handlers, including
+`src/app/api/marketplace/checkout/route.ts::POST` at 15–64. Edge kinds are `CALLS` 42,298, `TESTED_BY`
+13,190, `IMPORTS_FROM` 6,079, `CONTAINS` 5,211, `REFERENCES` 334. A bare name returns `ambiguous` with
+candidates instead of guessing, which is the behaviour the MCP contract already wanted.
 
-Question 3 is the one that can change the plan. The mockup's call graph leaned on resolution that followed
-barrels and re-exports; if this provider is materially worse at that on TypeScript, the honest options are
-a thinner F003, a second provider, or bringing TypeScript resolution in-house earlier than planned. Decide
-with numbers.
+**Three things came back worse than hoped, and each changes something:**
 
-**Working default until the spike:** MCP read tools for queries, CLI for indexing, JSON export for bulk,
-and a documented capability gap wherever they fall short. Never emulate a missing capability silently.
+1. **Call-site lines are not on any supported surface.** `callers_of` and `callees_of` return caller and
+   callee *nodes* with their own definition ranges — never the line where the call happens. The `edges`
+   table does carry `line`, `confidence` and `confidence_tier`, so the data exists and nothing exposes it.
+   That is now [Q14](#q14--may-the-adapter-read-graphdb-directly-for-call-site-lines-and-confidence).
+2. **Communities are not modules.** 20 communities over 6,545 nodes, the largest holding 1,495 of them at
+   0.13 cohesion, with `igraph` absent so detection fell back to a file heuristic. F003's module registry
+   must therefore be **path-derived**, using communities only as a cross-check. This is a correction: the
+   spec previously said "derived from clusters and paths" as if they were equal inputs.
+3. **Flows are as weak as advertised.** 50 flows, several named just `GET` after their entry symbol,
+   typical depth 5 and 13 nodes. The roadmap already treats them as hints, which the measurement confirms
+   was right.
+
+**One unexpected gain:** `serve --tools` and the `CRG_TOOLS` variable restrict the exposed MCP tool list
+natively, so F004's requirement to withhold `refactor_tool` and `apply_refactor_tool` from the agent is
+supported by the provider rather than something VeriFlow has to police.
+
+**One new obligation:** `qualified_name` and `file_path` are absolute Windows paths, and the provider
+documents `graph.db` as containing absolute paths. The adapter must normalize to repository-relative at
+its boundary, or absolute paths will leak into stored answers and exported documents.
 
 ## Open, with working defaults
 
@@ -314,31 +329,49 @@ expose, move, delete, or unignore either.
 **Working default:** none in the MVP. Later candidates are the target's existing `docs/architecture` drafts
 as evidence, and its `specs/` content as scenarios once a specification slice exists.
 
-### Q13 — What is the fallback if the provider's TypeScript resolution disappoints?
+### Q13 — What is the fallback if the provider's TypeScript resolution disappoints? — **answered 2026-07-30, no fallback needed**
 
-**Why it matters:** the mockup's call graph followed barrel re-exports and dynamic imports, and doubling
-coverage came precisely from resolving those. If the Q2 spike shows this provider recovers materially less
-on TypeScript, F003 cannot deliver what the mockup showed and the plan must change rather than the claim
-being quietly softened.
+It does not disappoint where it matters. Function nodes carry exact line ranges and `callers_of` reaches
+the real route handlers — which is what F003 actually needs to build reachability. The weaknesses are in
+flow detection and community detection, and the roadmap already treats both as hints rather than as
+structure.
 
-**Working default:** accept a thinner call graph in the MVP — fewer resolved edges, more `unresolved` call
-sites, the buckets still reconciling — and state the gap in the UI. Bringing TypeScript resolution in-house
-becomes the first post-MVP item instead of the second.
+No fallback is triggered. A first-party TypeScript indexer stays a post-MVP item.
 
-**Alternatives:** add a second provider behind the same protocol for TypeScript only, or move the
-first-party indexer into iteration 1. Both are larger than the MVP is meant to be.
+### Q14 — May the adapter read `graph.db` directly for call-site lines and confidence?
+
+**Status: open, and it blocks F003's call-site bucketing.**
+
+The `edges` table carries `line`, `confidence` and `confidence_tier`. No supported command returns them.
+
+This resembles the GitNexus parse-cache trap closely enough to be worth separating carefully. It is **not**
+the same thing: `graph.db` is the product's documented primary store, not an eviction cache that a re-index
+empties. It is still a private schema, and this project's own history migrated it to version 9, so it will
+move again.
+
+**Working default:** read `graph.db` read-only for edge-level line and confidence, pin the schema version,
+verify it at startup, and degrade to edge-level counting with a visible note when it does not match. Never
+write to it. Ask upstream whether these fields can be exposed through a command — that is the outcome worth
+having, and the question costs one issue.
+
+**Alternatives:** ship without call-site lines, so buckets degrade to edge level and the UI says so; or
+contribute the flag upstream and depend on that version.
 
 ## Confirmation checklist
 
 ```text
-Q2  provider read surface and real TypeScript quality — run the spike, then record it here
+Q14 read graph.db directly for call-site lines, or ship without them?   <- blocks F003 bucketing
 Q3  explicit incremental update, or the provider's watch daemon?
 Q4  minimum supported client versions, and block or warn?
-Q5  may a correction add a step, or only amend an existing one?
+Q5  may a correction add a step, or only amend an existing one?         (deferred)
 Q6  markdown only, or markdown plus a YAML model?
 Q8  how strict is the flow/location classifier, and does it rewrite the question?
-Q13 is a thinner call graph acceptable if TypeScript resolution disappoints?
 ```
 
-D1–D18 are settled. Everything above rides on a stated default and can be answered when its feature is
-built — except Q2, which is a measurement and must happen before F002.
+D1–D19 are settled. Q2 and Q13 were answered by measurement on 2026-07-30. Everything left rides on a
+stated default and can be answered when its feature is built — except Q14, which decides whether F003's
+call-site bucketing exists at all.
+
+The structured form of all of this is in [`decisions.yaml`](decisions.yaml),
+[`questions.yaml`](questions.yaml), [`roadmap.yaml`](roadmap.yaml), and
+[`acceptance.yaml`](acceptance.yaml).

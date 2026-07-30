@@ -38,13 +38,19 @@ repository it does not touch, so that a claim about a flow has a checkable bound
   - `callback` — a function passed as a value, which leaves no reference site in the index at all;
   - `port` and `callback` are stored with `inferred: true` and the named rule that produced them;
 - call-site bucketing where every site lands in exactly one bucket and the buckets sum to the total:
-  resolved to a definition, database verbs, npm packages, external SDK, stdlib and local objects. This
-  requires `capabilities().callSiteLines`, which the Q2 spike must confirm; without it, counting degrades
-  to edge level and the UI says so instead of showing a total it cannot defend;
+  resolved to a definition, database verbs, npm packages, external SDK, stdlib and local objects. The
+  spike found that **no supported provider surface returns call-site lines**, so this is gated on
+  [Q14](open-questions.md#q14--may-the-adapter-read-graphdb-directly-for-call-site-lines-and-confidence).
+  Until that is settled `capabilities().callSiteLines` is false, counting degrades to edge level, and the
+  UI says so instead of showing a total it cannot defend;
 - per-entry-point closure, stored so the UI can filter to one route without recomputation;
-- module registry: candidate modules derived deterministically from clusters and paths, with **ids derived
-  from paths** so they stay stable across snapshots and across answers. F005's agent may rename, merge,
-  split, or add; this feature owns the deterministic proposal, not the naming;
+- module registry: candidate modules derived **from paths** — workspace and package boundaries, explicit
+  module roots such as `src/modules/*`, conventional layer roots — with ids derived from those paths so
+  they stay stable across snapshots and across answers. Provider communities are used only as a
+  cross-check that flags a suspicious grouping, never as the boundary: the spike measured 20 communities
+  over 6,545 nodes with the largest holding 1,495 of them at 0.13 cohesion, which is a topic cluster, not
+  a module. F005's agent may rename, merge, split, or add; this feature owns the deterministic proposal,
+  not the naming;
 - module traffic matrix: edges folded into from/to cells over clusters, axes in dependency order so a
   cell below the diagonal is a layer calling back up, plus an explicit backward-edge list with counts;
 - deterministic layout computed once per snapshot and stored as coordinates — folder box, file box,
@@ -118,45 +124,13 @@ A mismatch is a build failure, not a rounding difference.
 
 ## Acceptance criteria
 
-- [ ] On `main-panel`'s checkout and webhook routes, reachability returns functions in the hundreds and
-      excludes helpers that merely live in a reached file without being called. If the provider's
-      TypeScript resolution measured in the Q2 spike cannot support that figure, the target is
-      renegotiated against measured capability and the gap is stated in the UI — see
-      [Q13](open-questions.md#q13--what-is-the-fallback-if-the-providers-typescript-resolution-disappoints).
-- [ ] Module initialization of a reached file is included, and the reason is inspectable — this is why a
-      logger factory appears on every path with no caller.
-- [ ] The payment-gateway port dispatch appears as a `port` edge, marked inferred, with its rule named.
-- [ ] The event-subscriber callback appears as a `callback` edge; disabling that rule provably removes
-      the tax document, both calendar syncs, and the notification from the graph.
-- [ ] Getter methods and other known false-positive shapes do not produce callback edges.
-- [ ] Buckets reconcile exactly to the total call-site count.
-- [ ] Filtering to `POST /api/marketplace/checkout` yields a strict subset of the full closure, and the
-      other routes' subtrees are absent from it.
-- [ ] The traffic matrix's backward-edge list is explicit, with counts and a note per edge.
-- [ ] Indexing `main-panel` alone — with no agent run at all — produces a module registry that a developer
-      recognizes as the application's architecture: its layers, its explicit modules, and the traffic
-      between them.
-- [ ] Module ids survive a re-index after unrelated files change, so an answer stored earlier still
-      resolves.
-- [ ] Two runs on the same snapshot produce byte-identical layout coordinates.
-- [ ] A symbol that exists in two snapshots keeps its node identity.
-- [ ] `--json` output is versioned and complete enough to rebuild every view.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F003.acceptance`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Automated test cases
 
-1. reachability on a small fixture with a deliberately unreached sibling helper;
-2. module-init inclusion, and its exclusion when the file is never reached;
-3. callback lambda collapsed into its parent;
-4. port rule: adapter defining exactly the port's declared names;
-5. port rule negative: a same-named method on an unrelated object is not linked;
-6. callback rule positive, and the subtree loss when disabled;
-7. callback rule negative on getters;
-8. bucket reconciliation, including a package with several call sites;
-9. per-entry-point closure subset property across all entry points;
-10. traffic matrix orientation and backward-edge detection;
-11. layout determinism across platforms and across two runs;
-12. node identity stability between two snapshots;
-13. depth bound reached is reported, not silently truncated.
+Tracked as data in [`acceptance.yaml`](acceptance.yaml) under `F003.tests`, so an
+implementer or an agent can tick them off without re-parsing prose.
 
 ## Manual verification flow
 
