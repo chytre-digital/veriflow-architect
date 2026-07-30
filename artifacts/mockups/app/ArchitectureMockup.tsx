@@ -1146,24 +1146,30 @@ function CallScreen() {
               {nodeLabel(CALL_NODES[index])}
             </button>
           ))}
-          {scope ? (
+        </div>
+
+        {scope && scopeNode ? (
+          <div className="cg-scope-row">
             <button
               type="button"
-              className={`chip chip-toggle ${showLinks ? "is-active" : ""}`}
+              className={`switch ${showLinks ? "is-on" : ""}`}
               aria-pressed={showLinks}
               onClick={() => setShowLinks((on) => !on)}
             >
-              {showLinks ? "hide" : "show"} the {scopeLinks.length} calls between them
+              <span className="switch-track">
+                <span className="switch-knob" />
+              </span>
+              <span className="switch-label">
+                the {scopeLinks.length} calls between them
+              </span>
             </button>
-          ) : null}
-          {scope && scopeNode ? (
             <span className="cg-scope-note">
               {scope.size} of {CALL_TOTALS.functions} functions are reachable from{" "}
               <strong>{nodeLabel(scopeNode)}</strong>, transitively. The rest belong to the other
               doors — the webhook route alone dispatches 16 event types.
             </span>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <FunctionMap
           selected={selected}
