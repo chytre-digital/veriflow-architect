@@ -1,0 +1,11 @@
+{
+  "name": "@veriflow/providers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@veriflow/provider-protocol": "workspace:*",
+    "@veriflow/provider-crg": "workspace:*"
+  }
+}

@@ -1,11 +1,13 @@
 import { Command } from "commander";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { buildCallGraph, deriveModules, detectEntryPoints } from "@veriflow/callgraph";
-import { CodeReviewGraphProvider, INSTALL_HINT } from "@veriflow/provider-crg";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
+import { createProvider } from "@veriflow/providers";
 import { captureSnapshot, diffHashes, readGitFacts } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
+import { InitError, ProjectLock, initWorkspace, readConfig } from "@veriflow/workspace";
 import type { Snapshot } from "@veriflow/contracts";
 
 const program = new Command();
@@ -15,6 +17,8 @@ interface Ctx {
   root: string;
   projectId: string;
   store: Store;
+  lock: ProjectLock;
+  close(): void;
 }
 
 function open(pathArg?: string): Ctx {
@@ -26,10 +30,47 @@ function open(pathArg?: string): Ctx {
         `VeriFlow requires Git: the code intelligence provider refuses non-repository directories.`,
     );
   }
-  const projectId = basename(root).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const config = readConfig(root);
+  const projectId = config?.project.id ?? basename(root).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+  const lock = new ProjectLock(root);
+  try {
+    lock.acquire();
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+
   const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
-  store.upsertProject(projectId, root, basename(root));
-  return { root, projectId, store };
+  store.upsertProject(projectId, root, config?.project.name ?? basename(root));
+  const ctx: Ctx = {
+    root,
+    projectId,
+    store,
+    lock,
+    close() {
+      store.close();
+      lock.release();
+    },
+  };
+  process.on("exit", () => lock.release());
+  return ctx;
+}
+
+/** Reads repository files for callback inference. Nothing else in the graph touches source text. */
+function sourceReader(root: string): SourceReader {
+  const cache = new Map<string, string | undefined>();
+  return {
+    read(path) {
+      if (!cache.has(path)) {
+        try {
+          cache.set(path, readFileSync(join(root, path), "utf8"));
+        } catch {
+          cache.set(path, undefined);
+        }
+      }
+      return cache.get(path);
+    },
+  };
 }
 
 function fail(message: string): never {
@@ -41,6 +82,59 @@ function log(message = ""): void {
   process.stdout.write(message + "\n");
 }
 
+/** The provider is a Python CLI, so a missing interpreter is worth naming separately. */
+function probePython(): { available: boolean; version?: string } {
+  for (const command of ["python", "python3", "py"]) {
+    try {
+      const out = execFileSync(command, ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      return { available: true, version: out.trim().replace(/^Python\s+/, "") };
+    } catch {
+      continue;
+    }
+  }
+  return { available: false };
+}
+
+/* ------------------------------------------------------------------ init */
+
+program
+  .command("init")
+  .argument("[path]")
+  .option("--name <name>", "project name")
+  .option("--track-config", "add the narrow .gitignore exception so config.yaml can be tracked")
+  .description("create the VeriFlow workspace in a repository")
+  .action((pathArg: string | undefined, options: { name?: string; trackConfig?: boolean }) => {
+    let result;
+    try {
+      result = initWorkspace(resolve(pathArg ?? process.cwd()), {
+        name: options.name,
+        trackConfig: options.trackConfig,
+      });
+    } catch (error) {
+      if (error instanceof InitError) fail(error.message);
+      throw error;
+    }
+
+    if (result.outcome === "already-initialized") {
+      log(`Already initialized`);
+      log(`  Config     ${result.configPath}`);
+      if (result.preserved.length) log(`  Preserved  ${result.preserved.join(", ")}`);
+      return;
+    }
+
+    log(`Initialized VeriFlow for ${basename(result.root)}\n`);
+    log(`  Config     .veriflow/config.yaml${result.gitTracked ? " (tracked)" : " (ignored by Git)"}`);
+    log(`  Ignored    veriflow.db, logs/`);
+    if (result.preserved.length) {
+      log(`  Preserved  ${result.preserved.join(", ")}  — not ours, left untouched`);
+    }
+    if (!result.gitTracked) {
+      log(`\n  .veriflow/ is ignored by a parent rule. To track just the config:`);
+      log(`    veriflow init --track-config`);
+    }
+    log(`\nNext:\n  veriflow doctor`);
+  });
+
 /* ------------------------------------------------------------------ doctor */
 
 program
@@ -51,22 +145,32 @@ program
   .action(async (pathArg: string | undefined, options: { json?: boolean }) => {
     const root = resolve(pathArg ?? process.cwd());
     const git = readGitFacts(root);
-    const provider = new CodeReviewGraphProvider();
+    const provider = createProvider(readConfig(root)?.index.provider);
     const health = await provider.isAvailable();
-    const indexPresent = existsSync(join(root, ".code-review-graph", "graph.db"));
-    const probe = indexPresent ? provider.probeGraph({ path: root }) : undefined;
+    const indexPresent = provider.hasIndex({ path: root });
+    const probe = indexPresent ? provider.probe({ path: root }) : undefined;
+    const python = probePython();
+    const workspace = existsSync(join(root, ".veriflow", "config.yaml"));
 
     if (options.json) {
-      log(JSON.stringify({ contractVersion: 1, root, git, provider: health, probe }, null, 2));
+      log(
+        JSON.stringify(
+          { contractVersion: 1, root, workspace, git, python, provider: health, probe },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
     log(`VeriFlow 0.1.0\n`);
     log(`Node                 ✓ ${process.versions.node}`);
     log(`Git                  ${git.isRepository ? `✓ repository${git.branch ? ` on ${git.branch}` : ""}` : "✗ not a repository"}`);
+    log(`Workspace            ${workspace ? "✓ .veriflow/config.yaml" : "✗ absent — run: veriflow init"}`);
     log(`\nCode intelligence`);
-    log(`  code-review-graph  ${health.available ? `✓ ${health.version}` : `✗ ${health.reason ?? "not found"}`}`);
-    if (!health.available) log(`                     install: ${INSTALL_HINT}`);
+    log(`  Python             ${python.available ? `✓ ${python.version}` : "✗ not found — the provider needs Python 3.10+"}`);
+    log(`  ${provider.id.padEnd(17)}  ${health.available ? `✓ ${health.version}` : `✗ ${health.reason ?? "not found"}`}`);
+    if (!health.available) log(`                     install: ${provider.installHint}`);
     log(`  index              ${indexPresent ? "✓ present" : "✗ absent — run: veriflow index"}`);
     if (probe) {
       log(`  call-site lines    ${probe.callSiteLines ? "✓ available" : `✗ ${probe.reason ?? "unavailable"}`}`);
@@ -87,11 +191,11 @@ program
   .description("index the project and record the tree state")
   .action(async (pathArg: string | undefined, options: { rebuild?: boolean }) => {
     const ctx = open(pathArg);
-    const provider = new CodeReviewGraphProvider();
+    const provider = createProvider(readConfig(ctx.root)?.index.provider);
     const health = await provider.isAvailable();
-    if (!health.available) fail(`${health.reason}\ninstall: ${INSTALL_HINT}`);
+    if (!health.available) fail(`${health.reason}\ninstall: ${provider.installHint}`);
 
-    const indexPresent = existsSync(join(ctx.root, ".code-review-graph", "graph.db"));
+    const indexPresent = provider.hasIndex({ path: ctx.root });
     const incremental = indexPresent && !options.rebuild;
 
     const started = Date.now();
@@ -120,7 +224,10 @@ program
     ctx.store.insertSymbols(snapshot.id, symbols);
     ctx.store.insertCallSites(snapshot.id, callSites);
 
-    const modules = deriveModules(symbols);
+    const communityBySymbol = new Map(
+      symbols.filter((s) => s.communityId !== undefined).map((s) => [s.id, s.communityId!]),
+    );
+    const modules = deriveModules(symbols, { communityBySymbol });
     ctx.store.insertModules(snapshot.id, modules);
 
     log(``);
@@ -134,7 +241,7 @@ program
       const changed = diffHashes(ctx.store.readFileHashes(previous.id), captured.hashes);
       log(`  since last   ${changed.length} file(s) changed`);
     }
-    ctx.store.close();
+    ctx.close();
   });
 
 /* ------------------------------------------------------------------ status */
@@ -154,7 +261,7 @@ program
 
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, snapshot, counts, changed }, null, 2));
-      ctx.store.close();
+      ctx.close();
       return;
     }
 
@@ -165,7 +272,7 @@ program
     log(`Changes      ${changed.length} file(s) changed since capture`);
     for (const change of changed.slice(0, 10)) log(`             ${change.kind.padEnd(9)} ${change.path}`);
     if (changed.length > 10) log(`             … and ${changed.length - 10} more`);
-    ctx.store.close();
+    ctx.close();
   });
 
 /* ------------------------------------------------------------------ architecture */
@@ -177,13 +284,17 @@ program
   .description("the application's generated architecture — modules derived from the index")
   .action(async (pathArg: string | undefined, options: { json?: boolean }) => {
     const ctx = open(pathArg);
-    const provider = new CodeReviewGraphProvider();
+    const provider = createProvider(readConfig(ctx.root)?.index.provider);
     const symbols = await provider.symbols({ path: ctx.root });
-    const modules = deriveModules(symbols);
+    const modules = deriveModules(symbols, {
+      communityBySymbol: new Map(
+        symbols.filter((s) => s.communityId !== undefined).map((s) => [s.id, s.communityId!]),
+      ),
+    });
 
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, modules }, null, 2));
-      ctx.store.close();
+      ctx.close();
       return;
     }
 
@@ -196,7 +307,7 @@ program
       );
       if (module.cohesionWarning) log(`  ${" ".repeat(width)}  ⚠ ${module.cohesionWarning}`);
     }
-    ctx.store.close();
+    ctx.close();
   });
 
 /* ------------------------------------------------------------------ callgraph */
@@ -207,11 +318,16 @@ program
   .option("--entry <id>", "filter to one entry point's transitive closure")
   .option("--json", "machine-readable output")
   .option("--depth <n>", "depth bound", "25")
+  .option("--no-port", "disable port inference")
+  .option("--no-callback", "disable callback inference")
   .description("what the flow actually reaches from its entry points")
-  .action(async (pathArg: string | undefined, options: { entry?: string; json?: boolean; depth: string }) => {
+  .action(async (
+    pathArg: string | undefined,
+    options: { entry?: string; json?: boolean; depth: string; port?: boolean; callback?: boolean },
+  ) => {
     const ctx = open(pathArg);
-    const provider = new CodeReviewGraphProvider();
-    const probe = provider.probeGraph({ path: ctx.root });
+    const provider = createProvider(readConfig(ctx.root)?.index.provider);
+    const probe = provider.probe({ path: ctx.root });
     const symbols = await provider.symbols({ path: ctx.root });
     const callSites = await provider.callSites({ path: ctx.root });
 
@@ -230,19 +346,29 @@ program
       callSiteLinesExact: probe.callSiteLines,
       degradedReason: probe.callSiteLines ? undefined : probe.reason,
       depthBound: Number(options.depth),
+      inference: {
+        port: options.port !== false,
+        callback: options.callback !== false,
+        source: sourceReader(ctx.root),
+      },
     });
 
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, ...graph }, null, 2));
-      ctx.store.close();
+      ctx.close();
       return;
     }
 
     const functions = graph.nodes.filter((n) => n.kind !== "module-init").length;
     const inits = graph.nodes.length - functions;
+    const inferred = graph.edges.filter((e) => e.inferred);
     log(`Call graph — ${entryPoints.length} entry point(s)\n`);
     log(`  reached      ${functions} functions + ${inits} module inits`);
-    log(`  edges        ${graph.edges.length}`);
+    log(`  edges        ${graph.edges.length} (${inferred.length} inferred)`);
+    for (const kind of ["port", "callback"] as const) {
+      const of = inferred.filter((e) => e.kind === kind);
+      if (of.length) log(`               ${of.length} ${kind} — ${of[0]!.rule}`);
+    }
     log(`  depth bound  ${graph.depthBound}${graph.depthBoundHit ? " (HIT — graph truncated)" : ""}`);
     log(`\n  call sites from reached functions — ${graph.buckets.total} total`);
     log(`    resolved to a definition  ${graph.buckets.resolved}`);
@@ -258,7 +384,7 @@ program
     for (const cell of graph.traffic.slice(0, 12)) {
       log(`    ${cell.from} → ${cell.to}  ${cell.calls} calls${cell.backward ? "   ← backward" : ""}`);
     }
-    ctx.store.close();
+    ctx.close();
   });
 
 /* ------------------------------------------------------------------ entrypoints */
@@ -270,7 +396,7 @@ program
   .description("list detected entry points")
   .action(async (pathArg: string | undefined, options: { json?: boolean }) => {
     const ctx = open(pathArg);
-    const provider = new CodeReviewGraphProvider();
+    const provider = createProvider(readConfig(ctx.root)?.index.provider);
     const entryPoints = detectEntryPoints(await provider.symbols({ path: ctx.root }));
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, entryPoints }, null, 2));
@@ -278,7 +404,7 @@ program
       log(`${entryPoints.length} entry point(s)\n`);
       for (const e of entryPoints) log(`  ${e.kind.padEnd(13)} ${e.label}`);
     }
-    ctx.store.close();
+    ctx.close();
   });
 
 await program.parseAsync(process.argv);

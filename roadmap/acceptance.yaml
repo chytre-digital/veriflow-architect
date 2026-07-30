@@ -87,7 +87,7 @@ features:
       - "The traffic matrix's backward-edge list is explicit, with counts and a note per edge."
       - "Indexing `main-panel` alone — with no agent run at all — produces a module registry that a developer recognizes as the application's architecture: its layers, its explicit modules, and the traffic between them."
       - "Module ids survive a re-index after unrelated files change, so an answer stored earlier still resolves."
-      - "Two runs on the same snapshot produce byte-identical layout coordinates."
+      - "DEFERRED to F006 — deterministic layout coordinates. Nothing renders yet, so there is no picture for coordinates to be stable in; determinism is asserted today on the graph JSON instead. Recorded rather than silently skipped (D19)."
       - "A symbol that exists in two snapshots keeps its node identity."
       - "`--json` output is versioned and complete enough to rebuild every view."
     tests:

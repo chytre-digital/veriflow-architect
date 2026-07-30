@@ -18,10 +18,16 @@ export const DEFAULT_EXCLUDES = [
   "out",
   ".turbo",
   ".vercel",
-  ".code-review-graph",
-  ".gitnexus",
-  ".veriflow",
 ];
+
+/**
+ * Dot-directories at any level are tool state, not source: VeriFlow's own workspace, a provider's
+ * index, an editor's cache. Excluding the shape rather than a list of names means a new tool cannot
+ * quietly end up in the hash set — and keeps provider names out of this package.
+ */
+export function isToolStateDirectory(name: string): boolean {
+  return name.startsWith(".");
+}
 
 /**
  * Never read, never hashed, not even to fingerprint them. Matching is by path, so the contents are
@@ -91,7 +97,7 @@ export function hashTree(root: string, options: HashOptions = {}): FileHash[] {
       const abs = join(dir, entry.name);
       const rel = relative(root, abs).split(sep).join("/");
       if (entry.isDirectory()) {
-        if (excludes.has(entry.name)) continue;
+        if (excludes.has(entry.name) || isToolStateDirectory(entry.name)) continue;
         walk(abs);
         continue;
       }

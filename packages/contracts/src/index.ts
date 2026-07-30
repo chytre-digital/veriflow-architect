@@ -72,6 +72,8 @@ export interface SymbolRecord {
   lineEnd: number;
   language?: string;
   isTest: boolean;
+  /** Provider community, when it supplies one. A cross-check for module boundaries, never the boundary. */
+  communityId?: number;
 }
 
 export type CallResolution =
@@ -217,6 +219,8 @@ export interface TrafficCell {
   edges: number;
   /** True when the edge runs against the declared layer order. */
   backward: boolean;
+  /** What actually crosses this cell — the symbols, so a backward edge can be judged. */
+  note: string;
 }
 
 export interface CallGraph {

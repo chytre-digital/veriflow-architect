@@ -36,18 +36,21 @@ importers:
       '@veriflow/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@veriflow/provider-crg':
-        specifier: workspace:*
-        version: link:../../packages/provider-crg
       '@veriflow/provider-protocol':
         specifier: workspace:*
         version: link:../../packages/provider-protocol
+      '@veriflow/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../../packages/snapshot
       '@veriflow/store':
         specifier: workspace:*
         version: link:../../packages/store
+      '@veriflow/workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       commander:
         specifier: ^12.1.0
         version: 12.1.0
@@ -75,6 +78,15 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  packages/providers:
+    dependencies:
+      '@veriflow/provider-crg':
+        specifier: workspace:*
+        version: link:../provider-crg
+      '@veriflow/provider-protocol':
+        specifier: workspace:*
+        version: link:../provider-protocol
+
   packages/snapshot:
     dependencies:
       '@veriflow/contracts':
@@ -86,6 +98,15 @@ importers:
       '@veriflow/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/workspace:
+    dependencies:
+      '@veriflow/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
 
 packages:
 

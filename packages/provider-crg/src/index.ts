@@ -59,6 +59,7 @@ interface RawNode {
   line_end: number | null;
   language: string | null;
   is_test: number;
+  community_id: number | null;
 }
 
 interface RawEdge {
@@ -72,6 +73,7 @@ interface RawEdge {
 
 export class CodeReviewGraphProvider implements CodeIntelligenceProvider {
   readonly id = "code-review-graph";
+  readonly installHint = INSTALL_HINT;
   private readonly command: string;
   private cachedVersion?: string;
 
@@ -116,6 +118,14 @@ export class CodeReviewGraphProvider implements CodeIntelligenceProvider {
       coChange: true,
       incremental: true,
     };
+  }
+
+  hasIndex(snapshot: SnapshotLike): boolean {
+    return existsSync(this.graphPath(snapshot));
+  }
+
+  probe(snapshot: SnapshotLike): { callSiteLines: boolean; schemaVersion?: string; reason?: string } {
+    return this.probeGraph(snapshot);
   }
 
   /** Capabilities that can only be answered by looking at a real index. */
@@ -193,7 +203,8 @@ export class CodeReviewGraphProvider implements CodeIntelligenceProvider {
     try {
       const rows = graph
         .prepare(
-          `SELECT id, kind, name, qualified_name, file_path, line_start, line_end, language, is_test
+          `SELECT id, kind, name, qualified_name, file_path, line_start, line_end, language, is_test,
+                  community_id
            FROM nodes`,
         )
         .all() as unknown as RawNode[];
@@ -425,6 +436,7 @@ export class CodeReviewGraphProvider implements CodeIntelligenceProvider {
       lineEnd: row.line_end ?? row.line_start ?? 1,
       language: row.language ?? undefined,
       isTest: row.is_test === 1,
+      communityId: row.community_id ?? undefined,
     };
   }
 }

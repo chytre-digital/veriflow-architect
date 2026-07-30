@@ -24,6 +24,12 @@ export interface CodeIntelligenceProvider {
 
   version(): Promise<string>;
   isAvailable(): Promise<ProviderHealth>;
+  /** Does a usable index already exist for this snapshot? Keeps callers away from provider paths. */
+  hasIndex(snapshot: SnapshotLike): boolean;
+  /** Probe results that need a real index. */
+  probe(snapshot: SnapshotLike): { callSiteLines: boolean; schemaVersion?: string; reason?: string };
+  /** Exact command to install this provider when it is absent. */
+  readonly installHint: string;
   capabilities(): Promise<ProviderCapabilities>;
 
   index(snapshot: SnapshotLike, sink: ProgressSink): Promise<IndexStats>;
@@ -56,6 +62,15 @@ export class ProviderUnavailableError extends Error {
  */
 export class FakeProvider implements CodeIntelligenceProvider {
   readonly id = "fake";
+  readonly installHint = "nothing to install — this provider is for tests";
+
+  hasIndex(): boolean {
+    return true;
+  }
+
+  probe(): { callSiteLines: boolean; schemaVersion?: string; reason?: string } {
+    return { callSiteLines: true, schemaVersion: "fake" };
+  }
 
   constructor(
     private readonly data: {
