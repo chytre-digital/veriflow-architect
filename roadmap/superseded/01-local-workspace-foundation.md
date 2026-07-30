@@ -23,7 +23,7 @@ diff, branch, and restore it with the same tools as the code.
 ### In
 
 - scaffold the Node.js/TypeScript pnpm workspace described in the
-  [V0 technical architecture](../docs/architecture/v0-architecture.md);
+  [V0 technical architecture](../../docs/architecture/v0-architecture.md);
 - implement shared Zod contracts for configuration, architecture elements, and relationships;
 - implement project-root discovery: explicit path first; otherwise the nearest ancestor containing
   `.veriflow/`, then the Git root when present, then the current directory;
@@ -213,7 +213,7 @@ At minimum:
 | 6 | Restore the file and run `git diff -- .veriflow`. | Only canonical setup files appear; runtime content is ignored. |
 
 The feature must also pass the initialization portion of the
-[`main-panel` dogfood flow](../docs/dogfooding/main-panel.md), including preservation of its legacy
+[`main-panel` dogfood flow](../../docs/dogfooding/main-panel.md), including preservation of its legacy
 ignored `.veriflow/` files.
 
 ## Definition of done

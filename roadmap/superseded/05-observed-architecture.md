@@ -49,7 +49,7 @@ orientation before inspecting files.
 - reject/dismiss a candidate in runtime proposal state without changing canonical YAML;
 - re-run synthesis after a new analysis while preserving manual declarations and previous
   accept/reject decisions when evidence identity remains compatible;
-- make the [`main-panel` dogfood flow](../docs/dogfooding/main-panel.md) the feature acceptance
+- make the [`main-panel` dogfood flow](../../docs/dogfooding/main-panel.md) the feature acceptance
   demonstration.
 
 ### Out

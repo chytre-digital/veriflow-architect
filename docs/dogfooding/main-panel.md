@@ -2,8 +2,11 @@
 
 ## Purpose
 
-`main-panel` is the first real project VeriFlow must analyze after F001–F005. It is large enough to
-prove that the product creates a human-scale architecture view instead of a file graph.
+`main-panel` is the repository the MVP must produce a real flow answer for. It is large enough that a
+file graph is useless and a human-scale answer is valuable, its flow of interest crosses an external
+payment provider and comes back as a webhook, and it is TypeScript — which is exactly where the chosen
+code intelligence provider is weakest, so the dogfood run tests the honest case rather than the easy
+one.
 
 Target path:
 
@@ -12,48 +15,72 @@ C:\Users\kubad\Documents\coding\chytre-digital\main-panel
 ```
 
 This absolute path is a local test input only. It must never be persisted in canonical VeriFlow
-files or portable fixtures.
+files, exported documents, or portable fixtures.
 
-## Baseline observed on 2026-07-29
+## Baseline
 
 Product:
 
 - NaLekci, a Czech/English marketplace for finding and booking sports lessons;
 - Next.js 16, React 19, TypeScript, Mantine, Supabase, Stripe, Resend, and Google integrations.
 
-Repository evidence:
+Repository scale, as observed on 2026-07-30. These are properties of the repository, not of any
+analyzer, so they remain valid orientation whichever provider is used:
 
 | Area | Baseline |
 |---|---:|
 | TypeScript/TSX files under `src/` | about 957 |
-| Next.js `page.tsx` files | about 41 |
 | Next.js `route.ts` files | about 135 |
-| Supabase migrations | about 130 |
-| `docs/architecture/*.md` | 6 |
-| `docs/contracts/*.md` | 5 |
-| `docs/manual-testing/*.md` | 34 |
+| Next.js `page.tsx` files | about 41 |
+| Supabase migrations | about 131 |
+| `docs/architecture/*.md` | 6, all `status: draft` |
 | files under `specs/` | about 144 |
+
+A previous index of this repository reported roughly 1,600 indexed files, 11,600 symbols, and 26,600
+relationships. Expect a different provider to report different totals; that is a property of the
+analyzer, not a regression.
 
 Observed source boundaries:
 
 ```text
-src/app
-src/presentation
-src/application
-src/domain
-src/infrastructure
-src/server
-src/shared
+src/app  src/presentation  src/application  src/domain
+src/infrastructure  src/server  src/shared
 
-src/modules/billing
-src/modules/payments
-src/modules/stripe-gateway
+src/modules/billing  src/modules/payments  src/modules/stripe-gateway
 ```
 
-Existing architecture documents already describe application layers, runtime boundaries, external
-services, dependency rules, data ownership, deployment, and candidate invariants. At the baseline
-all six `docs/architecture` documents have `status: draft`; they are useful evidence but are not
-accepted constraints.
+These counts move with every commit and with every re-index. They are orientation, not acceptance
+criteria — see [what "the same result" means](#what-mockup-parity-means).
+
+## Provider state
+
+The MVP provider is [code-review-graph](https://github.com/tirth8205/code-review-graph), a Python CLI
+and MCP server installed with `pipx install code-review-graph`. It owns its own index directory in the
+target:
+
+```text
+.code-review-graph/          # provider-owned SQLite graph, gitignored by the provider
+```
+
+Facts the adapter must respect:
+
+- The provider refuses non-repository directories, so the target must be a Git (or SVN) working tree.
+  `main-panel` is.
+- `build` creates the index, `update` re-parses only changed files, `detect-changes` reports what moved,
+  `status` reports health. Reads go through its MCP tools; `visualize --format json` is the bulk export.
+- **Its flow detection is weak for TypeScript.** The project states JavaScript flow detection needs work
+  and reports about 33% flow recall in its own evaluation. So on this target, `list_flows_tool` output is
+  a hint to cross-check, VeriFlow detects entry points itself, and the agent does the sequencing over
+  verified symbol and call evidence. Nothing in the acceptance criteria may depend on provider flows.
+- **Per-call-site line numbers are not documented.** Whether a call site resolves to `file:line` must be
+  probed on this repository before F003 is written — it is the first question of the Q2 spike.
+- `refactor_tool` and `apply_refactor_tool` exist and are never called or registered with an agent.
+- VeriFlow never downloads the provider; `veriflow doctor` reports its absence with the install command
+  and VeriFlow still starts without it.
+
+The repository also carries a `.gitnexus/` index from earlier experiments, including a ~110 MB
+LadybugDB file. It belongs to the user, VeriFlow does not use it, and VeriFlow must leave it completely
+alone.
 
 ## Safety constraints
 
@@ -61,105 +88,133 @@ The target currently has:
 
 - a dirty Git worktree unrelated to VeriFlow;
 - `.veriflow/` ignored by the root `.gitignore`;
-- ignored legacy `.veriflow/.env.local` and `.veriflow/cli.ts`.
+- ignored legacy `.veriflow/.env.local` and `.veriflow/cli.ts`;
+- a `.gitnexus/` index from earlier experiments, owned by the user, not by VeriFlow.
 
 The dogfood flow must:
 
-- preserve every existing change;
-- never read, print, move, delete, or unignore the legacy secret/script;
-- create new canonical VeriFlow files additively;
-- add only narrow Git ignore exceptions when explicitly requested;
-- store analysis output only under ignored `.veriflow/runtime/`;
-- avoid running the application, npm scripts, Supabase, migrations, tests, or external network
-  requests.
+- preserve every existing change — after a full run, `git status` in the target is unchanged;
+- never read, print, move, delete, or unignore the legacy secret or script;
+- never touch `.gitnexus/`;
+- perform no Git mutation of any kind — no checkout, no stash, no worktree, nothing;
+- index in place, and accept that the provider creates and owns `.code-review-graph/`;
+- record the tree state by file hash, including `dirty: true`, and display that on every answer derived
+  from it, rather than implying the answer describes a commit;
+- run the agent in the working tree with the client's read-only permission mode, no VeriFlow write tool,
+  and the provider's refactor tools filtered out;
+- write into the repository only through an explicit export into `docs/`;
+- avoid running the application, npm scripts, Supabase, migrations, or tests;
+- make no network request of its own.
 
-## Five-feature acceptance flow
+## The question
 
-After F001–F005 are implemented:
+The MVP's acceptance question is the mockup's question:
+
+```text
+Jak funguje rezervace a zaplacení lekce?
+```
+
+Its entry points in the repository:
+
+```text
+src/app/api/marketplace/checkout/route.ts
+src/app/api/webhooks/stripe/route.ts
+```
+
+Primary sources behind the flow:
+
+```text
+src/modules/payments/checkout/createLessonCheckoutSession.ts
+src/modules/payments/checkout/paymentHolds.ts
+src/modules/payments/fulfillment/fulfillLessonCheckout.ts
+src/modules/stripe-gateway/webhook.ts
+src/modules/payments/bootstrap/subscribers.ts
+src/application/marketplace/resolveLessonPayment.ts
+src/application/marketplace/bookAvailabilitySlot.ts
+supabase/migrations/20260717120000_pay_then_book_capacity_hold.sql
+```
+
+## Acceptance flow
 
 ```powershell
-veriflow init "C:\Users\kubad\Documents\coding\chytre-digital\main-panel" `
-  --name NaLekci `
-  --git-mode track
+veriflow init "C:\Users\kubad\Documents\coding\chytre-digital\main-panel" --name NaLekci
 
-veriflow validate "C:\Users\kubad\Documents\coding\chytre-digital\main-panel"
+veriflow doctor "C:\Users\kubad\Documents\coding\chytre-digital\main-panel"
 
-veriflow analyze "C:\Users\kubad\Documents\coding\chytre-digital\main-panel"
+veriflow index "C:\Users\kubad\Documents\coding\chytre-digital\main-panel"
+
+veriflow ask "C:\Users\kubad\Documents\coding\chytre-digital\main-panel" `
+  "Jak funguje rezervace a zaplacení lekce?"
 
 veriflow open "C:\Users\kubad\Documents\coding\chytre-digital\main-panel"
 ```
 
 Expected outcome:
 
-1. existing `.veriflow` files and unrelated worktree changes are untouched;
-2. canonical config and declared architecture files are valid and trackable;
-3. analysis records the dirty Git state and inventories the project safely;
-4. Observed Architecture identifies the Next.js application, Supabase platform, standard source
-   layers, and explicit Billing/Payments/Stripe gateway modules;
-5. mapped external dependencies include at least Supabase, Stripe, Resend, and Google APIs when
-   their package evidence is present;
-6. cross-group TypeScript imports appear as aggregated, inspectable relationships;
-7. the six architecture docs are linked as evidence with `draft` status;
-8. the default diagram stays below the visible-node budget and shows no source files/functions;
-9. accepting one candidate creates a small canonical YAML diff;
-10. deleting `.veriflow/runtime/` and reopening loses observed evidence but not declared intent.
+1. legacy `.veriflow/` files, `.gitnexus/`, and the unrelated dirty worktree are all untouched;
+2. `doctor` reports Python, the provider version, the detected agent clients, and that the provider's
+   TypeScript flow quality is weak;
+3. the project is indexed, the tree state is recorded by file hash with `dirty: true`, and a second
+   `index` after editing two files takes the incremental path and reports two changed files;
+4. the agent session streams visibly, and a question from the agent blocks the run until answered;
+5. a flow answer is stored covering checkout, the Stripe redirect, the signed webhook return,
+   fulfilment, and the effects that follow;
+6. every alternative outcome states the invariant it protects — closed payment page, expired hold,
+   duplicate webhook, disappeared seat, failed capture;
+7. the money loop is present: value leaves through the gateway port and returns as a signed webhook;
+8. `port` and `callback` edges are labelled inferred with the rule that produced them;
+9. every citation resolves in the indexed commit, or the claim is an open question;
+10. the call graph shows the functions reachable from those entry points, and filtering to
+    `POST /api/marketplace/checkout` narrows the map to that route's closure without reflowing;
+11. metrics cover the files the flow touches, with the coverage proxy labelled and at least the known
+    contradiction surfaced rather than averaged away;
+12. restarting VeriFlow and reopening the answer recomputes nothing;
+13. after editing one of the flow's files, the answer reports that cited file as changed and shows
+    per-citation drift, while an edit elsewhere in the repository changes nothing;
+14. export writes one new markdown document under `docs/architecture/flows/` with a generated mermaid
+    diagram, `status: draft`, an owner placeholder, and `last-reviewed`, matching the target's
+    frontmatter conventions — and runs no Git command;
+15. `veriflow mcp` lets an agent list answers, read the flow and its paths, and report which failure
+    paths have no test, each response stamped with snapshot and freshness.
 
-## Useful result threshold
+## What mockup parity means
 
-The run is not successful merely because it counts files. Without any manual architecture entry
-beyond the generated root system, the user must be able to answer:
+The [frozen mockup](../../artifacts/mockups/README.md) was assembled by hand at commit `802dd7a`, with
+8 participants, 21 steps, 11 alternative paths, 329 reachable functions, 577 edges, and 27 files of
+metrics. It was a design exercise — a look at what a good result could be — built on a different
+analyzer and a commit the repository has long since moved past.
 
-- What are the main runtime/deployable boundaries?
-- Which source layers and explicit modules exist?
-- Which high-level groups import one another?
-- Which external provider families are visible in implementation evidence?
-- Which existing architecture documents are relevant, and what is their authority status?
-- Which observed candidates have not yet been accepted into the declared architecture?
+Acceptance is therefore **not** reproducing those numbers. The agent step is not deterministic, the
+provider is different, and the repository is a moving target. Acceptance is:
 
-## Intentionally unavailable after F005
+**Shape.** Every artefact exists and is non-trivial: participants in the high single digits, steps in
+the tens, alternative outcomes in the tens, reachable functions in the hundreds, metrics over the
+files the flow touches. The reachable-function figure is the one that depends on provider quality; if
+the Q2 spike shows weaker TypeScript resolution, this threshold is renegotiated openly against measured
+capability rather than quietly missed.
 
-- semantic business-flow reconstruction;
-- function-call and execution-flow tracing;
-- expected-vs-actual boundary violations;
-- health scores or refactoring recommendations;
-- editing/searching all documentation;
-- importing the existing Markdown feature specs as managed Gherkin tests.
+**Integrity.** 100% of citations in a stored answer resolve in the snapshot they name. Anything else
+means the answer was rejected. Call-site buckets reconcile exactly to the total.
 
-These are later slices. If module-level import aggregation proves insufficient on this target, the
-next analyzer can consume its existing GitNexus index through the provider protocol and add call or
-execution-flow evidence without changing the declared model.
+**Invariants.** Deterministically checkable facts about this flow, independent of wording:
 
-## F006 agent-assisted proof
+- the checkout route and the Stripe webhook route are both entry points;
+- the gateway boundary is crossed outbound and re-entered as a signed webhook;
+- the capacity-hold migration is cited by the phase that reserves a seat;
+- dispatch through the payment-gateway port is present and marked inferred;
+- the event-subscriber callback edge is present, without which the tax document, both calendar syncs,
+  and the notification are invisible;
+- the only backward module traffic is `payments → application` and
+  `modules → stripe-gateway`, or a newly appearing backward edge is reported as a change.
 
-After the deterministic F001–F005 flow, the user connects an agent they already pay for or have
-access to. VeriFlow asks for no OpenAI or Anthropic API key.
+**Honesty.** Proxies are labelled as proxies. Contradicting metrics are both shown. A claim without
+evidence is an open question. Freshness is a number, not a caveat.
 
-Interactive transport:
+## Intentionally unavailable in the MVP
 
-```powershell
-veriflow mcp "C:\Users\kubad\Documents\coding\chytre-digital\main-panel"
-```
-
-Portable fallback:
-
-```powershell
-veriflow agent prepare architecture-synthesis `
-  "C:\Users\kubad\Documents\coding\chytre-digital\main-panel"
-```
-
-Using the same pinned request, Codex and Claude Code should each be able to:
-
-1. explain the major architecture in language useful to a new developer;
-2. cite deterministic evidence for every architectural conclusion;
-3. propose responsibilities for the Next.js application, Supabase platform, source layers,
-   Billing, Payments, and Stripe gateway;
-4. identify the ambiguous overlap between `src/application/billing` and
-   `src/modules/billing` instead of silently merging them;
-5. reconcile observed evidence with the current draft architecture documents;
-6. ask human questions where business intent is not knowable from the repository;
-7. draft an architecture overview that follows `main-panel` frontmatter conventions.
-
-The proposal remains under `.veriflow/runtime/agent-runs/` until reviewed. Approval shows an exact
-diff and may create a new draft such as
-`docs/architecture/veriflow-generated-overview.md`. It must not overwrite an existing document,
-change `status` to `authoritative`, edit code, or perform a Git operation.
+- multi-flow project assembly and cross-flow impact;
+- declared intent and expected-vs-actual violations;
+- a project-wide health score;
+- real line coverage from a test run;
+- managed Gherkin specifications from the existing `specs/` content;
+- documentation search or editing.

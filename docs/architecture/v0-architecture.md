@@ -1,594 +1,650 @@
-# V0 technical architecture
+# MVP technical architecture
 
 ## Status
 
-This is the implementation contract for the architecture-first slice. Defaults that still need
-product confirmation are tracked in [open questions](../../roadmap/open-questions.md).
+This is the implementation contract for the flow-answer MVP: a user asks how something works, and
+VeriFlow produces a verified, cited flow answer that is stored locally, kept honest over time, and
+served to AI agents.
+
+The acceptance target for the first iteration is the frozen mockup in
+[`artifacts/mockups`](../../artifacts/mockups/README.md). Open decisions are tracked in
+[open questions](../../roadmap/open-questions.md).
+
+## Product unit
+
+The organizing unit is **one answered question about one flow**, not a declared architecture model.
+
+```text
+question ("Jak funguje rezervace a zaplacení lekce?")
+      +
+indexed snapshot of the project working tree
+      ↓
+deterministic code intelligence (code-review-graph provider)
+      ↓
+the user's own agent session (Claude Code / Codex), streamed live
+      ↓
+flow answer: lanes, phases, steps, alternative paths, modules, external systems
+      ↓
+citation verification against the snapshot
+      ↓
+stored in SQLite, revisitable, freshness-tracked
+      ↓
+exported markdown + mermaid on approval · served over MCP
+```
+
+Manual authoring of a declared architecture model is deferred. The module view is derived from the
+answer and the index, not typed in by hand.
 
 ## System boundary
 
-VeriFlow is one local application with three entry points over shared services:
-
 ```text
-                         local browser
-                              │
-                              │ HTTP on 127.0.0.1
-                              ▼
-┌──────────────────────────────────────────────────────────┐
-│                    VeriFlow local process                │
-│                                                          │
-│  CLI commands ──┐                                        │
-│                 ├── application services ── domain model │
-│  HTTP API ──────┘                    │                   │
-│                                     ▼                   │
-│                            repository file store         │
-└─────────────────────────────────────┬────────────────────┘
-                                      │
-                                      ▼
-                         .veriflow/*.yaml + docs/
+                      local browser                agent CLI child process
+                            │                     claude / codex, streamed
+                            │ HTTP + SSE            │  stdio + MCP
+                            ▼                       ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        VeriFlow local process                          │
+│                                                                        │
+│  CLI ──────────┐                                                       │
+│  HTTP API ─────┼── application services ── domain model                │
+│  MCP server ───┘             │                                         │
+│                              ├── SQLite store  (.veriflow/veriflow.db) │
+│                              ├── index state manager                   │
+│                              ├── provider protocol                     │
+│                              └── agent session runner                  │
+└───────────────┬────────────────────────────────┬───────────────────────┘
+                │                                │
+                ▼                                ▼
+   code-review-graph CLI / MCP           the project working tree
+   (Python, code intelligence)           ├── .code-review-graph/  (provider's
+                │                        │    own SQLite index, gitignored)
+                ▼                        └── docs/  (export only, after
+      .code-review-graph/                     explicit approval)
 ```
 
-CLI and HTTP handlers must not implement their own validation or persistence rules. Both call the
-same application services. Analyzer output enters through a provider contract and is kept separate
-from canonical declared architecture.
+CLI, HTTP API, and MCP are three adapters over the same application services. None of them
+implements its own validation, persistence, or verification rules.
 
 ## Source of truth
 
-The default contract is:
+The MVP inverts the earlier file-first default:
 
-- YAML/Markdown files in the repository are canonical;
-- the local UI may edit them through application services;
-- writes are atomic and use an expected revision/hash;
-- when the project uses Git, Git is the version history and collaboration mechanism;
-- SQLite, when introduced, is a disposable index/cache and can be rebuilt from files;
-- opening or reading a project never rewrites canonical files;
-- VeriFlow never performs a Git commit, push, reset, checkout, or merge automatically.
+- **SQLite is canonical** for index snapshots, agent runs, transcripts, flow answers, citations,
+  verifications, call graphs, and metrics. These are results of work that cannot be recomputed
+  identically — an agent run is not deterministic — so they are stored, not derived.
+- **`.veriflow/config.yaml` is canonical** for the small amount of durable, reviewable project
+  configuration and is the only VeriFlow file meant to be committed.
+- **Exported markdown is the shareable record.** On explicit approval, a flow answer becomes a
+  document inside a configured documentation root, with a generated mermaid diagram. That file is
+  normal repository content, tracked by Git.
+- **The provider index is disposable.** Deleting `.code-review-graph/` loses cached index data, not
+  answers. Rebuilding it restores the ability to ask new questions; it does not restore or invalidate
+  stored ones.
 
-Git is recommended but not required for `init`, `validate`, or `open`. Without Git, the explicit
-project path or current directory is the root and file safety guarantees remain unchanged.
+Consequence that must be stated in the product: `veriflow.db` is durable local state that is **not**
+version-controlled. Losing it loses stored answers. Two mitigations are part of the MVP:
+`veriflow export --json` writes a portable dump of everything, and approved answers already live in
+the repository as markdown.
 
-This is the decision with the largest architectural impact and is still marked for confirmation as
-Q1.
+VeriFlow never performs a Git commit, push, reset, checkout, or merge in the user's repository.
 
 ## Repository layout
 
 ```text
 project/
 ├── .veriflow/
-│   ├── config.yaml
-│   ├── architecture/
-│   │   └── model.yaml
-│   ├── specifications/          # introduced after architecture V0
-│   │   └── *.feature
-│   ├── runtime/                 # ignored: analyses, proposals, logs, indexes
+│   ├── config.yaml          # canonical, committed
+│   ├── veriflow.db          # canonical local state, ignored
+│   ├── logs/                # ignored
 │   └── .gitignore
-├── docs/                        # existing Markdown, configurable
+├── .code-review-graph/      # the provider's own index, owned by the provider
+├── docs/                    # export target, normal repository content
 └── source code
 ```
 
 Generated `.veriflow/.gitignore`:
 
 ```gitignore
-/runtime/
+/veriflow.db
+/veriflow.db-wal
+/veriflow.db-shm
+/logs/
 ```
 
-No secret belongs in `.veriflow/config.yaml`.
+`.code-review-graph/` belongs to the provider, which gitignores it itself. VeriFlow reads it through
+the provider's interfaces and never edits its contents.
 
-Existing `.veriflow/` content from older VeriFlow experiments is not owned by the new application.
-Initialization preserves unknown files and creates only missing owned paths. In particular it must
-never read, print, move, or unignore legacy `.env*` files.
+No secret belongs in `.veriflow/config.yaml`. Existing `.veriflow/` content from older experiments is
+not owned by VeriFlow: initialization preserves unknown files and never reads, prints, moves, or
+unignores legacy `.env*` files.
 
 ## Configuration contract
-
-Proposed V1:
 
 ```yaml
 schemaVersion: 1
 
 project:
-  id: shop
-  name: Shop
+  id: main-panel
+  name: NaLekci
 
-architecture:
-  model: architecture/model.yaml
-  presets:
-    - typescript-layers
-    - nextjs
+index:
+  provider: code-review-graph
+  command: code-review-graph    # resolved on PATH unless an absolute path is given
+  autoUpdate: true              # incremental re-index before a new question
+
+agent:
+  clients:
+    - id: claude-code
+      command: claude
+    - id: codex
+      command: codex
+  default: claude-code
+
+documentation:
+  roots:
+    - docs
+  flowExportPath: docs/architecture/flows
 
 analysis:
-  providers:
-    - typescript-imports
   exclude:
     - node_modules
     - .next
     - dist
     - build
     - coverage
-    - artifacts
-    - output
-
-documentation:
-  roots:
-    - ../docs
-
-specifications:
-  roots:
-    - specifications
 ```
 
-All paths are relative to `.veriflow/`, normalized to POSIX separators when persisted, and must
-resolve inside the repository root. Path traversal and symbolic-link escapes are rejected.
+All paths are relative to the project root, normalized to POSIX separators when persisted, and must
+resolve inside the project. Path traversal and symlink escapes are rejected. No command name is
+executed from a path outside the user's `PATH` or an explicitly configured absolute command.
 
-## Architecture model
+## Snapshot model
 
-Proposed V1:
+You give VeriFlow a path to a repository and it indexes what is there. There is no ref selection, no
+checkout, and no copy of the tree.
 
-```yaml
-schemaVersion: 1
-
-elements:
-  - id: shop
-    kind: system
-    name: Shop
-    description: Customer-facing commerce system.
-    status: active
-    tags: []
-    documentation: []
-
-  - id: shop-web
-    kind: container
-    parentId: shop
-    name: Web application
-    description: Browser user interface.
-    technology: React
-    status: active
-    tags:
-      - frontend
-    documentation:
-      - docs/architecture/web.md
-
-  - id: payment-provider
-    kind: external-system
-    name: Payment provider
-    description: External payment processing.
-    status: active
-    tags: []
-    documentation: []
-
-relationships:
-  - id: web-uses-payment-provider
-    sourceId: shop-web
-    targetId: payment-provider
-    kind: uses
-    description: Creates and confirms payment intents.
-    technology: HTTPS
-    tags: []
-```
-
-### Element fields
+A **snapshot** is therefore not a materialized directory. It is a recorded *state of the working tree
+at the moment it was indexed* — the immutable subject every claim is scoped to.
 
 ```ts
-type ElementKind =
-  | "person"
-  | "system"
-  | "external-system"
-  | "container"
-  | "module"
-  | "datastore";
-
-type LifecycleStatus = "proposed" | "active" | "deprecated";
-
-interface ArchitectureElement {
+interface Snapshot {
   id: string;
-  kind: ElementKind;
-  parentId?: string;
-  name: string;
-  description: string;
-  technology?: string;
-  status: LifecycleStatus;
-  tags: string[];
-  documentation: string[];
+  projectId: string;
+  path: string;                  // the project root; never copied
+  commitSha?: string;            // recorded when Git is present
+  branch?: string;
+  dirty: boolean;                // uncommitted changes existed at index time
+  fileHashes: FileHashSet;       // path → content hash, the real identity of this state
+  provider: { id: string; version: string };
+  stats: IndexStats;
+  createdAt: string;
 }
 ```
 
-`container` means a separately runnable/deployable application or service in the C4 sense. The UI
-may label it “Application / service” to avoid requiring users to know C4 terminology.
+`fileHashes` is what makes a snapshot verifiable without a copy: a citation can later be checked
+against the file as it is *now*, and any difference is attributable to a specific file. The commit sha
+is recorded as useful metadata, not as the identity — with a dirty tree it does not describe what was
+actually indexed.
 
-### Relationship fields
+Consequences accepted with this simplification:
+
+- **A dirty tree is indexed as it is.** `dirty: true` is recorded and displayed on every answer derived
+  from it. VeriFlow does not pretend the result describes a commit.
+- **Editing files invalidates nothing retroactively.** A stored answer keeps its own `fileHashes`, so
+  freshness stays computable no matter what happens to the tree afterwards.
+- **Re-indexing is cheap.** The provider re-parses only changed files, so keeping the index current is
+  an incremental operation rather than a rebuild.
+
+Choosing a ref — indexing `main` while working on a branch — is deliberately out of MVP scope. The
+contract keeps room for it: adding a materialization strategy later changes `Snapshot` and the index
+manager only, and nothing that consumes `snapshotId`.
+
+## Code intelligence provider
+
+VeriFlow does not implement its own parser in the MVP. It defines a provider protocol and ships one
+adapter.
 
 ```ts
-type RelationshipKind =
-  | "uses"
-  | "depends-on"
-  | "reads-from"
-  | "writes-to"
-  | "publishes"
-  | "subscribes-to";
-
-interface ArchitectureRelationship {
+interface CodeIntelligenceProvider {
   id: string;
-  sourceId: string;
-  targetId: string;
-  kind: RelationshipKind;
-  description: string;
-  technology?: string;
-  tags: string[];
+  version(): Promise<string>;
+  isAvailable(): Promise<ProviderHealth>;
+  capabilities(): ProviderCapabilities;
+
+  index(snapshot: Snapshot, sink: ProgressSink): Promise<IndexStats>;
+  update(snapshot: Snapshot, sink: ProgressSink): Promise<IndexStats>;
+  overview(snapshot: Snapshot): Promise<RepositoryOverview>;
+  symbols(snapshot: Snapshot, query: SymbolQuery): Promise<SymbolRecord[]>;
+  callers(snapshot: Snapshot, symbol: SymbolRef): Promise<CallSite[]>;
+  callees(snapshot: Snapshot, symbol: SymbolRef): Promise<CallSite[]>;
+  flows(snapshot: Snapshot): Promise<FlowRecord[]>;
+  communities(snapshot: Snapshot): Promise<CommunityRecord[]>;
+  impact(snapshot: Snapshot, symbol: SymbolRef): Promise<ImpactRecord>;
+  changedFiles(snapshot: Snapshot): Promise<ChangedFile[]>;   // since this snapshot was indexed
+}
+
+interface ProviderCapabilities {
+  languages: string[];
+  imports: boolean;
+  calls: boolean;
+  callSiteLines: boolean;      // can a call site be located at file:line?
+  flows: boolean;              // pre-traced execution flows
+  flowQuality?: Record<string, "strong" | "weak">;   // per language, when the provider states it
+  communities: boolean;
+  coChange: boolean;
+  incremental: boolean;
 }
 ```
 
-Relationships describe architectural intent at the level selected by the author. They are not
-derived from imports or function calls.
+The first adapter is `provider-crg`, wrapping a locally installed
+[code-review-graph](https://github.com/tirth8205/code-review-graph). It is a Python CLI and MCP server
+that parses functions, classes, imports, call sites, inheritance, and test relationships across 30+
+languages via Tree-sitter, stores a graph in its own SQLite database under `.code-review-graph/`, and
+re-parses only changed files on update.
 
-## Validation invariants
+Surfaces the adapter uses:
 
-Validation is shared by CLI, HTTP API, and tests:
+- `code-review-graph build` for the first index, `update` for incremental re-index, `detect-changes`
+  for what moved, `status` for health;
+- its MCP server (`serve`) for reads — including `query_graph_tool`, `traverse_graph_tool`,
+  `get_impact_radius_tool`, `list_flows_tool`, `get_flow_tool`, `get_affected_flows_tool`,
+  `list_communities_tool`, `get_architecture_overview_tool`, `find_large_functions_tool`,
+  `get_hub_nodes_tool`, and `detect_changes_tool`;
+- `visualize --format json` for a bulk graph export when per-query reads are too slow.
 
-- `schemaVersion` is supported;
-- IDs match `^[a-z0-9]+(?:-[a-z0-9]+)*$` and are unique within their entity type;
-- names and descriptions are non-empty after trimming;
-- every `parentId`, `sourceId`, and `targetId` exists;
-- containment has no cycle;
-- a person, external system, or data store cannot contain children;
-- a module belongs to a container or another module;
-- a container belongs to a system;
-- a relationship cannot target itself;
-- documentation paths are repository-relative and cannot escape the repository;
-- unknown enum values are errors;
-- diagnostics identify the file, YAML path, and line/column when the parser provides them.
+Two properties of this provider shape the roadmap and must not be papered over:
 
-An unsupported future `schemaVersion` must fail with an upgrade message. It must never be silently
-interpreted as the current schema.
+- **Its flow detection is weak for TypeScript.** The project states plainly that entry-point and flow
+  patterns are strongest for Python and PHP/Laravel, that JavaScript flow detection needs work, and
+  that flow detection scores about 33% recall in its own evaluation. The dogfooding target is
+  TypeScript/Next.js. VeriFlow therefore treats provider flows as *hints*, does its own entry-point
+  detection, and puts the burden of sequencing on the agent working over verified symbol and call
+  evidence. `capabilities().flows` being true does not mean the flows are good.
+- **Per-call-site line numbers are not a documented guarantee.** Whether an individual call site can be
+  located at `file:line` is a capability to probe, not to assume. F003's call-site bucketing depends on
+  it and degrades explicitly when it is absent.
 
-## Concurrency and file safety
+The provider also exposes `refactor_tool` and `apply_refactor_tool`. VeriFlow never registers those
+with an agent and never calls them. Only read tools enter an agent run.
 
-Every read returns a `revision`, calculated from the canonical serialized bytes. Every mutation
-includes `expectedRevision`.
+The provider is never auto-installed. `veriflow doctor` probes Python and the CLI, prints
+`pipx install code-review-graph` when missing, and VeriFlow still starts without it — with indexing
+disabled and the reason shown. VeriFlow itself makes no network request; what the provider does is
+disclosed in `doctor`.
+
+The provider being Python is an implementation detail of an external tool. VeriFlow's own runtime is
+Node/TypeScript and stays that way. Replacing the provider — with GitNexus, with a first-party
+indexer, with anything that satisfies the protocol — must require a new adapter only: no file outside
+`packages/provider-*` may reference a provider's type, path, command, or tool name.
+
+## Reachability and call graph
+
+Derived deterministically from provider data and stored per snapshot:
+
+- **entry points** — HTTP route handlers, pages, server actions, cron/job entries, webhook handlers.
+  VeriFlow detects these itself over provider symbol and path data. Provider-supplied flows are
+  treated as hints to cross-check against, never as the source, because their quality for TypeScript
+  is explicitly weak;
+- **reachability** — transitive closure of calls from a chosen entry-point set, including a file's
+  module initialization, because importing a module runs it;
+- **edge kinds** — `call` (resolved to a definition), `port` (dispatch through an interface, target
+  taken by declared name), `callback` (a function passed as a value). `port` and `callback` are
+  marked `inferred: true` with the rule that produced them and are rendered as such;
+- **call-site buckets** — every site lands in exactly one bucket and the buckets sum to the total:
+  resolved, database verbs, npm packages, external SDK, stdlib/local. A bucket total that does not
+  reconcile is a bug, not a rounding difference. This requires `capabilities().callSiteLines`; without
+  it, counting degrades to edge level and the UI says so rather than showing a total it cannot defend;
+- **module traffic** — edges folded into a from/to matrix over architectural clusters, axes in
+  dependency order so a cell below the diagonal is a layer calling back up;
+- **layout** — computed once per snapshot and stored as coordinates, so a rendered map is identical
+  on every render and a change to the graph appears as a data diff.
+
+## Flow answer contract
+
+The flow answer is the product. It is versioned, stored relationally, and every claim carries
+evidence.
+
+```ts
+interface FlowAnswer {
+  contractVersion: 1;
+  id: string;
+  questionId: string;
+  snapshotId: string;
+  runId: string;
+  title: string;
+  status: "draft" | "accepted" | "superseded";
+
+  lanes: Lane[];                    // participants, with kind: actor | module | store | external
+  phases: Phase[];
+  steps: Step[];
+  branches: Branch[];               // alternative outcomes
+  moduleNodes: ModuleNode[];
+  moduleEdges: ModuleEdge[];        // each carries the contract on the edge
+  externalSystems: ExternalSystem[];
+  openQuestions: OpenQuestion[];
+}
+
+interface Step {
+  id: string;
+  phaseId: string;
+  from: LaneId;
+  to: LaneId;
+  kind: "sync" | "return" | "async" | "redirect" | "self" | "error" | "job";
+  label: string;
+  reasoning: string;
+  citations: Citation[];
+}
+
+interface Branch {
+  id: string;
+  forkStepId: string;               // must reference a real step
+  tone: "refused" | "compensated" | "recovered" | "alternate";
+  title: string;
+  invariant: string;                // what this outcome protects
+  steps: Step[];
+}
+
+interface Citation {
+  path: string;                     // repository-relative
+  line: number;
+  symbol?: string;
+  snippetHash: string;              // of the cited line at index time
+}
+```
+
+Validation is a technical boundary, not prompt wording. A submitted answer is rejected when:
+
+- any citation does not resolve in the snapshot it claims;
+- a branch forks from a step that does not exist, or states no invariant;
+- a step references a lane that is not declared;
+- a step has no citation and is not recorded as an open question;
+- the generated mermaid would reference a participant that is not declared;
+- the answer exceeds the declared size budget.
+
+A step VeriFlow cannot evidence is reported as an open question. It is never narrated.
+
+## Agent session
+
+The agent step runs the coding agent the user is already signed in to. VeriFlow stores no model
+credential and adds no inference bill.
 
 ```text
-read model → revision A
-external editor changes file → revision B
-UI saves with expected revision A → HTTP 409 conflict
+veriflow ask "…"
+        │
+        ├─ ensure the provider index is current (incremental update)
+        ├─ record the snapshot: file hashes, commit, dirty flag
+        ├─ rank entry-point candidates, assemble the evidence bundle
+        ├─ spawn the agent client as a child process, cwd = project root
+        │     MCP servers registered: veriflow (evidence + submit + ask_user)
+        │                             provider read tools only
+        ├─ stream every event to the UI and into run_events
+        └─ validate the submitted answer, then persist it
 ```
 
-The server writes to a sibling temporary file, flushes it, and atomically replaces the target.
-On Windows, the implementation must use a replacement strategy tested on NTFS. A failed write
-leaves the original model intact and cleans up only its own temporary file.
+Requirements that shape the implementation:
 
-The serializer must produce stable ordering and formatting so a one-field edit yields a small Git
-diff. Element and relationship array order is user-controlled and preserved.
-
-## Application services
-
-Initial service boundary:
+- **The bundle is a brief, not a cage.** The agent has its own read tools and runs in the working tree, so
+  VeriFlow cannot limit what it reads and does not claim to. It supplies ranked entry points, symbols, call
+  evidence, and clusters as a starting brief; the agent reads further as it needs to. What replaces the
+  false promise of control is a record: the transcript captures every file the agent opened, so the reading
+  is auditable afterwards.
+- **The stream is visible.** Everything the agent emits — assistant text, tool calls, tool results,
+  errors, exit status — is surfaced live in the UI and in the CLI, and is persisted so an old answer
+  can be reopened together with the transcript that produced it. A run is never a spinner.
+- **The user can answer mid-run.** VeriFlow exposes an `ask_user(question, options?)` MCP tool. The
+  agent blocks on it; the question appears in the UI; the answer is recorded as part of the run. This
+  is the vendor-neutral path. Raw stdin writes into the child process are the fallback for client
+  prompts that are not expressible as a tool call.
+- **Structured where possible, raw where not.** The adapter prefers a client's structured streaming
+  mode (for example a JSON event stream) and falls back to a PTY, normalizing both into one
+  `RunEvent` shape. Client capability is probed, not assumed, because these flags move between
+  versions.
+- **The agent runs in the working tree, so containment is explicit.** Indexing in place means there is
+  no copy to sandbox the agent in — an honest downgrade from a materialized snapshot. Containment
+  therefore rests on three things that are all verifiable: VeriFlow's MCP exposes no tool that writes
+  canonical state, executes commands, or touches Git; the provider's `refactor_tool` and
+  `apply_refactor_tool` are never registered; and the client is launched in its most restrictive
+  read-only permission mode, with the exact mode shown to the user before the run. Sandboxing the
+  agent in a copy is a deferred improvement, not a claim the MVP makes.
+- **Runs are controllable.** Cancel, retry, and time limits exist; a cancelled run is stored as
+  cancelled with its partial transcript.
 
 ```ts
-interface ProjectService {
-  initProject(input: InitProjectInput): Promise<InitProjectResult>;
-  validateProject(root: string): Promise<Diagnostic[]>;
-}
-
-interface ArchitectureService {
-  getModel(root: string): Promise<VersionedArchitectureModel>;
-  createElement(input: CreateElementInput): Promise<VersionedArchitectureModel>;
-  updateElement(input: UpdateElementInput): Promise<VersionedArchitectureModel>;
-  deleteElement(input: DeleteElementInput): Promise<VersionedArchitectureModel>;
-  createRelationship(input: CreateRelationshipInput): Promise<VersionedArchitectureModel>;
-  updateRelationship(input: UpdateRelationshipInput): Promise<VersionedArchitectureModel>;
-  deleteRelationship(input: DeleteRelationshipInput): Promise<VersionedArchitectureModel>;
+interface RunEvent {
+  runId: string;
+  seq: number;
+  ts: string;
+  channel: "assistant" | "tool-call" | "tool-result" | "stderr" | "prompt" | "answer" | "status";
+  payload: unknown;
 }
 ```
 
-The service receives the repository root explicitly. It must not rely on mutable global current
-working directory after startup.
+## Freshness
+
+Every stored answer knows the tree state it describes and how far the current tree has moved from it.
+Without a materialized copy, the file hashes recorded on the snapshot are what make this computable.
+
+```text
+answer → snapshot (file hashes at index time, commit X if any)
+              │
+              ├─ compare recorded hashes to the tree now:
+              │        M of the answer's files changed
+              ├─ commits since, when Git is present: N
+              └─ citation verification against the current files:
+                     resolved | drifted (same symbol, moved line) | missing (symbol gone)
+```
+
+Answer freshness states are computed, never narrated: `fresh`, `drifted`, `stale`, `broken`. Only the
+files an answer actually cites matter, so an answer about checkout is unaffected by unrelated work
+elsewhere in the repository — a property a commit count alone cannot express.
+
+Re-verification is cheap and independent of re-answering. The provider's incremental `update` and
+`detect-changes` narrow the work to files that changed. Two answers to the same question at two tree
+states can be diffed.
+
+## Metrics
+
+Metrics are computed locally over the files a flow touches, and each one mirrors a tool people
+actually run, so nothing is invented: hotspots and code age (code-maat), per-function complexity
+(lizard), Bumpy Road and Brain Method (CodeScene Code Health), cognitive complexity (SonarSource),
+cycles and fan-in/fan-out (madge), instability `I = Ce / (Ca + Ce)` (Martin), duplicated blocks
+(jscpd).
+
+Two product rules:
+
+- **The composite is structure-only.** The spaghetti index deliberately excludes history so change
+  frequency cannot hide inside a complexity number. Lower is better; the formula and its bands are
+  printed next to the value.
+- **Disagreement is the signal.** Metrics are not reconciled into one score. Where the index misreads
+  code — deep indentation that is nested object literals rather than branching — the caveat is shown
+  next to the number. Flagging its own false positives is the point.
+
+Path coverage is a proxy: whether any test file names the identifier a path is built on. It is
+labelled as a proxy everywhere it appears. Line coverage requires a real coverage run and is out of
+MVP scope.
 
 ## Local HTTP contract
 
-First endpoints:
+```text
+GET  /api/project
+GET  /api/snapshots
+POST /api/snapshots                  { mode: "build" | "update" }
+GET  /api/questions
+POST /api/questions                  { text, entryPointHints? }
+GET  /api/runs/:id
+GET  /api/runs/:id/events            (SSE stream)
+POST /api/runs/:id/answer            { answer }   — user reply to ask_user
+POST /api/runs/:id/cancel
+GET  /api/answers
+GET  /api/answers/:id
+GET  /api/answers/:id/freshness
+POST /api/answers/:id/verify
+POST /api/answers/:id/export         { targetPath }
+GET  /api/callgraph/:snapshotId
+GET  /api/metrics/:answerId
+```
+
+The server binds to `127.0.0.1`. Validation failures use `422`, stale revisions `409`, missing
+entities `404`. Exporting is the only endpoint that writes into the repository.
+
+## MCP server
+
+`veriflow mcp` exposes stored results so any agent can design and review against them. This is the
+consumption surface, and it is distinct from the submission tools used inside a run.
 
 ```text
-GET    /api/project
-GET    /api/architecture
-POST   /api/architecture/elements
-PUT    /api/architecture/elements/:id
-DELETE /api/architecture/elements/:id
-POST   /api/architecture/relationships
-PUT    /api/architecture/relationships/:id
-DELETE /api/architecture/relationships/:id
+list_flow_answers()
+get_flow_answer(id)
+get_flow_paths(answerId)
+get_flow_modules(answerId)
+get_external_systems(answerId)
+get_call_graph(snapshotId, entryPoint?)
+get_callers(symbol) / get_callees(symbol)
+get_metrics(answerId)
+get_coverage_gaps(answerId)
+get_freshness(answerId)
+search_answers(query)
 ```
 
-Mutation bodies include `expectedRevision`. Successful mutations return the complete updated model
-and new revision. Validation failures use `422`; stale revisions use `409`; missing entities use
-`404`.
+Every response states its snapshot, commit, and freshness, so an agent can tell whether it is
+reasoning about current code. No MCP tool writes canonical state, edits source, runs a command, or
+mutates Git.
 
-The server binds to `127.0.0.1` by default. Binding to other interfaces is not part of V0.
+## CLI commands
 
-## Analyzer boundary
+```bash
+veriflow init [path]
+veriflow doctor
+veriflow status
+veriflow index [path] [--rebuild]
+veriflow ask "how does X work?" [--client claude-code]
+veriflow answers [--json]
+veriflow verify [answerId]
+veriflow export <answerId> [--doc | --json]
+veriflow open
+veriflow mcp
+```
 
-V0 uses analyzer output as rebuildable evidence:
+## Store outline
+
+Grouped by concern; exact DDL belongs to the implementation plan.
 
 ```text
-project files
-    ↓
-project inventory
-    ↓
-TypeScript import provider
-    ↓
-raw evidence graph (runtime, ignored)
-    ↓
-architecture synthesis
-    ↓
-observed high-level model (runtime, ignored)
-    ↓ human acceptance
-declared model (canonical YAML)
+projects            id, root_path, name, created_at
+snapshots           id, project_id, path, commit_sha, branch, dirty, file_hashes_json,
+                    provider_id, provider_version, stats_json, created_at
+questions           id, project_id, text, status, created_at
+runs                id, question_id, snapshot_id, client_id, client_version, model,
+                    started_at, ended_at, status, exit_reason
+run_events          run_id, seq, ts, channel, payload_json
+answers             id, question_id, run_id, snapshot_id, parent_answer_id,
+                    contract_version, title, status, review_state, created_at
+corrections         id, answer_id, target_kind, target_id, field, original_value,
+                    new_value, author, created_at
+modules             id, project_id, slug, label, cluster, paths_json, source,
+                    proposed_by, run_id, updated_at
+answer_lanes        answer_id, lane_id, name, kind, technology
+answer_phases       answer_id, phase_id, ordinal, title
+answer_steps        answer_id, step_id, branch_id, phase_id, ordinal, from_lane,
+                    to_lane, kind, label, reasoning
+answer_branches     answer_id, branch_id, fork_step_id, tone, title, invariant
+answer_modules      answer_id, module_id            -- references modules.id, never a name
+answer_module_edges answer_id, from_module, to_module, contract, kind, inferred
+answer_externals    answer_id, system, boundary_path, failure_behavior
+answer_questions    answer_id, question, blocking
+citations           id, answer_id, subject_kind, subject_id, path, line, symbol,
+                    snippet_hash
+verifications       id, answer_id, snapshot_id, checked_at, total, resolved,
+                    drifted, missing
+call_nodes          snapshot_id, node_id, symbol, file, line, cluster, x, y
+call_edges          snapshot_id, from_node, to_node, kind, inferred, sites
+call_reach          snapshot_id, entry_point, node_id
+metrics_file        snapshot_id, answer_id, path, revisions, complexity, hotspot, age
+metrics_function    snapshot_id, answer_id, symbol, ccn, nloc, nesting, findings_json
+metrics_structure   snapshot_id, answer_id, path, fan_in, fan_out, instability, cycles
+metrics_coupling    snapshot_id, answer_id, path_a, path_b, shared_commits, ratio
+coverage_paths      answer_id, branch_id, state, evidence_identifier
+exports             id, answer_id, target_path, written_at, revision
 ```
-
-Initial provider contract:
-
-```ts
-interface AnalyzerProvider {
-  id: string;
-  capabilities: {
-    files: boolean;
-    imports: boolean;
-    calls: boolean;
-    documents: boolean;
-    frameworks: string[];
-  };
-  isAvailable(context: AnalysisContext): Promise<boolean>;
-  analyze(context: AnalysisContext, sink: EvidenceSink): Promise<AnalysisSummary>;
-}
-```
-
-The first provider is `typescript-imports`; it reports `calls: false`. The protocol permits a later
-GitNexus or language-specific provider to add `calls: true` without changing architecture synthesis
-or the UI. F005 must prove useful without call edges.
-
-Raw evidence nodes may represent repository, directory, file, route, document, package, or external
-package. Initial edges are `contains`, `imports`, `exports`, and `links-to`. Evidence is streamed as
-JSONL into `.veriflow/runtime/analyses/`; it is never written into `model.yaml`.
-
-Analyzer security rules:
-
-- never read `.env*`, credentials, private keys, or files excluded by config;
-- apply safe default excludes even if a project has no ignore file;
-- do not execute project code, package scripts, framework builds, or migrations;
-- parse `package.json`, TypeScript config, source text, and Markdown as data;
-- record dirty Git state when Git exists, but do not require a clean worktree;
-- perform no network requests.
-
-## Architecture synthesis
-
-V0 synthesis groups evidence using deterministic, explainable rules:
-
-1. package/workspace and deployable boundaries;
-2. framework presets such as Next.js and Supabase;
-3. conventional TypeScript layer roots such as `src/domain` and `src/infrastructure`;
-4. explicit module roots such as `src/modules/*`;
-5. configured path rules;
-6. external package families with a versioned provider registry;
-7. aggregated imports between accepted groups.
-
-Every candidate contains paths, detector ID, evidence counts, confidence, and an explanation.
-Candidates are observed data until a person accepts them. No detector may silently rename or
-rewrite a declared element.
-
-## Agent synthesis boundary
-
-F006 makes AI interpretation a normal architecture workflow without adding another model API
-account:
-
-```text
-declared architecture + observed architecture + selected docs/evidence
-                                │
-                                ▼
-                     versioned agent request
-                                │
-                 stdio MCP or JSON file handoff
-                                │
-          user's existing Codex / Claude Code / other agent
-                                │
-                                ▼
-                     versioned cited proposal
-                                │
-                                ▼
-                   schema and revision validation
-                                │
-                                ▼
-                    human-readable review/diff
-                                │
-                    explicit human approval
-                   ┌────────────┴────────────┐
-                   ▼                         ▼
-          declared model service       document service
-```
-
-VeriFlow core does not call a model API and stores no OpenAI, Anthropic, or other model key. The
-user invokes an already authenticated coding agent under that agent's existing plan, subscription,
-or organizational access. Agent usage remains subject to the provider's own limits, but VeriFlow
-adds no separate inference bill.
-
-Two transports share one contract:
-
-1. stdio MCP through `veriflow mcp`;
-2. versioned request/proposal JSON through `veriflow agent prepare` and
-   `veriflow agent import-proposal`.
-
-Initial MCP tools:
-
-```text
-get_agent_request
-get_project_summary
-get_declared_architecture
-get_observed_architecture
-get_architecture_evidence
-get_document
-submit_architecture_synthesis
-submit_document_proposal
-```
-
-The submit tools write only into `.veriflow/runtime/agent-runs/`. F006 deliberately exposes no tool
-that writes canonical architecture or documentation, edits source, executes a command, or mutates
-Git.
-
-### Agent request pinning
-
-Every request pins:
-
-- declared-model revision;
-- F004 analysis and F005 synthesis IDs;
-- selected evidence IDs;
-- included document paths and revisions;
-- task type, output contract version, and content budget;
-- exclusions applied by the secret deny-list.
-
-The user sees the exact request manifest before handing it to an external agent. Source excerpts are
-opt-in expansions; analyzer summaries and selected architecture documents are the default.
-
-### Agent proposal classes
-
-An agent proposal can contain:
-
-- human-readable architecture overview;
-- proposed component names, types, purposes, and declared/observed matches;
-- proposed relationship explanations;
-- architecture claim review: `supported`, `contradicted`, `ambiguous`, or
-  `insufficient-evidence`;
-- documentation drafts or revision patches;
-- explicit questions where intent cannot be inferred safely.
-
-Every conclusion cites request evidence. Unknown citations make the proposal invalid. AI confidence
-is not combined with deterministic analyzer confidence.
-
-### Document approval
-
-Generated Markdown is always proposed as `draft`. Approval:
-
-- shows sanitized rendered preview and exact file diff;
-- requires a path inside a configured documentation root;
-- follows a configured project template/frontmatter convention;
-- uses expected revision for an existing file;
-- refuses path traversal and symlink escapes;
-- never changes an authority status automatically;
-- never commits to Git.
-
-For `main-panel`, a new document includes `status: draft`, an explicit owner placeholder, and
-`last-reviewed`, matching its current documentation rules.
-
-### Evidence classes
-
-The UI uses visibly different provenance:
-
-```text
-Deterministic validation  — schema, path, exact count
-Observed synthesis        — versioned detector + cited facts
-AI interpretation         — agent/client/model + citations + confidence
-Declared architecture     — human-approved project intent
-```
-
-The product must not display “AI validation passed”. It displays individual reviewed conclusions
-and their evidence state.
 
 ## Suggested implementation stack
 
-- Node.js 24 and TypeScript;
-- pnpm workspace;
-- Commander for CLI;
-- Hono for the local HTTP server;
+- Node.js 24 and TypeScript, pnpm workspace;
+- Commander for the CLI;
+- Hono for the loopback HTTP server, SSE for run streams;
+- SQLite via Drizzle, WAL mode;
 - Vite + React for the local SPA;
-- Zod for runtime contracts;
-- `yaml` for parsing and controlled serialization;
-- TypeScript compiler API for import parsing and `tsconfig` path resolution;
-- React Flow for the high-level map;
-- ELK.js for deterministic layout;
-- Vitest for unit/integration tests;
-- Playwright for the acceptance smoke path.
-
-Vite/Hono is preferred over Next.js for the local-only slice because there is no SSR, hosted
-backend, or server-component requirement. This remains an explicit confirmation point in Q3.
+- Zod for every runtime contract;
+- `node-pty` for the PTY fallback in the agent adapter;
+- MCP TypeScript SDK for both the server and the provider client;
+- a small deterministic SVG engine for the sequence diagram and the maps, because phase bands,
+  divergence dimming, and per-step selection are the point and mermaid does not control them;
+- generated mermaid for the exported document, so it renders with no VeriFlow installed;
+- Vitest for unit/integration, Playwright for the acceptance smoke path.
 
 ## Package boundaries
 
-Target workspace:
-
 ```text
 apps/
-├── cli/             # veriflow commands and process startup
-├── server/          # loopback HTTP adapter and static SPA hosting
-└── web/             # React presentation only
+├── cli/
+├── server/
+└── web/
 
 packages/
-├── contracts/       # schemas and serializable types
-├── core/            # domain and application services
-├── file-store/      # repository discovery, YAML, atomic writes
-├── analyzer-protocol/
-├── analyzer-typescript/
-├── architecture-synthesis/
-├── agent-protocol/
+├── contracts/            # schemas and serializable types
+├── core/                 # domain and application services
+├── store/                # SQLite schema, migrations, repositories
+├── snapshot/             # tree state: file hashes, git facts, change detection
+├── provider-protocol/    # code intelligence contract
+├── provider-crg/         # the only place that knows code-review-graph exists
+├── callgraph/            # reachability, buckets, traffic matrix, layout
+├── metrics/              # deterministic code metrics
+├── agent-session/        # client adapters, streaming, ask_user, transcripts
+├── flow-answer/          # contract, validation, citation verification, mermaid
 └── mcp-server/
 ```
 
 Allowed dependency direction:
 
 ```text
-apps/* → core → contracts
-             ↘
-              file-store → contracts
-
-web → contracts
+apps/*  → core → contracts
+                ↘ store → contracts
+core    → provider-protocol, callgraph, metrics, flow-answer, agent-session, snapshot
+provider-crg → provider-protocol
+web     → contracts
 ```
 
-`core` has no dependency on Hono, Commander, React, or Node process globals. `web` never reads
-repository files directly.
+`core` depends on no HTTP framework, CLI framework, React, or vendor CLI. `web` never reads
+repository files or the database directly. `flow-answer` verification does not import the provider;
+it verifies against snapshot files.
 
-## Later documentation model
+## Safety rules
 
-Documentation roots are configured directories containing Markdown. Durable links from
-architecture elements use repository-relative paths. A later index will add title, headings,
-outgoing links, backlinks, and full-text search without moving or rewriting the Markdown.
+- never read `.env*`, credentials, private keys, or configured exclusions;
+- never execute project code, package scripts, framework builds, migrations, or tests;
+- no VeriFlow operation makes a network request; the provider and the agent client are separate
+  processes with their own, disclosed behavior;
+- the agent child process runs in the project root with the client's most restrictive read-only
+  permission mode, no write tool from VeriFlow, and no provider refactor tool registered;
+- writes into the repository happen only through an explicit export, atomically, with an expected
+  revision, into a configured documentation root;
+- VeriFlow never deletes or edits the provider's index directory; rebuilding it is the provider's own
+  command;
+- logs retain IDs, sizes, and status — not document or transcript contents by default;
+- no telemetry.
 
-Architecture V0 only validates and displays declared documentation paths. The documentation
-catalog is the next product slice.
+## Evidence classes
 
-## Later high-level specification model
-
-The default proposed storage is standard `.feature` text:
-
-```gherkin
-@id:checkout-payment
-@architecture:shop-web
-@architecture:payment-provider
-Feature: Checkout payment
-
-  @id:approved-card-payment
-  Scenario: Customer pays with an approved card
-    Given a customer has items in the cart
-    When the customer confirms an approved card payment
-    Then the order is confirmed
-```
-
-VeriFlow-specific tags carry stable identity and traceability while the behavior remains readable
-by Gherkin tools. The first specification slice will parse and manage this content but will not
-bind or execute step definitions.
-
-## Observability and privacy
-
-- no telemetry in V0;
-- no outgoing network request during init, validate, open, read, or write;
-- local logs go to stderr and optionally `.veriflow/runtime/`;
-- logs never include full document contents;
-- a startup banner prints the repository root and exact loopback URL.
-
-## Evolution boundary
-
-Additional analyzers may enrich the **observed architecture** beside the declared model:
+The UI keeps provenance visibly different and never collapses these into one "AI result":
 
 ```text
-declared architecture (canonical user intent)
-                 +
-observed implementation (rebuildable analyzer output)
-                 ↓
-expected-vs-actual findings
+Provider fact         deterministic, rebuildable from the snapshot
+Derived analysis      VeriFlow rule over provider facts, with a named rule
+Inferred edge         a rule that cannot be proven, labelled inferred with its reason
+Agent interpretation  client + model + citations, labelled as interpretation
+Verified citation     resolves in a named snapshot at a named line
+Human approval        what the user accepted and exported
 ```
 
-Analyzer output must not rewrite declared elements or relationships. Symbol/call graphs remain a
-separate, disposable evidence layer and are not shown on the default architecture screen.
+The product must never display "AI validation passed". It displays individual claims, their
+evidence, and their freshness.

@@ -1,42 +1,56 @@
 # VeriFlow
 
-VeriFlow is a local-first workspace for three connected kinds of project knowledge:
+VeriFlow answers questions about how a codebase actually works, and keeps the answers.
 
-1. high-level software architecture;
-2. Markdown documentation;
-3. human-readable specifications and high-level tests.
+You give it a path to a repository and describe a flow in your own words. VeriFlow indexes the project,
+hands the evidence to the coding agent you are already signed in to — Claude Code, Codex, or another
+client — and stores a verified answer in a local database: participants, ordered steps, every
+alternative outcome, module contracts, external systems, the functions the flow actually reaches, and a
+`file:line` reference behind every claim.
 
-The first product slice is deliberately architecture-first. It lets a user describe systems,
-applications, modules, data stores, external systems, and their intentional relationships without
-first analyzing source-code calls or imports.
+It is local-first, needs no account, and ships no model API key of its own.
 
 ## Current source of truth
 
 - [Product brief](docs/product/product-brief.md)
-- [V0 technical architecture](docs/architecture/v0-architecture.md)
-- [Roadmap and first six features](roadmap/README.md)
-- [Open product decisions](roadmap/open-questions.md)
+- [MVP technical architecture](docs/architecture/v0-architecture.md)
+- [Roadmap: ten features in three iterations](roadmap/README.md)
+- [Open decisions](roadmap/open-questions.md)
+- [Frozen acceptance mockup](artifacts/mockups/README.md)
 - [Long-term architecture-intelligence exploration](docs/veriflow-architecture-spec.md)
 
 ## First implementation outcome
 
-From a repository root, a user will be able to run:
+From a repository root:
 
-```bash
+```powershell
 veriflow init
-veriflow validate
-veriflow analyze
+veriflow doctor
+veriflow index
+veriflow ask "Jak funguje rezervace a zaplacení lekce?"
 veriflow open
 ```
 
-The local app will show and edit a version-controlled, high-level architecture model stored under
-`.veriflow/`. After the first five features it will also build a disposable TypeScript/import
-evidence graph and aggregate it into an observed high-level map. It will not require an account, a
-cloud service, or an LLM API key.
+The agent session streams live and can ask you questions while it runs. What you get back is a
+traced flow with every alternative path, a call graph of what the flow actually reaches, and metrics
+for the files it touches — stored locally, so reopening it costs nothing and VeriFlow can tell you
+how far the code has moved since.
 
-The first dogfooding target is
-[`main-panel`](docs/dogfooding/main-panel.md).
+Approve it and it becomes a committed markdown document with a generated mermaid diagram. Then
+`veriflow mcp` serves everything to any AI agent for design and review.
 
-F006 uses an already authenticated coding agent—Codex, Claude Code, or another compatible
-agent—to turn analyzer evidence into architecture a person can understand. VeriFlow does not ask
-the user to buy or configure another LLM API key.
+## What it depends on
+
+VeriFlow makes no network request. It does drive two external processes, each disclosed and each
+detected by `veriflow doctor`:
+
+- a locally installed code intelligence provider —
+  [code-review-graph](https://github.com/tirth8205/code-review-graph) in the MVP, a Python CLI wrapped
+  behind an adapter so it can be replaced;
+- the agent client you choose, running under your existing login.
+
+## Dogfooding target
+
+[`main-panel`](docs/dogfooding/main-panel.md) — NaLekci, a Next.js/Supabase/Stripe marketplace of
+about 1,600 indexed files. The [frozen mockup](artifacts/mockups/README.md) shows exactly what the
+MVP must produce for it, and is the acceptance target for the first iteration.

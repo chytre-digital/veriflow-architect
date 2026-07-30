@@ -1,14 +1,22 @@
 # Veriflow Architecture — Product & Technical Specification
 
-> **Status: long-term exploration, not the V0 implementation contract.**
+> **Status: partly adopted, partly long-term. Not the implementation contract.**
 >
-> The current architecture-first direction is defined by
+> The implementation contract is
 > [`product/product-brief.md`](product/product-brief.md),
-> [`architecture/v0-architecture.md`](architecture/v0-architecture.md), and the
-> implementation-ready features in [`../roadmap/`](../roadmap/README.md).
-> V0 is manual, local, repository-backed, and intentionally excludes source-code analyzers,
-> symbol/call graphs, architecture inference, health scoring, MCP, and PR impact analysis.
-> The material below is retained as input for later architecture-intelligence phases.
+> [`architecture/v0-architecture.md`](architecture/v0-architecture.md), and the ten features in
+> [`../roadmap/`](../roadmap/README.md).
+>
+> Since the 2026-07-30 pivot, much of this document is **in scope**: the machine-graph/human-graph
+> split, the analyzer abstraction and confidence field, symbol and call graphs, the MCP server, the
+> agent-over-evidence workflow, SQLite, the local daemon, and the rule that the default screen never
+> opens on thousands of nodes.
+>
+> Still **out of scope**, and the main reason this is not the contract: architecture health scoring,
+> expected-vs-actual rule enforcement, findings, the architecture timeline, PR impact analysis, and a
+> manually declared module model. The MVP's unit is an answered question about one flow, not a
+> project-wide architecture model — so where this document describes a whole-repository architecture
+> screen, read the roadmap instead.
 
 ## 1. Product vision
 

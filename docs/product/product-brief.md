@@ -2,226 +2,197 @@
 
 ## Product definition
 
-VeriFlow is a local-first project knowledge workspace that keeps architecture, documentation, and
-high-level behavioral specifications close to the code and connected to each other.
+VeriFlow answers questions about how a codebase actually works, and keeps the answers.
 
-Its first job is to answer, in language a developer, architect, tester, or AI coding agent can
-understand:
+You describe a flow in your own words — *"Jak funguje rezervace a zaplacení lekce?"* — against a
+branch you choose. VeriFlow indexes that branch deterministically, hands the evidence to the coding
+agent you are already signed in to, and stores a verified answer: the participants, the ordered
+steps, every alternative outcome, the module contracts, the external systems, the functions the flow
+actually reaches, and a file-and-line reference behind every claim.
 
-- What systems and applications exist?
-- What are their responsibilities and boundaries?
-- Which modules and external systems do they depend on?
-- Where is the documentation that explains each part?
-- Which business scenarios describe the expected behavior?
-
-The declared architecture records the **intended, high-level architecture** supplied by people.
-The first useful release also builds a separate, disposable **observed architecture** from project
-structure, documentation metadata, framework conventions, and TypeScript imports. It does not
-replace declared intent with analyzer guesses.
+The answer is durable local knowledge. You come back to it a week later and VeriFlow tells you how
+far the code has moved since. You approve it and it becomes a committed markdown document. You point
+an AI agent at it and the agent designs or reviews against something evidence-backed instead of
+re-reading the repository from scratch.
 
 ## Problem
 
-Architecture decisions usually live across diagrams, Markdown files, onboarding conversations, and
-people's memory. Test intent is split again between tickets, manual checklists, Gherkin files, and
-automated tests. Coding agents can read individual files but rarely receive a concise, structured
-view of the system boundaries they should respect.
+Understanding a flow in an unfamiliar or large codebase is expensive, and the result evaporates. The
+work happens in a chat window, produces prose nobody can verify, and is thrown away — so the next
+person, or the same person next month, pays again.
 
-Existing architecture graph tools often begin with every file, symbol, import, or call. That is
-useful for analysis but is a poor default representation for human orientation.
+Two kinds of tools exist and neither closes this gap. Code-intelligence tools produce accurate
+machine graphs — symbols, imports, calls, execution flows — which are exactly the wrong default
+representation for a human asking a question. Chat assistants produce readable narratives with no
+evidence, no persistence, and no way to tell whether they still describe the current code.
 
-VeriFlow starts from the opposite end:
+VeriFlow sits between them:
 
 ```text
-intentional architecture
-        +
-project documentation
-        +
-high-level behavior specifications
-        ↓
-shared project context for humans and agents
+deterministic code intelligence     (accurate, unreadable)
+              +
+your own coding agent               (readable, unverifiable)
+              +
+citation verification, storage, freshness
+              ↓
+an answer you can trust, revisit, commit, and hand to an agent
 ```
 
 ## Product pillars
 
-### 1. Architecture
+### 1. The answer is the unit
 
-A structured, high-level model of:
+One question about one flow produces one stored answer. Everything else — the module map, the call
+graph, the metrics, the document, the MCP surface — is a view of an answer or of the snapshot it was
+built on. There is no architecture model to author before you get value.
 
-- people and external actors;
-- systems and external systems;
-- deployable applications or containers;
-- logical modules;
-- data stores;
-- intentional relationships and responsibilities.
+### 2. Evidence or an open question
 
-The first slice is manually authored. A relationship such as `Web application uses Orders API`
-is product data. Thousands of function calls are not.
+Every step, edge, and outcome carries a repository-relative `file:line` reference that VeriFlow
+verifies against the indexed commit. A claim VeriFlow cannot evidence is reported as an open
+question, not narrated. Uncertainty stays visible; inference that cannot be proven — a dispatch
+through an interface, a function passed as a callback — is drawn and labelled as inferred.
 
-### 2. Documentation
+### 3. Your agent, your session, visibly
 
-Markdown remains normal repository content. VeriFlow will discover configured documentation roots,
-render and search pages, and link pages to architecture elements and behavioral specifications.
-It does not invent a separate cloud wiki.
+The synthesis step runs the agent you already pay for: Claude Code, Codex, or another compatible
+client. VeriFlow ships no API key and adds no token bill. The run is not a spinner — you watch what
+the agent streams, and when it needs a decision only you can make, it asks you and waits.
 
-### 3. Specifications and high-level tests
+### 4. Bounded to a tree state, honest about drift
 
-VeriFlow will manage human-readable Features and Scenarios in a form compatible with the intent of
-SpecFlow/Cucumber and FitNesse:
+You give VeriFlow a repository path and it indexes what is there. Every answer records the exact state
+it describes — a content hash per file — so freshness later is a computation, not a caveat: which of
+the files this answer cites have changed, which references moved, which broke. It is measured on the
+files the answer actually depends on, so a week of work elsewhere in the repository does not make it
+look stale, and an uncommitted edit to a cited file does not hide.
 
-- a Feature describes a business capability;
-- a Scenario describes one behavior;
-- Given/When/Then steps express preconditions, action, and expected outcome;
-- tags and stable IDs link a scenario to architecture and documentation;
-- lifecycle state distinguishes draft, ready, and deprecated specifications.
+### 5. Results are for agents too
 
-The initial testing scope is **management and traceability**, not execution. VeriFlow does not
-initially run step definitions, test fixtures, browsers, or CI jobs. A future adapter may connect a
-scenario to executable tests without making execution part of the core knowledge model.
+The finished product is an MCP server over stored answers. An agent asking *"what breaks if I change
+`fulfillLessonCheckout`?"* or *"which failure paths have no test?"* gets structured, cited, freshness-
+stamped data — and answers with far less searching and far less guessing.
+
+### 6. Local, and honest about what it depends on
+
+No account, no cloud database, no VeriFlow-managed model. VeriFlow itself makes no network request.
+It does depend on two external processes with their own disclosed behavior: a locally installed code
+intelligence provider, and the agent client you choose. `veriflow doctor` shows exactly what is
+present and what is missing.
 
 ## Primary users
 
-### Builder
+**Builder.** A developer who needs to understand a flow before changing it, and who does not want to
+redo that understanding every time.
 
-A developer or technical founder who wants a concise map before changing code and wants project
-knowledge to stay versioned with the repository.
+**Reviewer or tech lead.** Someone who needs to know which paths a change touches, which invariants
+protect them, and which failure paths nothing tests.
 
-### Architect or technical lead
+**Newcomer.** Someone onboarding, who gets a readable trace with real file references instead of a
+tour.
 
-A person who describes boundaries, reviews relationships, and records why a component exists.
-
-### Product owner or tester
-
-A person who reads the system map and maintains high-level behavioral scenarios without navigating
-the implementation graph.
-
-### Coding agent
-
-An external agent such as Codex, Claude Code, Cursor, or another compatible coding agent. The user
-reuses the agent account/subscription they already have; VeriFlow does not require a separate model
-API key or token budget. The agent interprets structured evidence and proposes human-readable
-architecture, but is not itself the source of truth.
+**Coding agent.** An external agent that consumes stored answers over MCP for design and review, and
+that is also the engine of the synthesis step.
 
 ## Product principles
 
-1. **Project-native.** Canonical knowledge is made of reviewable files in the project directory;
-   Git is recommended but not required to run VeriFlow.
-2. **Local by default.** No account, cloud database, or network connection is needed.
-3. **Human level first.** Default views contain systems, applications, modules, and scenarios—not
-   files and functions.
-4. **Explicit beats inferred.** Declared intent and observed evidence are visibly different. A
-   proposal becomes declared architecture only after a person accepts it.
-5. **One model, several interfaces.** CLI, local web UI, and later agent tools use the same domain
-   and persistence services.
-6. **Safe file editing.** The app never silently overwrites external edits and never commits to Git.
-7. **Open formats.** YAML and Markdown are readable without VeriFlow; high-level scenarios should
-   remain compatible with standard Gherkin concepts.
-8. **Progressive detail.** A user moves from system to application/container to module, then to
-   linked docs and scenarios. Source files are a future optional drill-down.
-9. **Bring your own agent, not another API bill.** VeriFlow integrates with the user's existing
-   authenticated coding agent and owns no LLM gateway, model account, or inference billing.
+1. **Answer first.** The first run must produce a useful answer. Nothing is authored as a
+   precondition.
+2. **Human level by default.** The default view is participants, phases, steps, and outcomes. Files
+   and functions are drill-down, never the entry screen.
+3. **Deterministic where it can be.** Counts, reachability, buckets, metrics, and verification are
+   computed. The agent names, orders, and explains — it is not the source of structural fact.
+4. **Store the work.** Results of non-reproducible work are persisted, not recomputed. Reopening an
+   answer costs nothing.
+5. **The stream is the UI.** Long-running work shows what it is doing and can be answered, corrected,
+   or cancelled while it runs.
+6. **A snapshot, not "the code".** Every claim is scoped to a commit.
+7. **Disagreement beats a single score.** Where two metrics contradict each other, both are shown;
+   proxies are labelled as proxies; known false positives are flagged next to the number.
+8. **Approval is a boundary in code.** Nothing reaches the repository without an explicit export, and
+   no agent tool can write canonical state, run a command, or touch Git.
+9. **One provider abstraction.** The code intelligence dependency lives behind an adapter so it can
+   be replaced without touching a feature.
 
-## Architecture-first V0
+## MVP scope
 
-### In scope
+### In
 
-- initialize VeriFlow inside one local project directory, normally a Git repository;
-- store and validate a versioned architecture model;
-- manage high-level elements and relationships;
-- browse a catalog and a deterministic diagram;
-- inventory the local project without reading secrets;
-- build a TypeScript file/import evidence graph;
-- detect framework, layer, and explicit-module candidates;
-- aggregate low-level import evidence into an observed high-level architecture;
-- let an external AI agent synthesize evidence into human-readable architecture and documentation
-  proposals;
-- edit through the local UI and preserve external file changes;
-- run entirely on loopback without authentication;
-- establish stable IDs that documentation and specifications can reference later.
+- initialize a local workspace and a local database in a project directory;
+- record the exact state of the working tree by file hash, without copying or mutating anything;
+- index the project through a code intelligence provider, refreshed incrementally as files change;
+- derive reachability and a function-level call graph from the flow's entry points;
+- ask a question in natural language and rank the entry-point candidates that answer it;
+- run the user's agent client as a live, streamed, interruptible session with evidence tools and an
+  `ask_user` channel;
+- validate and store a flow answer: lanes, phases, steps, alternative paths with the invariant each
+  protects, module contracts, external systems, open questions;
+- verify every citation against the snapshot and reject an answer that cannot be evidenced;
+- browse stored answers locally: ask, flow, paths, modules, external systems, call graph;
+- compute which cited files changed and per-citation drift, and re-verify an answer without re-answering
+  it;
+- compute technical-debt, structure, coupling, and coverage-proxy metrics for the files a flow
+  touches;
+- export an approved answer as markdown with a generated mermaid sequence diagram;
+- serve stored answers, graphs, metrics, and freshness over VeriFlow's own MCP server.
 
-### Explicitly deferred
+### Explicitly out
 
-- symbol-level and function-call analysis as a required V0 dependency;
-- data-flow, runtime-flow, and community-detection analysis;
-- architecture health scores and automatic findings;
-- Git history and pull-request impact;
-- direct agent write tools for canonical files;
-- a VeriFlow-managed LLM API, API key, model router, or token billing;
-- cloud sync, accounts, teams, permissions, and billing;
-- documentation editing/search UI;
-- scenario editor, test runs, evidence, and automation.
+- multi-repository and cross-system maps;
+- cloud sync, accounts, teams, permissions, billing;
+- manually authored declared architecture, and expected-vs-actual rule enforcement;
+- a project-wide architecture health score;
+- a pull-request bot or CI integration;
+- languages the provider does not cover;
+- real line coverage from a test run — the MVP ships a labelled proxy only;
+- a Gherkin/specification catalog, and documentation search or editing;
+- a VeriFlow-managed model API, key, gateway, router, or token billing;
+- agent write access to canonical state, source, commands, or Git.
 
-The V0 analyzer parses imports only to create evidence. The default UI still operates on systems,
-applications, layers, and modules. Raw files and import edges are available only as drill-down
-evidence. Function-call edges may be supplied by a later provider such as GitNexus, but they are
-not needed for the first observable result.
+## Acceptance: mockup parity
 
-## Architecture-first acceptance demo
-
-The first slice is successful when this flow works on a clean repository:
+The frozen mockup in [`artifacts/mockups`](../../artifacts/mockups/README.md) is the acceptance
+target. Its numbers were verified by hand at one commit; the MVP is not required to reproduce those
+numbers, because the agent step is not deterministic and the repository has moved. It is required to
+reproduce the **shape, the integrity, and the invariants**.
 
 | # | Action | Expected result |
 |---|---|---|
-| 1 | Run `veriflow init`. | Versionable config and architecture files are created; no cloud setup is requested. |
-| 2 | Run `veriflow validate`. | The generated model is valid and contains one root system named after the repository. |
-| 3 | Run `veriflow open`. | A browser opens a local architecture catalog. |
-| 4 | Add `Web`, `API`, `Orders`, `Database`, and `Payment provider`. | Elements appear under the correct parent and survive restart. |
-| 5 | Declare the intended relationships between them. | A deterministic declared diagram shows those relationships. |
-| 6 | Run `veriflow analyze`. | A disposable analysis inventories the project and records import/document/framework evidence. |
-| 7 | Open Observed Architecture. | High-level candidates and aggregated relationships appear separately from the declared model. |
-| 8 | Accept one candidate and reject another. | Only the accepted candidate enters canonical YAML; rejection changes runtime proposal state only. |
-| 9 | Edit the YAML in an editor and refresh VeriFlow. | The app shows the external change instead of overwriting it. |
-| 10 | Run `git diff`. | Durable intent is readable YAML; analyzer/runtime data is ignored. |
+| 1 | `veriflow init` and `veriflow doctor`. | Workspace and database exist; provider and agent clients are detected or their absence is explained with an install command. |
+| 2 | `veriflow index`. | The project is indexed and the tree state recorded by file hash; the user's working tree is byte-identical afterwards. |
+| 3 | Ask *"Jak funguje rezervace a zaplacení lekce?"* | Entry-point candidates are ranked and the agent session starts. |
+| 4 | Watch the run. | Assistant output, tool calls, and results stream live; a question from the agent appears and waits for an answer. |
+| 5 | The run completes. | A flow answer is stored with lanes, phases, ordered steps, alternative paths, module contracts, and external systems. |
+| 6 | Inspect any step. | Its `file:line` references resolve in the indexed commit; a step with no evidence appears as an open question instead. |
+| 7 | Open the call graph. | Functions reachable from the flow's entry points, with `port` and `callback` edges labelled inferred, and call-site buckets that reconcile to the total. |
+| 8 | Filter to one route. | The map narrows to that route's transitive closure without reflowing, so what the route does *not* touch stays visible. |
+| 9 | Restart VeriFlow and reopen the answer. | It loads from the database with its transcript; nothing is recomputed. |
+| 10 | Change one of the flow's files and return. | The answer reports which cited files changed and per-citation drift; re-verification is a separate, cheap action, and unrelated edits change nothing. |
+| 11 | Open metrics. | Hotspots, per-function complexity, structure, coupling, and coverage proxy for the flow's files, with the proxy labelled and contradictions shown rather than averaged. |
+| 12 | Approve and export. | A markdown document with a generated mermaid diagram is written to a configured documentation root; nothing else in the repository changes and no Git command runs. |
+| 13 | Connect an agent to `veriflow mcp`. | The agent lists answers, reads a flow and its paths, and reports which failure paths have no test — each response stamped with its snapshot and freshness. |
 
-The concrete V0 acceptance target is
-[`main-panel`](../dogfooding/main-panel.md).
+The concrete target is [`main-panel`](../dogfooding/main-panel.md).
 
-## Later product sequence
+## Success measures
 
-After the five deterministic architecture features:
+- a first useful answer on an unfamiliar flow in one session, with no model API key configured;
+- every citation in a stored answer resolves in its snapshot, or the answer was rejected;
+- reopening a stored answer recomputes nothing and shows how stale it is;
+- the default screen shows no source file or function until asked;
+- an agent working over the MCP surface reaches a correct design or review conclusion with materially
+  less searching than reading the repository;
+- replacing the code intelligence provider requires one new adapter and no feature change.
 
-1. F006 uses the user's existing Codex, Claude Code, or another agent to create a human-readable
-   architecture proposal and documentation drafts from the evidence;
-2. Markdown documentation catalog and links to architecture elements;
-3. Gherkin-compatible Feature/Scenario catalog;
-4. architecture ↔ documentation ↔ scenario traceability;
-5. optional call-graph and runtime-flow providers for deeper evidence.
+## After the MVP
 
-This order stabilizes deterministic evidence before adding probabilistic agent interpretation.
-
-## AI synthesis principle
-
-Deterministic analysis answers **what is present and connected**. The external agent answers **what
-it likely means to a person**. Human approval answers **what the project declares as true**.
-
-```text
-inventory + imports + docs
-            ↓
-deterministic observed evidence
-            ↓
-existing Codex / Claude Code / other agent
-            ↓
-human-readable architecture and documentation proposal
-            ↓
-human review
-            ↓
-declared architecture
-```
-
-The agent may name components, explain responsibilities and relationships, reconcile documentation
-with observed evidence, identify ambiguity, and draft Markdown. Every conclusion cites evidence and
-is visibly labelled as AI interpretation until accepted.
-
-VeriFlow does not call OpenAI, Anthropic, or another model API itself. It exposes an agent-neutral
-local contract through MCP and portable request/proposal files. Thin agent-specific skills may make
-the workflow convenient, but the product model does not depend on one vendor.
-
-## Success measures for the first slice
-
-- a new project can reach a useful diagram in under ten minutes;
-- the model remains understandable in a normal code review;
-- reopening the app never changes files by itself;
-- invalid files produce actionable path and line diagnostics;
-- running analysis on `main-panel` produces a useful high-level observed map without manual
-  enumeration of its 957 TypeScript/TSX files;
-- the default UI never displays a source file or function node;
-- replacing the UI would not require migrating the repository data format.
+1. a first-party TypeScript indexer behind the same provider protocol — moving up the list if the
+   provider's TypeScript resolution disappoints;
+2. indexing a branch you are not on, which the snapshot contract already leaves room for;
+3. many answers per project: shared modules, cross-flow impact, and a project view assembled from
+   answers rather than authored by hand;
+4. declared intent and expected-vs-actual — the deferred architecture catalog, now with something
+   real to compare against ([superseded specs](../../roadmap/superseded/));
+5. real coverage from a test run, replacing the proxy;
+6. change impact for a review: the flows a diff touches, and the same answer diffed across two tree
+   states.

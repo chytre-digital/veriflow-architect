@@ -1,7 +1,25 @@
-# VeriFlow F001–F006 — `main-panel` outcome mockup
+# VeriFlow — `main-panel` outcome mockup
+
+> **Status: frozen acceptance reference.** This mockup is the target the
+> [MVP roadmap](../../roadmap/README.md) implements for real — iteration 1 for the flow, paths,
+> modules, external systems and call graph; iteration 2 for the metrics, the freshness pill and the
+> committed document.
+>
+> Do not update it to match implementation progress. Its numbers were verified by hand at commit
+> `802dd7a`; the repository and its index have since moved on, and the acceptance criteria are
+> deliberately **shape, evidence integrity and invariants** rather than these figures — see
+> [what mockup parity means](../../docs/dogfooding/main-panel.md#what-mockup-parity-means).
+>
+> Two construction details are explicitly **not** reproducible and must not be copied. The call graph was
+> built by reading a GitNexus `parsedfile-cache` directly — a cache that every re-index evicts — and the
+> MVP uses a different analyzer entirely
+> ([code-review-graph](https://github.com/tirth8205/code-review-graph), see
+> [F002](../../roadmap/02-code-intelligence-provider.md)), reached only through supported interfaces. Its
+> TypeScript resolution may recover less than this picture shows; that gap is tracked as
+> [Q13](../../roadmap/open-questions.md), not hidden.
 
 Interactive local mockup of what VeriFlow should produce for the `main-panel`
-(nalekci.cz) repository after the first six roadmap features.
+(nalekci.cz) repository.
 
 It is a product preview, not the implementation of the analyzers.
 

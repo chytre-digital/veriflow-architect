@@ -1,155 +1,284 @@
 # Open product and architecture questions
 
-Each question has a working default so implementation can proceed after confirmation. Answers
-should be recorded here and folded into the product brief, technical architecture, and affected
-feature specifications.
+Decisions already taken are recorded first, because they define the MVP. Everything after that still has
+a working default so implementation can proceed, but the answer may change a feature.
 
-## Decisions needed before F001
+## Decisions taken on 2026-07-30
 
-### Q1 — What is the canonical source of truth?
+### D1 — The product unit is an answered question about a flow
 
-**Working default:** version-controlled YAML, Markdown, and later `.feature` files are canonical.
-SQLite is only a rebuildable local index/cache.
+Manual authoring of a declared architecture model is deferred. The module view is derived from an answer
+and its snapshot. The superseded catalog specs are kept in [`superseded/`](superseded/).
 
-**Why it matters:** choosing SQLite as canonical would change collaboration, backup, migrations,
-file watching, CLI behavior, and nearly every acceptance criterion in F001.
+### D2 — SQLite is canonical; the repository gets exported documents
 
-### Q2 — How strict should the architecture metamodel be?
+Snapshots, runs, transcripts, answers, citations, verifications, call graphs, and metrics live in
+`.veriflow/veriflow.db`. `config.yaml` is the only committed VeriFlow file. An approved answer is exported
+as markdown into a documentation root. This reverses the earlier files-canonical default.
 
-**Working default:** C4-inspired but not C4-enforced. V1 supports person, system, external system,
-container/application, module, and data store with a small set of relationship kinds.
+Consequence accepted: `veriflow.db` is durable local state that is not version-controlled, so losing it
+loses stored answers. Mitigations are in scope — `veriflow export --json --all` and the exported markdown.
 
-**Alternative:** a fully generic node/edge model, or strict C4 levels and validation.
+### D3 — VeriFlow drives the user's agent as a child process, with the stream visible
 
-### Q3 — Which local web stack should be the baseline?
+VeriFlow spawns the configured client (Claude Code, Codex) with its own MCP server registered, and streams
+everything the agent emits into the CLI and the UI. The user can answer the agent mid-run through an
+`ask_user` tool, and can cancel. VeriFlow ships no model API key. The portable JSON handoff is kept only as
+a test seam, not as the primary path.
 
-**Working default:** Node.js/TypeScript, Hono, Vite/React, React Flow, and ELK.js.
+This reverses the earlier preference for never launching a vendor CLI. The reason is product: a run the
+user cannot see or answer is not usable for work this long.
 
-**Alternative:** keep Next.js from the exploratory specification. Vite/Hono is smaller for a
-loopback-only SPA but gives up Next.js conventions that may be useful if cloud hosting returns.
+### D4 — code-review-graph is the first code intelligence provider, behind an abstraction
 
-### Q4 — May the UI write project files?
+VeriFlow writes no parser in the MVP. It defines a provider protocol and wraps a locally installed
+[code-review-graph](https://github.com/tirth8205/code-review-graph) in `packages/provider-crg`, the only
+package allowed to know which analyzer exists. This is the provider the original exploration document
+proposed as `CodeReviewGraphProvider`; the intermediate GitNexus plan is dropped.
 
-**Working default:** yes, with explicit saves, atomic replacement, and revision-conflict detection.
-The UI never commits to Git.
+Accepted with it: the provider is a Python CLI, so `doctor` probes Python and prints
+`pipx install code-review-graph`. VeriFlow's own runtime stays Node/TypeScript. It parses 30+ languages
+via Tree-sitter and re-indexes incrementally, which is a real gain in breadth and refresh cost.
 
-**Alternative:** read-only UI with all changes made manually in YAML.
+Accepted against it, with eyes open: **its flow detection is weak for TypeScript** — the project states
+JavaScript flow detection needs work and reports about 33% flow recall in its own evaluation, and the
+dogfooding target is TypeScript/Next.js. VeriFlow therefore does its own entry-point detection, treats
+provider flows as hints, and puts sequencing on the agent over verified symbol and call evidence. The
+provider's `refactor_tool` and `apply_refactor_tool` are never called and never registered with an agent.
 
-### Q5 — What is the V0 project boundary, and is Git mandatory?
+### D5 — A snapshot is the recorded state of the tree that was indexed
 
-**Working default:** one local project directory per running VeriFlow process. Git is detected and
-recommended but not required. Multi-project workspaces and cross-system maps are later features.
+You give VeriFlow a repository path and it indexes what is there. No ref selection, no checkout, no copy.
+A snapshot is a recorded tree state: a content hash per indexable file, plus the commit sha, branch, and
+dirty flag when Git is present. The hash set is the identity, because with a dirty tree a commit sha does
+not describe what was indexed.
 
-**Why it matters:** the current `veriflow-architecture` directory is not itself a Git repository,
-so making Git mandatory would prevent immediate dogfooding unless it is initialized first.
+Consequences accepted:
 
-## Decisions needed before documentation work
+- freshness is measured on the files an answer cites, not as a commit distance — which is both cheaper
+  and more useful, since unrelated work elsewhere no longer looks like staleness and an uncommitted edit
+  to a cited file no longer hides;
+- there is no copy to sandbox the agent in, so containment becomes explicit: read-only client permission
+  mode, no VeriFlow write tool, filtered provider tool list, each asserted by a test;
+- indexing a branch you are not on is deferred. Adding a materialization strategy later changes
+  `Snapshot` and the index manager only, and nothing that consumes `snapshotId`.
 
-### Q6 — Where does documentation live?
+### D6 — MCP and the function-level call graph are in the MVP
 
-**Working default:** one or more configured Markdown roots, initially `docs/`. VeriFlow indexes and
-links existing files in place.
+Both were previously deferred. The call graph is F003, inside iteration 1; VeriFlow's own MCP server is
+F010 and closes the MVP.
 
-**Alternative:** move managed documentation under `.veriflow/docs/`, or support both locations.
+### D7 — Acceptance is shape, integrity, and invariants — not the mockup's numbers
 
-### Q7 — Is Markdown-only sufficient for the first documentation slice?
+The mockup was hand-verified at commit `802dd7a` and the repository has moved. The agent step is not
+deterministic. Acceptance criteria are defined in
+[`docs/dogfooding/main-panel.md`](../docs/dogfooding/main-panel.md#what-mockup-parity-means).
 
-**Working default:** CommonMark/GFM Markdown plus YAML frontmatter. MDX, images copied into a
-managed store, WYSIWYG editing, and remote docs are deferred.
+## Decisions taken while refining the MVP
 
-## Decisions needed before specification/test work
+### D8 — The implementation lives in this repository
 
-### Q8 — Should high-level tests use standard `.feature` files?
+`apps/` and `packages/` join `docs/`, `roadmap/`, and `artifacts/mockups/`. Spec, roadmap, and code move
+in the same pull request, and the frozen mockup stays next to the thing it specifies.
 
-**Working default:** yes. Use Gherkin Feature/Scenario/Given-When-Then syntax and VeriFlow tags for
-stable IDs and links. Do not invent a proprietary step format unless standard Gherkin proves
-insufficient.
+### D9 — Git is mandatory
 
-### Q9 — What does “test management only” include?
+The provider refuses non-repository directories, so without Git there is nothing to index. `init` fails
+immediately with a clear message rather than succeeding and letting `index` fail later. This removes the
+"Git recommended but not required" path, its second code path, and its tests. History is therefore always
+available to F007 and F008.
 
-**Working default:** authoring/import, organization, lifecycle, tags, and traceability. It excludes
-step-definition binding, fixtures, execution, evidence capture, pass/fail runs, scheduling, and CI
-or Playwright integration.
+### D10 — Iteration 1 is F001–F006 in full, Claude Code first
 
-**Possible expansion:** manual run history may be wanted even without automation. Confirm whether
-this belongs in the first specification slice or later.
+All six mockup screens on real data, including the three call-graph views. Claude Code is the reference
+agent adapter; Codex follows as the second adapter and is what proves the abstraction is real. Accepted
+cost: F006 is the largest single feature and the first real answer arrives later than a CLI-only slice
+would have delivered it.
 
-## Product-wide decisions
+### D11 — The evidence bundle is a brief, not a cage
 
-### Q10 — What language should the product use?
+The agent runs in the working tree with its own read tools, so VeriFlow cannot limit what it reads and
+will not pretend otherwise. VeriFlow supplies a brief — ranked entry points, symbols, call evidence,
+clusters — and the agent reads further as it needs to. In place of a false promise of control, the run
+transcript records every file the agent opened, so the reading is auditable after the fact.
 
-**Working default:** English for code, persisted enum values, technical docs, and UI copy. User
-content can be in any language.
+### D12 — Strict validation, two retries, then demotion
 
-**Alternative:** Czech UI first, or internationalization from the first screen.
+A submission that fails citation verification is rejected with the failing items named, and the agent
+corrects it inside the same run while it still has context. After two failed attempts the offending steps
+are demoted to open questions and the rest of the answer is stored. Nothing is thrown away, and the
+invariant survives in its honest form: **what is marked verified is verified**.
 
-### Q11 — Should AI-agent access be part of the first public milestone?
+### D13 — Human corrections are an attributed layer
 
-**Resolved direction:** yes, as F006 after the deterministic F001–F005 milestone. AI is the
-interpretation layer that turns analyzer data into architecture humans understand. VeriFlow uses
-the user's already authenticated coding agent and does not require another model API key.
+The submitted answer is immutable. Corrections are stored as separate records with author and timestamp;
+the UI, the export, and MCP show the corrected text marked as edited, with the original reachable. This is
+how an open question gets closed by hand.
 
-### Q12 — Which existing diagram/specification formats should be imported?
+### D14 — Non-flow questions are classified and redirected
 
-**Working default:** no importers in F001–F003. Later candidates are Structurizr DSL, Mermaid C4,
-PlantUML C4, and existing `.feature` files. Export/import must preserve stable VeriFlow IDs or
-produce an explicit mapping report.
+A question aimed at a single location — *"kde se rozhoduje, kolik si platforma vezme?"* — is recognized
+before a run starts and answered with a redirect rather than a degenerate one-step flow. The
+classification is overridable, because it will sometimes be wrong. No second answer type enters the MVP.
 
-### Q13 — Is TypeScript import analysis enough for the first observed map?
+### D15 — The run starts by itself when the entry point is clear
 
-**Working default:** yes. F004 parses resolved static imports/exports and F005 aggregates them at
-layer/module level. Function-call analysis is an optional provider capability, not an F005 gate.
+When the top-ranked entry point leads by more than the configured margin, the run starts and the chosen
+entry point is visible in the console, one click from cancel. An ambiguous ranking asks. The margin is
+printed next to the candidates, so it is always visible why VeriFlow did or did not ask.
 
-**Alternative:** make the existing GitNexus index in `main-panel` a required first provider. This
-would add call and execution-flow evidence sooner but would make the first useful result depend on
-an external analyzer and its local index lifecycle.
+### D16 — A follow-up is a new answer linked to its parent
 
-### Q14 — How should legacy `.veriflow/` content coexist?
+Runs stay atomic and answers stay immutable; a follow-up carries a parent reference and the library shows
+a thread. The previous answer goes into the follow-up's brief, so the agent refines rather than restarts
+and has no reason to contradict itself.
 
-**Working default:** initialization is additive. Unknown legacy files remain untouched and ignored.
-Only `config.yaml`, `architecture/`, later `specifications/`, and narrow Git ignore exceptions are
-owned by the new application.
+### D17 — MCP serves everything, labelled
 
-The `main-panel` target currently contains ignored `.veriflow/.env.local` and `.veriflow/cli.ts`.
-VeriFlow must not read, expose, move, delete, or accidentally unignore either file.
+Drafts are not withheld from agents. Every response leads with review state, open-question count, and
+freshness, and the tool descriptions state what those mean, because the label is now carrying the weight
+a gate would have carried. Accepted risk: an unreviewed answer can influence another agent's proposal —
+which is why the labels are part of the payload contract and asserted by tests, not decoration.
 
-### Q15 — How should existing AI agents connect?
+### D18 — Modules are proposed deterministically and authored by the agent
 
-**Working default:** stdio MCP is the interactive contract. A versioned JSON request/proposal file
-handoff is the portable fallback and automated-test seam. Codex, Claude Code, Cursor, and future
-agents use the same product contract.
+Module identity is derived from index clusters and paths and is **stable and path-derived**; labels and
+shape are proposed deterministically, then the agent may rename, merge, split, or add. Those edits land in
+a project-level module registry with provenance, not inside one answer, so a second answer cannot disagree
+about what Payments is. Answers reference module **ids**, never names, so a later rename cannot break an
+earlier answer. Human corrections use the D13 layer.
 
-**Alternative:** launch specific agent CLIs directly. That could improve one-click UX but would
-couple VeriFlow to vendor-specific authentication, permissions, flags, and process lifecycle.
+## Blocking before F002
 
-### Q16 — May the AI agent apply architecture or documentation directly?
+### Q2 — Which code-review-graph read surface carries the call graph?
 
-**Working default:** no. The agent submits cited proposals into ignored runtime state. A person
-reviews a structured diff; only then do normal revision-safe VeriFlow services update YAML or
-Markdown. The agent cannot write source, run commands, or mutate Git through F006.
+**Status: needs a spike with measurements, not a decision on paper.**
 
-### Q17 — What evidence may be sent to the user's agent?
+The spike must answer, on `main-panel`:
 
-**Working default:** declared/observed models, evidence summaries, selected architecture documents,
-and explicitly expanded small source excerpts. The secret deny-list always applies. VeriFlow shows
-the exact request bundle before the user hands it to an external agent.
+1. Does any surface return per-call-site `file:line`, and at what cost per query? F003's call-site
+   bucketing depends on it, and the provider does not document it.
+2. Can callers/callees be walked breadth-first from five entry points to full closure within a usable
+   budget, or is `visualize --format json` the only viable bulk path?
+3. **What is the actual TypeScript/TSX parse quality** — how many of roughly 1,600 files and their symbols
+   are recovered, and are barrel re-exports and dynamic imports resolved?
+4. How long does the first `build` take, and does `update` really land in seconds?
+5. What does `list_flows_tool` return for the checkout route — anything usable, or nothing?
+
+Question 3 is the one that can change the plan. The mockup's call graph leaned on resolution that followed
+barrels and re-exports; if this provider is materially worse at that on TypeScript, the honest options are
+a thinner F003, a second provider, or bringing TypeScript resolution in-house earlier than planned. Decide
+with numbers.
+
+**Working default until the spike:** MCP read tools for queries, CLI for indexing, JSON export for bulk,
+and a documented capability gap wherever they fall short. Never emulate a missing capability silently.
+
+## Open, with working defaults
+
+### Q3 — When does the index refresh, and who decides?
+
+**Working default:** `index.autoUpdate: true` — before a new question, VeriFlow runs the provider's
+incremental `update` and reports how many files changed. Stored answers are never re-indexed or altered by
+this; they keep their own recorded tree state.
+
+Open: whether the provider's `watch`/`daemon` mode should be used instead, which would keep the index warm
+continuously at the cost of a background process VeriFlow does not own. The MVP default is the explicit
+update, because a background process the user did not ask for is a bad first impression.
+
+### Q4 — How stable is each agent client's streaming contract?
+
+**Working default:** probe capabilities per client version, prefer a structured event stream, fall back to a
+PTY, and normalize both. Structured-output flags move between client versions, so the adapter must detect
+rather than assume, and a client upgrade must not silently degrade a run to unparsed text.
+
+Open: which minimum client versions VeriFlow claims to support, and whether an unsupported version blocks
+the run or falls back with a warning.
+
+### Q5 — What happens when the agent's answer is valid but wrong? — **answered by [D13](#d13--human-corrections-are-an-attributed-layer)**
+
+Validation guarantees evidence, not truth. Corrections are an attributed layer over an immutable answer.
+
+Still open, and cheap to defer: whether a correction should be able to *add* a step or branch the agent
+missed entirely, or only amend what is there. Adding raises the question of what verifies the new
+citation — the same verifier, presumably, which makes this smaller than it looks.
+
+### Q6 — Does an approved answer also get a machine-readable file in the repository?
+
+**Working default:** no. Export produces markdown with a mermaid diagram; the structured model stays in the
+database and in the JSON dump.
+
+**Alternative:** also write a YAML model next to the document, so the flow is reviewable in a pull request
+and readable by other tools. Cost: a second serialization contract and a merge story between the file and
+the database.
+
+### Q7 — How do several answers about one project relate? — **answered by [D16](#d16--a-follow-up-is-a-new-answer-linked-to-its-parent) and [D18](#d18--modules-are-proposed-deterministically-and-authored-by-the-agent)**
+
+Answers thread through a parent link, and modules live in a project-level registry with stable path-derived
+ids, so answers cannot disagree about what a module is.
+
+Still open: cross-flow impact — "which other answered flows touch this symbol?" — which is a query over
+what the MVP already stores and is therefore a post-MVP feature rather than a schema decision.
+
+### Q8 — Where exactly is the line between a flow question and a location question?
+
+Classification and redirect are decided ([D14](#d14--non-flow-questions-are-classified-and-redirected)).
+What is not decided is the classifier itself.
+
+**Working default:** a flow question implies a beginning, participants, and outcomes; a location question
+asks where something is or is decided. Start with a small, inspectable rule set over question shape and
+matched symbols, not a model call, and always show why it classified as it did with a one-click override.
+
+Open: how wrong it is allowed to be before the redirect becomes annoying, and whether a redirect should
+offer a rewritten flow question the user can accept — *"zkus: jak se cena použije při rezervaci"* — rather
+than only explaining the refusal.
+
+### Q9 — Product language
+
+**Working default:** English for code, persisted enum values, technical docs, and UI copy. User content —
+questions, answers, documents — in any language. The acceptance question is Czech, and its answer will be
+too.
+
+### Q10 — Non-TypeScript projects
+
+**Working default:** the MVP's scope is what the provider covers, and its capability descriptor names the
+languages. Nothing in VeriFlow's own contracts is TypeScript-specific, and it must stay that way.
+
+### Q11 — Legacy `.veriflow/` content in the dogfooding target
+
+**Working default:** initialization is additive. Unknown legacy files stay untouched and ignored.
+`main-panel` currently holds ignored `.veriflow/.env.local` and `.veriflow/cli.ts`; VeriFlow must never read,
+expose, move, delete, or unignore either.
+
+### Q12 — Which existing formats should be importable?
+
+**Working default:** none in the MVP. Later candidates are the target's existing `docs/architecture` drafts
+as evidence, and its `specs/` content as scenarios once a specification slice exists.
+
+### Q13 — What is the fallback if the provider's TypeScript resolution disappoints?
+
+**Why it matters:** the mockup's call graph followed barrel re-exports and dynamic imports, and doubling
+coverage came precisely from resolving those. If the Q2 spike shows this provider recovers materially less
+on TypeScript, F003 cannot deliver what the mockup showed and the plan must change rather than the claim
+being quietly softened.
+
+**Working default:** accept a thinner call graph in the MVP — fewer resolved edges, more `unresolved` call
+sites, the buckets still reconciling — and state the gap in the UI. Bringing TypeScript resolution in-house
+becomes the first post-MVP item instead of the second.
+
+**Alternatives:** add a second provider behind the same protocol for TypeScript only, or move the
+first-party indexer into iteration 1. Both are larger than the MVP is meant to be.
 
 ## Confirmation checklist
 
-The founder can unblock the baseline by answering:
-
 ```text
-Q1 files or SQLite?
-Q2 flexible C4-inspired or strict C4?
-Q3 Vite/Hono or Next.js?
-Q4 writable UI or read-only UI?
-Q5 one project per process, with Git optional?
-Q8 standard .feature files?
-Q9 management only, or include manual run results?
-Q10 English or Czech UI?
-Q13 import graph first, with call graph optional?
-Q14 preserve legacy .veriflow files additively?
-Q15 MCP plus portable file handoff?
-Q16 agent proposals only, with human approval?
-Q17 selected evidence bundle, not unrestricted automatic upload?
+Q2  provider read surface and real TypeScript quality — run the spike, then record it here
+Q3  explicit incremental update, or the provider's watch daemon?
+Q4  minimum supported client versions, and block or warn?
+Q5  may a correction add a step, or only amend an existing one?
+Q6  markdown only, or markdown plus a YAML model?
+Q8  how strict is the flow/location classifier, and does it rewrite the question?
+Q13 is a thinner call graph acceptable if TypeScript resolution disappoints?
 ```
+
+D1–D18 are settled. Everything above rides on a stated default and can be answered when its feature is
+built — except Q2, which is a measurement and must happen before F002.
