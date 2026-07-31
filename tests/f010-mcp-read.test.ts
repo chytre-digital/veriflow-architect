@@ -224,6 +224,8 @@ function callsFor(answerId: string): Record<string, Record<string, unknown>> {
     get_external_systems: { answerId },
     get_open_questions: { answerId },
     get_freshness: { answerId },
+    get_metrics: { answerId },
+    get_coverage_gaps: { answerId },
     search_answers: { query: "refund" },
     get_architecture: {},
     get_call_graph: {},
@@ -248,13 +250,20 @@ describe("the read MCP server's tool surface", () => {
     expect(names.some((n) => /write|edit|commit|exec|shell|delete|submit|run_/i.test(n))).toBe(false);
   });
 
-  it("leaves the metrics tools out entirely until F008 ships, rather than serving nothing", async () => {
+  it("carries the metrics tools now that F008 has shipped them, and labels the proxy as one", async () => {
     const { root } = fixture();
     const client = await connect(root);
-    const names = (await client.listTools()).tools.map((t) => t.name);
-    // An agent must not plan around a capability that is not there.
-    expect(names).not.toContain("get_metrics");
-    expect(names).not.toContain("get_coverage_gaps");
+    const tools = (await client.listTools()).tools;
+    const names = tools.map((t) => t.name);
+
+    // Until F008 these two were deliberately absent rather than present and empty, so an agent
+    // could not plan around a capability that was not there. They are here now, and the coverage
+    // one has to say in its own description that it is a proxy over identifiers.
+    expect(names).toContain("get_metrics");
+    expect(names).toContain("get_coverage_gaps");
+    const gaps = tools.find((t) => t.name === "get_coverage_gaps");
+    expect(String(gaps?.description).toLowerCase()).toContain("proxy");
+    expect(String(gaps?.description)).toContain("not `untested`");
   });
 
   it("puts snapshot, freshness and review state on every single response", async () => {

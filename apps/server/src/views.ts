@@ -12,6 +12,15 @@ import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
 import { THRESHOLDS, thresholdOf } from "@veriflow/answers";
 import type { AnswerRow, CitationRow, Freshness, SnapshotFacts, Verification } from "@veriflow/answers";
+import {
+  COVERAGE_RULE,
+  DUPLICATION_RULE,
+  FUNCTION_RULES,
+  SPAGHETTI_BANDS,
+  SPAGHETTI_FORMULA,
+  STRUCTURE_RULE,
+  type FlowMetrics,
+} from "@veriflow/metrics";
 
 // The browser and the MCP server read the same measurements from the same place, so they cannot
 // report different numbers about the same answer.
@@ -577,7 +586,7 @@ export function modulesPage(answer: FlowAnswer, row: AnswerRow, modules: ModuleR
   );
 }
 
-function navFull(id: string, on: "flow" | "paths" | "modules" | "freshness"): string {
+function navFull(id: string, on: "flow" | "paths" | "modules" | "freshness" | "metrics"): string {
   return `<nav>
     <a href="/">All answers</a>
     <a href="/architecture">Architecture</a>
@@ -585,6 +594,7 @@ function navFull(id: string, on: "flow" | "paths" | "modules" | "freshness"): st
     <a href="/answers/${id}/paths" class="${on === "paths" ? "on" : ""}">Paths</a>
     <a href="/answers/${id}/modules" class="${on === "modules" ? "on" : ""}">Modules</a>
     <a href="/answers/${id}/freshness" class="${on === "freshness" ? "on" : ""}">Freshness</a>
+    <a href="/answers/${id}/metrics" class="${on === "metrics" ? "on" : ""}">Metrics</a>
   </nav>`;
 }
 
@@ -696,6 +706,273 @@ export function freshnessPage(input: FreshnessPageInput): string {
        </div>
      </main>`,
   );
+}
+
+/* ------------------------------------------------------------------ metrics (F008) */
+
+export type MetricsView = "health" | "functions" | "structure" | "coverage";
+
+export interface MetricsPageInput {
+  row: AnswerRow;
+  title: string;
+  metrics: FlowMetrics;
+  view: MetricsView;
+  /** Whether these numbers were recomputed or served from a run over this same tree state. */
+  source: "computed" | "stored";
+}
+
+const BAND_CLASS: Record<string, string> = {
+  low: "good",
+  moderate: "",
+  high: "warn",
+  severe: "bad",
+};
+
+const COVERAGE_CLASS: Record<string, string> = { covered: "good", partial: "warn", gap: "bad" };
+
+function sourceLink(path: string, line: number, label?: string): string {
+  return `<a href="/source?path=${encodeURIComponent(path)}&line=${line}#L${line}">${esc(label ?? `${path}:${line}`)}</a>`;
+}
+
+/**
+ * Four screens over one measurement. They are separate because they answer different questions, and
+ * they never reconcile each other: a file with a bad structural index and one nesting hump appears
+ * on both the health screen and the functions screen saying two different things, which is the
+ * finding rather than a fault.
+ */
+export function metricsPage(input: MetricsPageInput): string {
+  const { metrics: m, row } = input;
+  const tab = (view: MetricsView, label: string): string =>
+    `<a class="chip${view === input.view ? " on" : ""}" href="/answers/${row.id}/metrics?view=${view}">${label}</a>`;
+
+  const body =
+    input.view === "functions"
+      ? functionsView(m)
+      : input.view === "structure"
+        ? structureView(m)
+        : input.view === "coverage"
+          ? coverageView(m)
+          : healthView(m);
+
+  return page(
+    `${input.title} — metrics`,
+    `<header><h1>${esc(input.title)} — metrics</h1>
+       <div class="meta">
+         <span class="pill">${m.scope.files} files in scope</span>
+         <span class="pill">${m.scope.citedFiles} cited + ${m.scope.reachedFiles} reached at depth ${m.scope.depth}</span>
+         <span class="pill">${m.scope.functions} functions</span>
+         ${
+           m.history.available
+             ? `<span class="pill">${m.history.commits} commits</span>`
+             : `<span class="pill warn">history unavailable</span>`
+         }
+         ${m.totals.contradictions ? `<span class="pill warn">${m.totals.contradictions} contradiction${m.totals.contradictions === 1 ? "" : "s"}</span>` : ""}
+         ${m.totals.caveats ? `<span class="pill">${m.totals.caveats} caveat${m.totals.caveats === 1 ? "" : "s"}</span>` : ""}
+       </div>
+       <div class="meta" style="margin-top:6px">Measured over the files this flow runs through, never the
+         whole repository. Nothing was executed to produce these numbers${
+           input.source === "stored" ? ", and this run was already taken over this exact tree state" : ""
+         }.</div>
+     </header>
+     ${navFull(row.id, "metrics")}
+     <main>
+       <div class="chips">
+         ${tab("health", "Code health")}${tab("functions", "Functions")}
+         ${tab("structure", "Structure")}${tab("coverage", "Coverage")}
+       </div>
+       ${
+         m.history.available
+           ? ""
+           : `<p class="meta"><span class="pill warn">no history</span> ${esc(m.history.reason ?? "")} —
+              revisions, hotspot, age and coupling are reported as zero rather than guessed.</p>`
+       }
+       ${body}
+     </main>`,
+  );
+}
+
+function healthView(m: FlowMetrics): string {
+  const rows = [...m.files]
+    .sort((a, b) => b.hotspot - a.hotspot || b.complexity - a.complexity)
+    .map((f) => {
+      const band = BAND_CLASS[f.spaghettiBand] ?? "";
+      const inputs = f.spaghettiInputs;
+      return `<tr>
+        <td>${sourceLink(f.path, 1)}
+          ${f.caveat ? `<div class="dim">⚠ ${esc(f.caveat)}</div>` : ""}
+          ${f.contradiction ? `<div class="dim">⇄ ${esc(f.contradiction)}</div>` : ""}</td>
+        <td>${f.revisions}</td>
+        <td>${f.complexity}<div class="dim">mean ${inputs.meanIndent}</div></td>
+        <td>${f.hotspot}</td>
+        <td>${f.ageDays}d<div class="dim">${f.authors} author${f.authors === 1 ? "" : "s"}</div></td>
+        <td><span class="pill ${band}">${f.spaghettiIndex} ${f.spaghettiBand}</span>
+          <div class="dim">indent ${inputs.meanIndent} · ccn ${inputs.maxCcn} · humps ${inputs.humps} ·
+            fan-out ${inputs.fanOut} · dup ${inputs.duplicationRatio}${inputs.inCycle ? " · in a cycle" : ""}</div></td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<div class="split">
+    <table class="grid">
+      <tr><th>File</th><th>Revisions</th><th>Complexity</th><th>Hotspot</th><th>Age</th><th>Spaghetti index</th></tr>
+      ${rows || `<tr><td colspan="6" class="dim">No files in scope.</td></tr>`}
+    </table>
+    <aside>
+      <h3>How these are made</h3>
+      <p class="dim">Hotspot is <b>revisions × indent complexity</b>, the code-maat model: complexity
+        alone finds long files, history alone finds busy ones, the product finds the files where both
+        are true.</p>
+      <h3>Spaghetti index</h3>
+      <p class="dim">${esc(SPAGHETTI_FORMULA)}</p>
+      <table class="grid">${SPAGHETTI_BANDS.map(
+        (b) => `<tr><td><span class="pill ${BAND_CLASS[b.band] ?? ""}">${b.band}</span></td>
+          <td class="dim">${b.from}–${b.to}</td></tr>`,
+      ).join("")}</table>
+      <p class="dim">Structure only. Revisions, authorship and age are deliberately not in it, so a
+        tangled file nobody has touched this year cannot score as healthy.</p>
+    </aside>
+  </div>`;
+}
+
+function functionsView(m: FlowMetrics): string {
+  const rows = [...m.functions]
+    .sort((a, b) => b.ccn - a.ccn || b.nloc - a.nloc || (a.path < b.path ? -1 : 1))
+    .map(
+      (f) => `<tr>
+        <td>${sourceLink(f.path, f.line, f.symbol)}<div class="dim">${esc(f.path)}:${f.line}</div></td>
+        <td>${f.ccn}</td><td>${f.nloc}</td><td>${f.maxNesting}</td><td>${f.cognitive}</td>
+        <td>${f.nestingHumps}</td>
+        <td>${
+          f.findings.length
+            ? f.findings.map((x) => `<span class="pill ${x === "brain-method" ? "bad" : "warn"}">${x}</span>`).join(" ")
+            : `<span class="dim">—</span>`
+        }${f.caveat ? `<div class="dim">⚠ ${esc(f.caveat)}</div>` : ""}</td>
+      </tr>`,
+    )
+    .join("");
+
+  return `<div class="split">
+    <table class="grid">
+      <tr><th>Function</th><th>CCN</th><th>NLOC</th><th>Nesting</th><th>Cognitive</th><th>Humps</th><th>Findings</th></tr>
+      ${rows || `<tr><td colspan="7" class="dim">No functions in scope.</td></tr>`}
+    </table>
+    <aside>
+      <h3>Thresholds</h3>
+      <table class="grid">${FUNCTION_RULES.map(
+        (r) => `<tr><td><code>${r.finding}</code><div class="dim">${esc(r.mirrors)}</div></td>
+          <td class="dim">${esc(r.rule)}</td></tr>`,
+      ).join("")}</table>
+      <p class="dim">Humps count separate deep blocks. One continuous block is one hump however long
+        it runs — that is what tells a long function from a bumpy one.</p>
+    </aside>
+  </div>`;
+}
+
+function structureView(m: FlowMetrics): string {
+  const cycles = m.cycles.length
+    ? m.cycles
+        .map(
+          (c) => `<div class="branch refused"><h3>${esc(c.id)}</h3>
+            <div class="inv">${c.members.map((x) => esc(x)).join(" → ")} → ${esc(c.members[0] ?? "")}</div></div>`,
+        )
+        .join("")
+    : `<p class="meta">No import cycle touches this flow.</p>`;
+
+  const rows = [...m.structure]
+    .sort((a, b) => b.fanIn - a.fanIn || b.fanOut - a.fanOut)
+    .map(
+      (s) => `<tr>
+        <td>${sourceLink(s.path, 1)}</td><td>${s.fanIn}</td><td>${s.fanOut}</td>
+        <td>${s.externalDeps}</td>
+        <td>${s.instability === null ? `<span class="dim">—</span>` : s.instability}</td>
+        <td>${s.cycleId ? `<span class="pill bad">${esc(s.cycleId)}</span>` : ""}</td>
+      </tr>`,
+    )
+    .join("");
+
+  const duplication = m.duplication.length
+    ? m.duplication
+        .map(
+          (g) => `<tr><td>${g.lines} lines<div class="dim">${g.tokens} tokens</div></td>
+            <td>${g.fragments.map((f) => sourceLink(f.path, f.startLine, `${f.path}:${f.startLine}–${f.endLine}`)).join("<br>")}</td></tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="2" class="dim">No block of ${5} lines or more appears twice.</td></tr>`;
+
+  const coupling = m.coupling.length
+    ? m.coupling
+        .slice(0, 20)
+        .map(
+          (c) => `<tr><td>${c.degree}%</td><td>${c.shared}</td>
+            <td>${esc(c.a)}<div class="dim">↔ ${esc(c.b)}</div></td></tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="3" class="dim">${
+        m.history.available ? "No pair of these files changes together twice." : "No history to read."
+      }</td></tr>`;
+
+  return `<div class="split">
+    <div>
+      <h2 style="font-size:16px;margin:0 0 10px">Circular dependencies</h2>
+      ${cycles}
+      <h2 style="font-size:16px;margin:26px 0 10px">Fan-in, fan-out, instability</h2>
+      <table class="grid">
+        <tr><th>File</th><th>Fan-in</th><th>Fan-out</th><th>Packages</th><th>I</th><th>Cycle</th></tr>
+        ${rows || `<tr><td colspan="6" class="dim">No files in scope.</td></tr>`}
+      </table>
+      <h2 style="font-size:16px;margin:26px 0 10px">Duplicated blocks — ${m.duplicationTotal}</h2>
+      <table class="grid"><tr><th>Size</th><th>Where</th></tr>${duplication}</table>
+      <h2 style="font-size:16px;margin:26px 0 10px">Files that keep changing together</h2>
+      <table class="grid"><tr><th>Degree</th><th>Shared commits</th><th>Pair</th></tr>${coupling}</table>
+    </div>
+    <aside>
+      <h3>How these are made</h3>
+      <p class="dim">${esc(STRUCTURE_RULE)}</p>
+      <p class="dim">Fan-in is counted across the whole repository, not just this flow: a shared
+        helper used everywhere would otherwise look barely used.</p>
+      <p class="dim">${esc(DUPLICATION_RULE)}</p>
+    </aside>
+  </div>`;
+}
+
+function coverageView(m: FlowMetrics): string {
+  const rows = m.coverage
+    .map(
+      (c) => `<tr>
+        <td><span class="pill ${COVERAGE_CLASS[c.state] ?? ""}">${c.state}</span></td>
+        <td>${esc(c.title)}<div class="dim">protects: ${esc(c.invariant)}</div></td>
+        <td><code>${esc(c.identifier || "—")}</code>${
+          c.identifiers.length > 1 ? `<div class="dim">${c.identifiers.map(esc).join(", ")}</div>` : ""
+        }</td>
+        <td>${
+          c.testFiles.length ? c.testFiles.map((f) => esc(f)).join("<br>") : `<span class="dim">no test names it</span>`
+        }${c.note ? `<div class="dim">${esc(c.note)}</div>` : ""}</td>
+      </tr>`,
+    )
+    .join("");
+
+  return `<div class="split">
+    <div>
+      <p class="meta"><b>This is a proxy, not executed coverage.</b> VeriFlow does not run the
+        project's tests. What it checks is narrower and reproducible: does any test file name the
+        identifier this outcome is built on? A gap below means <i>no test names this identifier</i>,
+        which is not the same claim as <i>untested</i> — and it is the claim that can be verified.</p>
+      <table class="grid">
+        <tr><th>State</th><th>Outcome</th><th>Identifier</th><th>Test files naming it</th></tr>
+        ${rows || `<tr><td colspan="4" class="dim">This answer records no alternative outcome.</td></tr>`}
+      </table>
+    </div>
+    <aside>
+      <h3>Method</h3>
+      <p class="dim">${esc(COVERAGE_RULE)}</p>
+      <h3>Totals</h3>
+      <table class="grid">
+        <tr><td><span class="pill good">covered</span></td><td>${m.totals.coverage.covered}</td></tr>
+        <tr><td><span class="pill warn">partial</span></td><td>${m.totals.coverage.partial}</td></tr>
+        <tr><td><span class="pill bad">gap</span></td><td>${m.totals.coverage.gap}</td></tr>
+      </table>
+    </aside>
+  </div>`;
 }
 
 export interface SourcePageInput {

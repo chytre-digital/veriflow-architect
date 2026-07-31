@@ -100,6 +100,11 @@ features:
     status: ready
     dependsOn: [F005, F006]
     outcome: Debt, structure, coupling and a labelled coverage proxy for the flow's files.
+    notes: >-
+      Every metric names the tool it mirrors and the rule that produced it, and nothing is blended
+      into a score: where two measures disagree, both are reported and the entry names the term that
+      drove the number. Unlocks get_metrics and get_coverage_gaps on the MCP surface, which were
+      deliberately absent until now rather than present and empty.
   F009:
     title: Document export and portable backup
     spec: 09-document-export.md

@@ -214,6 +214,16 @@ CREATE TABLE IF NOT EXISTS verification_results (
   PRIMARY KEY (verification_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS flow_metrics (
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  fingerprint TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  computed_at TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (answer_id, fingerprint)
+);
+
 CREATE TABLE IF NOT EXISTS call_nodes (
   snapshot_id TEXT NOT NULL,
   id TEXT NOT NULL,
@@ -863,6 +873,45 @@ export class Store {
       .all(verificationId) as Array<Record<string, unknown>>;
   }
 
+  /* ------------------------------------------------------------ metrics (F008) */
+
+  /**
+   * Metrics are deterministic over a tree state, so this is not a cache of something that might have
+   * been different — it is the same numbers, already paid for. The fingerprint is F007's: the
+   * identity of the files the answer cites as they are now.
+   */
+  saveMetrics(m: {
+    answerId: string;
+    fingerprint: string;
+    snapshotId: string;
+    computedAt: string;
+    durationMs: number;
+    payload: unknown;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO flow_metrics
+         (answer_id, fingerprint, snapshot_id, computed_at, duration_ms, payload_json)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(m.answerId, m.fingerprint, m.snapshotId, m.computedAt, m.durationMs, JSON.stringify(m.payload));
+  }
+
+  metricsFor(answerId: string, fingerprint: string): Record<string, unknown> | undefined {
+    return this.db
+      .prepare("SELECT * FROM flow_metrics WHERE answer_id = ? AND fingerprint = ?")
+      .get(answerId, fingerprint) as Record<string, unknown> | undefined;
+  }
+
+  listMetrics(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT answer_id, fingerprint, snapshot_id, computed_at, duration_ms
+         FROM flow_metrics WHERE answer_id = ? ORDER BY computed_at DESC`,
+      )
+      .all(answerId) as Array<Record<string, unknown>>;
+  }
+
   /**
    * Re-answering keeps both. The old answer stays readable with its transcript — it is the record of
    * what the code did then, and deleting it would throw away the only thing a diff can be taken
@@ -1031,6 +1080,47 @@ export class Store {
          WHERE snapshot_id = ? AND id IN (${holes}) ORDER BY id`,
       )
       .all(snapshotId, ...ids) as Array<Record<string, unknown>>;
+  }
+
+  /**
+   * Call-graph nodes living in a set of files. The metrics scope starts here: the flow's own
+   * functions, rather than every function that happens to share a file with one.
+   */
+  callNodesInPaths(snapshotId: string, paths: readonly string[]): Array<Record<string, unknown>> {
+    return this.chunked(paths, (batch, holes) =>
+      this.db
+        .prepare(
+          `SELECT id, symbol, path, line, module_id, kind FROM call_nodes
+           WHERE snapshot_id = ? AND path IN (${holes}) ORDER BY path, line`,
+        )
+        .all(snapshotId, ...batch) as Array<Record<string, unknown>>,
+    );
+  }
+
+  /** Declared symbols in a set of files, with their ranges — the spans per-function metrics measure. */
+  symbolsInPaths(snapshotId: string, paths: readonly string[]): Array<Record<string, unknown>> {
+    return this.chunked(paths, (batch, holes) =>
+      this.db
+        .prepare(
+          `SELECT id, name, kind, path, line_start, line_end, is_test FROM symbols
+           WHERE snapshot_id = ? AND path IN (${holes}) ORDER BY path, line_start`,
+        )
+        .all(snapshotId, ...batch) as Array<Record<string, unknown>>,
+    );
+  }
+
+  /** SQLite binds a bounded number of parameters, and a flow can cite more files than that. */
+  private chunked<T>(
+    values: readonly string[],
+    query: (batch: readonly string[], holes: string) => T[],
+  ): T[] {
+    const out: T[] = [];
+    for (let i = 0; i < values.length; i += 400) {
+      const batch = values.slice(i, i + 400);
+      if (batch.length === 0) continue;
+      out.push(...query(batch, batch.map(() => "?").join(",")));
+    }
+    return out;
   }
 
   /** One breadth-first level of the call graph. Reachability walks these rather than loading it all. */

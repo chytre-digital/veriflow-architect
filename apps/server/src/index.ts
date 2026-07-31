@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { loadStoredAnswer, verifyStoredAnswer, type StoredAnswer } from "@veriflow/answers";
+import {
+  loadStoredAnswer,
+  metricsForStoredAnswer,
+  verifyStoredAnswer,
+  type StoredAnswer,
+} from "@veriflow/answers";
 import { isSecretPath } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import {
@@ -10,6 +15,7 @@ import {
   architecturePage,
   flowPage,
   freshnessPage,
+  metricsPage,
   moduleOwning,
   modulesPage,
   callGraphPage,
@@ -18,6 +24,7 @@ import {
   sourcePage,
   type AnswerRow,
   type EntryPointRow,
+  type MetricsView,
   type ModuleRow,
 } from "./views.js";
 import type { TrafficCell } from "@veriflow/contracts";
@@ -168,6 +175,30 @@ export function createApp(root: string): Hono {
               drifted: Number(v["drifted"]),
               missing: Number(v["missing"]) + Number(v["file_missing"]),
             })),
+        }),
+      );
+    }),
+  );
+
+  app.get("/answers/:id/metrics", (c) =>
+    withStore((store) => {
+      // Computed here rather than read from the last CLI run, for the same reason freshness is: the
+      // browser has to agree with `veriflow metrics` about the tree as it is now. A run already
+      // taken over this exact tree state is served instead, because it is the same measurement.
+      const found = metricsForStoredAnswer(store, root, c.req.param("id"));
+      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
+      const requested = c.req.query("view");
+      const view: MetricsView =
+        requested === "functions" || requested === "structure" || requested === "coverage"
+          ? requested
+          : "health";
+      return c.html(
+        metricsPage({
+          row: found.stored.row,
+          title: found.stored.answer.title,
+          metrics: found.metrics,
+          view,
+          source: found.source,
         }),
       );
     }),

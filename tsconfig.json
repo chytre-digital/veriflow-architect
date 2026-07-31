@@ -26,6 +26,7 @@
       "@veriflow/agent-session": ["packages/agent-session/src/index.ts"],
       "@veriflow/flow-answer": ["packages/flow-answer/src/index.ts"],
       "@veriflow/answers": ["packages/answers/src/index.ts"],
+      "@veriflow/metrics": ["packages/metrics/src/index.ts"],
       "@veriflow/mcp-server": ["packages/mcp-server/src/index.ts"],
       "@veriflow/diagram": ["packages/diagram/src/index.ts"],
       "@veriflow/server": ["apps/server/src/index.ts"]

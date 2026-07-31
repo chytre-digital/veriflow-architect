@@ -57,6 +57,9 @@ importers:
       '@veriflow/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
+      '@veriflow/metrics':
+        specifier: workspace:*
+        version: link:../../packages/metrics
       '@veriflow/provider-protocol':
         specifier: workspace:*
         version: link:../../packages/provider-protocol
@@ -90,6 +93,9 @@ importers:
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../../packages/flow-answer
+      '@veriflow/metrics':
+        specifier: workspace:*
+        version: link:../../packages/metrics
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../../packages/snapshot
@@ -114,6 +120,9 @@ importers:
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../flow-answer
+      '@veriflow/metrics':
+        specifier: workspace:*
+        version: link:../metrics
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../snapshot
@@ -167,6 +176,21 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+
+  packages/metrics:
+    dependencies:
+      '@veriflow/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../flow-answer
+      '@veriflow/snapshot':
+        specifier: workspace:*
+        version: link:../snapshot
+      '@veriflow/store':
+        specifier: workspace:*
+        version: link:../store
 
   packages/provider-crg:
     dependencies:

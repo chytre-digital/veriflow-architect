@@ -11,6 +11,7 @@
     "@veriflow/callgraph": "workspace:*",
     "@veriflow/contracts": "workspace:*",
     "@veriflow/diagram": "workspace:*",
+    "@veriflow/metrics": "workspace:*",
     "@veriflow/provider-protocol": "workspace:*",
     "@veriflow/snapshot": "workspace:*",
     "@veriflow/store": "workspace:*",

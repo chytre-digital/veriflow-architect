@@ -38,8 +38,11 @@ returns a traced flow with every alternative path and a call graph of what it ac
 stored locally, so reopening it costs nothing and VeriFlow can tell you how far the code has moved
 since.
 
-Then `veriflow mcp` serves all of it to any AI agent for design and review. Metrics and a committed
-markdown document with a mermaid diagram follow in the last iteration.
+Then `veriflow mcp` serves all of it to any AI agent for design and review, `veriflow verify` says
+[how far the code has moved](docs/freshness.md) since an answer was made, and `veriflow metrics`
+reports [debt, structure, coupling and a coverage proxy](docs/metrics.md) for the files that flow runs
+through — each number naming the tool it mirrors, and disagreements shown rather than averaged. A
+committed markdown document with a mermaid diagram follows in the last iteration.
 
 The MVP is deliberately partial: its job is to generate an architecture and support review. What is
 full, what is partial, and what is only reserved is written down — partial is fine, silently partial

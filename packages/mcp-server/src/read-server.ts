@@ -8,6 +8,7 @@ import {
   fileStates,
   fitWholeAnswer,
   loadStoredAnswer,
+  metricsForStoredAnswer,
   paginate,
   paginateWithin,
   projectEnvelope,
@@ -16,6 +17,7 @@ import {
   type StoredAnswer,
   type ToolResponseEnvelope,
 } from "@veriflow/answers";
+import { FUNCTION_RULES, METRIC_RULES, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from "@veriflow/metrics";
 
 /**
  * The MCP server over what VeriFlow has already verified — the surface an agent designs and reviews
@@ -67,6 +69,9 @@ const INSTRUCTIONS = [
   "- citations carry their own state: `verified` was found at the cited line, `unverified` was not.",
   "- an inferred call edge is marked `inferred` with the rule that produced it. It is a deduction,",
   "  not an observed call.",
+  "- metrics name the tool they mirror and the rule they used, and are never blended into a score.",
+  "  Two metrics disagreeing is the finding; get_metrics reports both. get_coverage_gaps is a proxy",
+  "  over identifiers, not executed coverage — `gap` means no test names this identifier.",
   "",
   "Everything here is read-only. There is no tool that writes a file, runs a command, or touches Git.",
 ].join("\n");
@@ -372,6 +377,148 @@ export function createReadServer(options: ReadServerOptions): McpServer {
   );
 
   server.registerTool(
+    "get_metrics",
+    {
+      title: "Debt, structure and coupling for the files this flow runs through",
+      description:
+        "Measured locally over the flow's own files — never the whole repository, and nothing is " +
+        "executed to produce them. Every metric names the tool it mirrors (code-maat, lizard, " +
+        "madge, jscpd, CodeScene, SonarSource) and the rule that produced it. Metrics that " +
+        "disagree are both reported: there is no blended score. Ask for one `section` at a time; " +
+        "the default is a summary.",
+      inputSchema: {
+        answerId: z.string(),
+        section: z
+          .enum(["summary", "health", "functions", "structure", "coverage"])
+          .optional()
+          .describe("Default summary. One section at a time keeps the response readable."),
+        cursor: z.string().optional(),
+      },
+    },
+    async ({ answerId, section, cursor }) => {
+      const found = metricsForStoredAnswer(store, root, answerId);
+      if (!found) return refuse(`no stored answer with id or prefix "${answerId}" — call list_flow_answers first`);
+      const { stored, metrics } = found;
+
+      const head = {
+        scope: metrics.scope,
+        history: metrics.history,
+        totals: metrics.totals,
+      };
+
+      if (section === "health") {
+        const files = [...metrics.files].sort((a, b) => b.hotspot - a.hotspot || b.complexity - a.complexity);
+        const page = paginateWithin(files, pageSize, cursor, budget);
+        return ok(
+          answerEnvelope(
+            stored,
+            { ...head, rule: ruleFor("complexity / hotspot"), spaghetti: { formula: SPAGHETTI_FORMULA, bands: SPAGHETTI_BANDS }, files: page.items },
+            page.truncated,
+          ),
+        );
+      }
+
+      if (section === "functions") {
+        // Flagged first: an agent reading one page should see the functions worth reading about.
+        const functions = [...metrics.functions].sort(
+          (a, b) => b.findings.length - a.findings.length || b.ccn - a.ccn,
+        );
+        const page = paginateWithin(functions, pageSize, cursor, budget);
+        return ok(
+          answerEnvelope(stored, { ...head, thresholds: FUNCTION_RULES, functions: page.items }, page.truncated),
+        );
+      }
+
+      if (section === "structure") {
+        const page = paginateWithin(metrics.structure, pageSize, cursor, Math.floor(budget / 2));
+        return ok(
+          answerEnvelope(
+            stored,
+            {
+              ...head,
+              rule: ruleFor("structure"),
+              cycles: metrics.cycles,
+              duplication: metrics.duplication.slice(0, 20),
+              duplicationTotal: metrics.duplicationTotal,
+              coupling: metrics.coupling.slice(0, 20),
+              files: page.items,
+            },
+            page.truncated,
+          ),
+        );
+      }
+
+      if (section === "coverage") {
+        return ok(
+          answerEnvelope(stored, {
+            ...head,
+            method: "identifier-proxy",
+            rule: ruleFor("coverage"),
+            coverage: metrics.coverage,
+          }),
+        );
+      }
+
+      return ok(
+        answerEnvelope(stored, {
+          ...head,
+          rules: metrics.rules,
+          worstFiles: [...metrics.files]
+            .sort((a, b) => b.spaghettiIndex - a.spaghettiIndex)
+            .slice(0, 5)
+            .map((f) => ({
+              path: f.path,
+              spaghettiIndex: f.spaghettiIndex,
+              spaghettiBand: f.spaghettiBand,
+              hotspot: f.hotspot,
+              ...(f.caveat ? { caveat: f.caveat } : {}),
+              ...(f.contradiction ? { contradiction: f.contradiction } : {}),
+            })),
+          flaggedFunctions: metrics.functions
+            .filter((f) => f.findings.length > 0)
+            .slice(0, 10)
+            .map((f) => ({ symbol: f.symbol, path: f.path, line: f.line, ccn: f.ccn, findings: f.findings })),
+          coverageGaps: metrics.coverage.filter((c) => c.state !== "covered").length,
+          note: "call again with a section for the full table: health, functions, structure, coverage",
+        }),
+      );
+    },
+  );
+
+  server.registerTool(
+    "get_coverage_gaps",
+    {
+      title: "Alternative outcomes no test names",
+      description:
+        "A proxy, and it is labelled one: VeriFlow does not run the project's tests. It reports " +
+        "which of this flow's alternative outcomes have no test file naming the identifier they " +
+        "are built on. `gap` means no test names this identifier — not `untested`. An identifier " +
+        "that appears only inside a comment or a string does not count as named.",
+      inputSchema: {
+        answerId: z.string(),
+        state: z.enum(["covered", "partial", "gap"]).optional().describe("Default: everything but covered"),
+      },
+    },
+    async ({ answerId, state }) => {
+      const found = metricsForStoredAnswer(store, root, answerId);
+      if (!found) return refuse(`no stored answer with id or prefix "${answerId}" — call list_flow_answers first`);
+      const { stored, metrics } = found;
+      const outcomes = state
+        ? metrics.coverage.filter((c) => c.state === state)
+        : metrics.coverage.filter((c) => c.state !== "covered");
+      return ok(
+        answerEnvelope(stored, {
+          method: "identifier-proxy",
+          rule: ruleFor("coverage"),
+          totals: metrics.totals.coverage,
+          testFilesSearched: metrics.coverage.flatMap((c) => c.testFiles).length,
+          outcomes,
+        }),
+      );
+    },
+  );
+
+  server.registerTool(
     "search_answers",
     {
       title: "Find answers by title, body, or cited file",
@@ -635,6 +782,12 @@ export async function serveRead(options: ReadServerOptions): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ helpers */
+
+/** The rule that produced a number, served next to it. A metric whose rule is hidden is an opinion. */
+function ruleFor(metric: string): Record<string, unknown> | undefined {
+  const rule = METRIC_RULES.find((r) => r.metric === metric);
+  return rule ? { mirrors: rule.mirrors, rule: rule.rule, version: rule.version } : undefined;
+}
 
 /** Citation states per step, so a reader can see which parts of a step were actually confirmed. */
 function citationStates(stored: StoredAnswer): Map<string, Array<Record<string, unknown>>> {

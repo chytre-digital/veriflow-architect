@@ -14,11 +14,14 @@ import {
   THRESHOLDS,
   diffAnswers,
   loadStoredAnswer,
+  metricsForStoredAnswer,
   thresholdOf,
   verifyStoredAnswer,
+  type AnswerMetrics,
   type StoredAnswer,
   type Verification,
 } from "@veriflow/answers";
+import { DEFAULT_DEPTH, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from "@veriflow/metrics";
 import { startServer } from "@veriflow/server";
 import { classifyQuestion, rankEntryPoints } from "@veriflow/flow-answer";
 import { createInterface } from "node:readline/promises";
@@ -833,6 +836,152 @@ program
             `${r.confidence === "low" ? "  [low confidence]" : ""}`,
         );
         if (r.note) log(`                  ${r.note}`);
+      }
+      log("");
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ metrics */
+
+program
+  .command("metrics")
+  .argument("[answerId]")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .option("--depth <n>", "how far past the cited files the flow's call graph is followed", String(DEFAULT_DEPTH))
+  .option("--fresh", "measure again even when a stored run covers this exact tree state")
+  .option("--rows <n>", "rows per table in the printed output", "12")
+  .description("debt, structure, coupling and a coverage proxy for the files one flow runs through")
+  .action(async (
+    answerArg: string | undefined,
+    pathArg: string | undefined,
+    options: { json?: boolean; depth: string; rows: string; fresh?: boolean },
+  ) => {
+    // Same disambiguation as `verify`: an answer id is never an existing workspace directory.
+    let answer = answerArg;
+    let path = pathArg;
+    if (answer && !path && existsSync(join(resolve(answer), ".veriflow", "veriflow.db"))) {
+      path = answer;
+      answer = undefined;
+    }
+
+    const ctx = open(path);
+    const targets = answer ? [answer] : ctx.store.listAnswers().map((a) => String(a["id"]));
+    if (targets.length === 0) {
+      ctx.close();
+      fail("no answers to measure - run: veriflow ask");
+    }
+
+    const rows = Math.max(1, Number(options.rows));
+    const done: AnswerMetrics[] = [];
+    for (const target of targets) {
+      const found = metricsForStoredAnswer(ctx.store, ctx.root, target, {
+        depth: Number(options.depth),
+        ...(options.fresh ? { fresh: true } : {}),
+        // Only to a terminal: a repository-wide import pass is a long silence, and a silence is
+        // indistinguishable from a hang — but the same characters piped to a file are noise.
+        ...(options.json || !process.stdout.isTTY
+          ? {}
+          : { onProgress: (stage) => process.stdout.write(`\r  ${stage.padEnd(60)}`) }),
+      });
+      if (!found) {
+        ctx.close();
+        fail(`no stored answer with id or prefix "${target}" - run: veriflow answers`);
+      }
+      if (!options.json && process.stdout.isTTY) process.stdout.write("\r".padEnd(64) + "\r");
+      if (found.source === "computed") {
+        ctx.store.saveMetrics({
+          answerId: found.stored.row.id,
+          fingerprint: found.metrics.fingerprint ?? found.stored.freshness.fingerprint,
+          snapshotId: found.stored.row.snapshot_id,
+          computedAt: found.computedAt,
+          durationMs: found.durationMs,
+          payload: found.metrics,
+        });
+      }
+      done.push(found);
+    }
+
+    if (options.json) {
+      // Deliberately carries no timestamp and no duration: two runs over one tree state have to
+      // produce the same bytes, or "reproducible" is a word rather than a property.
+      log(JSON.stringify({ contractVersion: 1, metrics: done.map((d) => d.metrics) }, null, 2));
+      ctx.close();
+      return;
+    }
+
+    for (const { stored, metrics: m, source, durationMs } of done) {
+      const s = m.scope;
+      log(`${stored.row.id.slice(0, 8)}  ${stored.answer.title}`);
+      log(
+        `  scope        ${s.files} files (${s.citedFiles} cited + ${s.reachedFiles} reached at depth ${s.depth}) · ` +
+          `${s.functions} functions · ${m.totals.nloc} lines of code`,
+      );
+      log(
+        `  history      ${
+          m.history.available
+            ? `${m.history.commits} commits touch these files`
+            : `unavailable — ${m.history.reason}`
+        }   (${source === "stored" ? "stored, same tree state" : `${durationMs} ms`})`,
+      );
+      for (const skipped of s.skipped) log(`  skipped      ${skipped.path} — ${skipped.reason}`);
+
+      log(`\n  Code health — hotspot = revisions × indent complexity`);
+      log(`    ${"path".padEnd(52)} ${"rev".padStart(4)} ${"cx".padStart(6)} ${"hotspot".padStart(8)} ${"age".padStart(5)} ${"auth".padStart(4)}  index`);
+      for (const f of [...m.files].sort((a, b) => b.hotspot - a.hotspot || b.complexity - a.complexity).slice(0, rows)) {
+        log(
+          `    ${f.path.slice(-52).padEnd(52)} ${String(f.revisions).padStart(4)} ${String(f.complexity).padStart(6)} ` +
+            `${String(f.hotspot).padStart(8)} ${String(f.ageDays).padStart(5)} ${String(f.authors).padStart(4)}  ` +
+            `${String(f.spaghettiIndex).padStart(5)} ${f.spaghettiBand}`,
+        );
+      }
+      log(`    formula: ${SPAGHETTI_FORMULA}`);
+      log(`    bands:   ${SPAGHETTI_BANDS.map((b) => `${b.band} ${b.from}–${b.to}`).join(" · ")}`);
+
+      const flagged = m.functions.filter((f) => f.findings.length > 0);
+      log(`\n  Functions with findings — ${flagged.length} of ${m.functions.length}`);
+      log(`    ${"ccn".padStart(4)} ${"nloc".padStart(5)} ${"nest".padStart(4)} ${"hump".padStart(4)}  symbol`);
+      for (const f of flagged.sort((a, b) => b.ccn - a.ccn).slice(0, rows)) {
+        log(
+          `    ${String(f.ccn).padStart(4)} ${String(f.nloc).padStart(5)} ${String(f.maxNesting).padStart(4)} ` +
+            `${String(f.nestingHumps).padStart(4)}  ${f.symbol}  ${f.path}:${f.line}`,
+        );
+        log(`         ${f.findings.join(", ")}  ·  cognitive ${f.cognitive}`);
+        if (f.caveat) log(`         ⚠ ${f.caveat}`);
+      }
+
+      log(`\n  Structure`);
+      log(`    ${m.cycles.length} import cycle(s) touching this flow`);
+      for (const cycle of m.cycles.slice(0, 5)) log(`      ${cycle.members.join(" → ")} → ${cycle.members[0]}`);
+      const exposed = [...m.structure].sort((a, b) => b.fanIn - a.fanIn).slice(0, 5);
+      for (const s2 of exposed) {
+        log(`      fan-in ${String(s2.fanIn).padStart(3)}  fan-out ${String(s2.fanOut).padStart(3)}  I=${s2.instability ?? "—"}  ${s2.path}`);
+      }
+      log(`    duplication  ${m.duplicationTotal} block(s), ${m.totals.duplicatedLines} line(s)`);
+      for (const group of m.duplication.slice(0, 3)) {
+        log(`      ${group.lines} lines · ${group.tokens} tokens: ${group.fragments.map((f) => `${f.path}:${f.startLine}`).join("  =  ")}`);
+      }
+      log(`    change coupling — files that keep changing together`);
+      for (const pair of m.coupling.slice(0, 5)) {
+        log(`      ${String(pair.degree).padStart(5)}%  ${pair.shared} shared commits  ${pair.a}  ↔  ${pair.b}`);
+      }
+
+      log(`\n  Coverage — a proxy: does any test file name the identifier this outcome is built on?`);
+      for (const c of m.coverage) {
+        log(`    ${c.state.padEnd(8)} ${c.branchId.padEnd(6)} ${c.title}  →  ${c.identifier || "no named symbol"}`);
+        if (c.testFiles.length) log(`             named in ${c.testFiles.slice(0, 3).join(", ")}`);
+        if (c.note) log(`             ${c.note}`);
+      }
+      if (m.coverage.length === 0) log(`    this answer records no alternative outcome to check`);
+
+      const caveats = [
+        ...m.files.filter((f) => f.caveat).map((f) => `${f.path}: ${f.caveat}`),
+        ...m.files.filter((f) => f.contradiction).map((f) => `${f.path}: ${f.contradiction}`),
+      ];
+      if (caveats.length) {
+        log(`\n  Where the measure argues with itself — shown, not averaged`);
+        for (const line of caveats.slice(0, rows)) log(`    ${line}`);
       }
       log("");
     }

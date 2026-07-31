@@ -119,9 +119,10 @@ record of intent, but the code they describe has moved — re-verify the citatio
 4. `get_flow_paths` → which alternative outcomes cross the changed code, and what each protects.
 5. `get_open_questions` → gaps that were already known, so a review does not report them as new.
 
-*"…and which of those have no test"* becomes answerable when F008 adds the coverage tools. Those
-tools are absent from the tool list until then, rather than present and returning nothing, so an
-agent never plans around a capability that is not there.
+6. `get_coverage_gaps` → *"…and which of those have no test."* A proxy over identifiers, never
+   executed coverage: `gap` means no test file names the identifier that outcome is built on, which
+   is a narrower and checkable claim. `get_metrics` covers the rest — debt, structure and coupling
+   for the flow's own files.
 
 ## The tools
 
@@ -135,6 +136,8 @@ agent never plans around a capability that is not there.
 | `get_external_systems` | What is outside the repository, and what happens when it fails. |
 | `get_open_questions` | What the repository could not answer. |
 | `get_freshness` | Which cited files changed, and per citation whether it resolved, moved (to which line), or is gone. |
+| `get_metrics` | Debt, structure, coupling and function-level findings for the flow's own files, one section at a time. Every number carries the tool it mirrors and the rule behind it. |
+| `get_coverage_gaps` | Alternative outcomes no test names — a proxy over identifiers, labelled as one. |
 | `search_answers` | Title, body, or cited path. |
 | `get_architecture` | Module registry, entry points, measured traffic, flows per module. |
 | `get_call_graph` | The stored graph, or one entry point's closure. |
@@ -144,6 +147,24 @@ agent never plans around a capability that is not there.
 Plus a resource per answer (`veriflow://answer/{id}`) for clients that would rather attach one
 document than make ten calls. It carries the same envelope — a resource is not a way around the
 labels.
+
+## Metrics are wired to disagree
+
+`get_metrics` returns numbers, never a grade. A file can carry a bad structural index and exactly one
+nesting hump — one long flat decision chain, or one large literal, rather than repeated tangling —
+and both numbers come back with the entry naming the term that drove the index. Where a measure is
+known to misread a construct, the caveat is attached to that entry:
+
+```jsonc
+{ "path": "src/…/OfferTabPanel.tsx", "spaghettiIndex": 32, "spaghettiBand": "moderate", "humps": 1,
+  "caveat": "mean indent 3.4 with a worst-case ccn of 2 — this file is deeply indented data, not deeply nested logic",
+  "contradiction": "structural index 32 (moderate) with 1 nesting hump — driven by indentation … Both numbers stand; neither corrects the other." }
+```
+
+Ask for one `section` at a time (`health`, `functions`, `structure`, `coverage`); the default is a
+summary with the worst files, the flagged functions, and the count of coverage gaps. Nothing is
+executed to produce any of it — no test run, no build, no npm script. The only command behind these
+numbers is `git log`.
 
 ## Corrections
 

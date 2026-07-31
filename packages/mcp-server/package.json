@@ -8,6 +8,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@veriflow/answers": "workspace:*",
     "@veriflow/flow-answer": "workspace:*",
+    "@veriflow/metrics": "workspace:*",
     "@veriflow/snapshot": "workspace:*",
     "@veriflow/store": "workspace:*",
     "zod": "^3.24.1"
