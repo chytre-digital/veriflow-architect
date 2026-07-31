@@ -10,7 +10,8 @@ import {
 } from "@veriflow/diagram";
 import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
-import type { AnswerRow, CitationRow, Freshness, SnapshotFacts } from "@veriflow/answers";
+import { THRESHOLDS, thresholdOf } from "@veriflow/answers";
+import type { AnswerRow, CitationRow, Freshness, SnapshotFacts, Verification } from "@veriflow/answers";
 
 // The browser and the MCP server read the same measurements from the same place, so they cannot
 // report different numbers about the same answer.
@@ -70,6 +71,18 @@ svg.flow { display:block; min-width:100%; }
 .step.is-unverified .step-label { fill:var(--warn); }
 .step.is-bare .arrow { stroke-dasharray:1 4; opacity:.65; }
 .legend { color:var(--dim); font-size:12px; margin:10px 0 0; }
+.dim { color:var(--dim); font-size:12px; }
+table.grid { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line);
+  border-radius:10px; overflow:hidden; font-size:13px; }
+table.grid th { text-align:left; font-weight:500; color:var(--dim); font-size:12px; }
+table.grid th, table.grid td { padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+table.grid tr:last-child td { border-bottom:0; }
+table.grid tr.on td { background:color-mix(in srgb, var(--accent) 10%, transparent); }
+table.grid td a { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+table.src { border-collapse:collapse; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; width:100%; }
+table.src td { padding:0 10px; white-space:pre; }
+table.src td.ln { color:var(--dim); text-align:right; user-select:none; width:1%; }
+table.src tr.on { background:color-mix(in srgb, var(--warn) 18%, transparent); }
 svg.callmap { display:block; }
 .cm-module { fill:color-mix(in srgb, var(--fg) 3%, transparent); stroke:var(--line); }
 .cm-module-label { font-size:11px; fill:var(--dim); font-family:ui-monospace,monospace; }
@@ -156,14 +169,21 @@ function ratioPill(verified: number, unverified: number): string {
   return `<span class="pill ${cls}">${verified}/${total} verified</span>`;
 }
 
+/**
+ * State first, then the number it came from. The word is the claim and the count is the evidence;
+ * showing only the count made the reader do the classification the product is supposed to do.
+ */
 export function freshnessPill(f: Freshness): string {
-  if (f.citedFilesChanged === 0) {
-    return `<span class="pill good">fresh — none of its ${f.citedFiles} cited files changed</span>`;
-  }
-  const cls = f.state === "broken" ? "bad" : "warn";
-  return `<span class="pill ${cls}">${f.citedFilesChanged} of ${f.citedFiles} cited files changed since capture${
-    f.citedFilesMissing > 0 ? ` · ${f.citedFilesMissing} gone` : ""
-  }</span>`;
+  const cls = f.state === "fresh" ? "good" : f.state === "broken" || f.state === "stale" ? "bad" : "warn";
+  const detail =
+    f.citedFilesChanged === 0
+      ? `none of its ${f.citedFiles} cited files changed`
+      : `${f.citedFilesChanged} of ${f.citedFiles} cited files changed${
+          f.citedFilesMissing > 0 ? `, ${f.citedFilesMissing} gone` : ""
+        }`;
+  return `<span class="pill ${cls}">${f.state} — ${detail}</span>${
+    f.source === "verification" ? `<span class="pill">verified citation by citation</span>` : ""
+  }`;
 }
 
 export function answersPage(rows: AnswerRow[], project: string): string {
@@ -175,6 +195,7 @@ export function answersPage(rows: AnswerRow[], project: string): string {
   <div class="meta">${ratioPill(r.verified, r.unverified)}
     <span class="pill">${r.open_questions} open question${r.open_questions === 1 ? "" : "s"}</span>
     <span class="pill">${esc(r.review_state)}</span>
+    ${r.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}
     &nbsp;${esc(r.created_at.slice(0, 16).replace("T", " "))}</div></a>`,
         )
         .join("\n")
@@ -260,8 +281,10 @@ export function flowPage(input: FlowPageInput): string {
   return page(
     answer.title,
     `<header><h1>${esc(answer.title)}</h1>
-       <div class="meta">${ratioPill(row.verified, row.unverified)} ${freshnessPill(freshness)}
+       <div class="meta">${ratioPill(row.verified, row.unverified)}
+       <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
        <span class="pill">${answer.openQuestions.length} open</span>
+       ${row.status === "superseded" ? `<span class="pill warn">superseded — a newer answer exists</span>` : ""}
        ${input.snapshot.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}</div>
      </header>
      ${nav(row.id, "flow")}
@@ -554,14 +577,150 @@ export function modulesPage(answer: FlowAnswer, row: AnswerRow, modules: ModuleR
   );
 }
 
-function navFull(id: string, on: "flow" | "paths" | "modules"): string {
+function navFull(id: string, on: "flow" | "paths" | "modules" | "freshness"): string {
   return `<nav>
     <a href="/">All answers</a>
     <a href="/architecture">Architecture</a>
     <a href="/answers/${id}" class="${on === "flow" ? "on" : ""}">Flow</a>
     <a href="/answers/${id}/paths" class="${on === "paths" ? "on" : ""}">Paths</a>
     <a href="/answers/${id}/modules" class="${on === "modules" ? "on" : ""}">Modules</a>
+    <a href="/answers/${id}/freshness" class="${on === "freshness" ? "on" : ""}">Freshness</a>
   </nav>`;
+}
+
+/* ------------------------------------------------------------------ freshness (F007) */
+
+export interface FreshnessPageInput {
+  row: AnswerRow;
+  answer: FlowAnswer;
+  verification: Verification;
+  snapshot: SnapshotFacts;
+  /** Prior verifications of the same answer, so the drift has a history rather than a last value. */
+  history: Array<{ checkedAt: string; state: string; drifted: number; missing: number }>;
+}
+
+const OUTCOME_CLASS: Record<string, string> = {
+  resolved: "good",
+  drifted: "warn",
+  missing: "bad",
+  "file-missing": "bad",
+};
+
+/**
+ * The banner from F006 expanded: every citation, where it was, where it is now, and a link that
+ * actually opens it. A state word with no way to check it is the thing this product exists not to be.
+ */
+export function freshnessPage(input: FreshnessPageInput): string {
+  const { verification: v, row } = input;
+  const label = (id: string): string => {
+    const step = [...input.answer.steps, ...input.answer.branches.flatMap((b) => b.steps)].find(
+      (s) => s.id === id,
+    );
+    return step?.label ?? id;
+  };
+
+  const rows = v.results
+    .map((r) => {
+      const cls = OUTCOME_CLASS[r.outcome] ?? "";
+      const now = r.outcome === "drifted" && r.toLine ? r.toLine : r.fromLine;
+      const jump =
+        r.outcome === "file-missing"
+          ? `<span class="dim">${esc(r.path)}</span>`
+          : `<a href="/source?path=${encodeURIComponent(r.path)}&line=${now}#L${now}">${esc(r.path)}:${now}</a>`;
+      const delta =
+        r.outcome === "drifted" && r.toLine
+          ? `<b>${r.toLine > r.fromLine ? "+" : "−"}${Math.abs(r.toLine - r.fromLine)}</b>`
+          : "";
+      return `<tr>
+        <td><span class="pill ${cls}">${esc(r.outcome)}</span>${
+          r.confidence === "low" ? `<span class="pill warn">low</span>` : ""
+        }${r.entry ? `<span class="pill">entry</span>` : ""}</td>
+        <td>${jump}<div class="dim">was :${r.fromLine} ${delta}</div></td>
+        <td>${esc(r.symbol ?? "—")}</td>
+        <td>${esc(r.subjectKind === "step" ? label(r.subjectId) : `${r.subjectKind} ${r.subjectId}`)}
+          ${r.note ? `<div class="dim">${esc(r.note)}</div>` : ""}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const thresholds = THRESHOLDS.map(
+    (t) =>
+      `<tr class="${t.state === v.state ? "on" : ""}"><td><code>${t.state}</code></td><td class="dim">${esc(
+        t.rule,
+      )}</td></tr>`,
+  ).join("");
+
+  const history = input.history.length
+    ? `<h3>Earlier checks</h3><table class="grid">${input.history
+        .map(
+          (h) =>
+            `<tr><td class="dim">${esc(h.checkedAt.slice(0, 19).replace("T", " "))}</td>
+             <td><code>${esc(h.state)}</code></td>
+             <td class="dim">${h.drifted} drifted · ${h.missing} missing</td></tr>`,
+        )
+        .join("")}</table>`
+    : "";
+
+  return page(
+    `Freshness — ${input.answer.title}`,
+    `<header><h1>${esc(input.answer.title)}</h1>
+       <div class="meta"><span class="pill ${
+         v.state === "fresh" ? "good" : v.state === "drifted" ? "warn" : "bad"
+       }">${v.state}</span> ${esc(thresholdOf(v.state))}</div></header>
+     ${navFull(row.id, "freshness")}
+     <main>
+       <p class="meta">${v.citedFilesChanged} of ${v.citedFiles} cited files changed since
+         ${esc(input.snapshot.capturedAt.slice(0, 16).replace("T", " "))}${
+           input.snapshot.commit ? ` (${esc(input.snapshot.commit)})` : ""
+         }${v.commitsSince === undefined ? "" : ` · ${v.commitsSince} commit(s) since, which never drives the state`}${
+           input.snapshot.dirtyAtCapture ? " · the tree was dirty at capture" : ""
+         }.<br>
+         ${v.total} citations: ${v.resolved} resolved, ${v.drifted} drifted, ${v.missing} missing,
+         ${v.fileMissing} in files that are gone. ${
+           v.skippedUnchangedFiles
+             ? `${v.skippedUnchangedFiles} unchanged file(s) were not re-searched — a byte-identical file cannot have moved anything inside it.`
+             : ""
+         }</p>
+       <div class="split">
+         <table class="grid">
+           <tr><th>Outcome</th><th>Where it is now</th><th>Symbol</th><th>What it backs</th></tr>
+           ${rows || `<tr><td colspan="4" class="dim">No citations on this answer.</td></tr>`}
+         </table>
+         <aside>
+           <h3>Thresholds</h3>
+           <table class="grid">${thresholds}</table>
+           <p class="dim" style="font-size:12px">A match more than ${v.driftWindow} lines from where it
+             was is still a match, reported <span class="pill warn">low</span> rather than discarded.</p>
+           ${history}
+         </aside>
+       </div>
+     </main>`,
+  );
+}
+
+export interface SourcePageInput {
+  path: string;
+  line: number;
+  text: string;
+}
+
+/** Read-only, loopback-only, and the reason a drift row can promise a jump that works anywhere. */
+export function sourcePage(input: SourcePageInput): string {
+  const lines = input.text.split(/\r?\n/);
+  const body = lines
+    .map(
+      (text, i) =>
+        `<tr id="L${i + 1}" class="${i + 1 === input.line ? "on" : ""}"><td class="ln">${i + 1}</td><td>${esc(
+          text,
+        )}</td></tr>`,
+    )
+    .join("");
+  return page(
+    input.path,
+    `<header><h1>${esc(input.path)}</h1><div class="meta">line ${input.line} · read-only</div></header>
+     <main><table class="src">${body}</table>
+     <script>document.getElementById("L${input.line}")?.scrollIntoView({block:"center"})</script></main>`,
+  );
 }
 
 export interface CallGraphPageInput {

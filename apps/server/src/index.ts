@@ -1,17 +1,21 @@
-import { basename, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { loadStoredAnswer, type StoredAnswer } from "@veriflow/answers";
+import { loadStoredAnswer, verifyStoredAnswer, type StoredAnswer } from "@veriflow/answers";
+import { isSecretPath } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import {
   answersPage,
   architecturePage,
   flowPage,
+  freshnessPage,
   moduleOwning,
   modulesPage,
   callGraphPage,
   pathsPage,
   page,
+  sourcePage,
   type AnswerRow,
   type EntryPointRow,
   type ModuleRow,
@@ -142,6 +146,54 @@ export function createApp(root: string): Hono {
       return c.html(pathsPage(found.answer, found.row));
     }),
   );
+
+  app.get("/answers/:id/freshness", (c) =>
+    withStore((store) => {
+      // Verified here rather than read from the last stored run: the browser must agree with
+      // `veriflow verify` about the tree as it is right now, not about the tree as it was when
+      // somebody last ran the command.
+      const found = verifyStoredAnswer(store, root, c.req.param("id"));
+      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
+      return c.html(
+        freshnessPage({
+          row: found.stored.row,
+          answer: found.stored.answer,
+          verification: found.verification,
+          snapshot: found.stored.snapshot,
+          history: store
+            .listVerifications(found.stored.row.id)
+            .map((v) => ({
+              checkedAt: String(v["checked_at"]),
+              state: String(v["state"]),
+              drifted: Number(v["drifted"]),
+              missing: Number(v["missing"]) + Number(v["file_missing"]),
+            })),
+        }),
+      );
+    }),
+  );
+
+  /**
+   * The destination of a drift row's jump. Read-only, loopback-only, and confined to the project: a
+   * path that escapes the root or matches the secret patterns is refused rather than served, because
+   * "we only read it to show you" is not a reason a credential should ever leave the disk.
+   */
+  app.get("/source", (c) => {
+    const requested = c.req.query("path") ?? "";
+    const line = Number(c.req.query("line") ?? 1);
+    const absolute = resolve(root, requested);
+    const inside = absolute === resolve(root) || absolute.startsWith(resolve(root) + sep);
+    if (!inside || isSecretPath(requested)) {
+      return c.html(page("Refused", "<main><p>That path is outside the project or is a secret.</p></main>"), 403);
+    }
+    let text: string;
+    try {
+      text = readFileSync(absolute, "utf8");
+    } catch {
+      return c.html(page("Gone", `<main><p>${requested} is no longer there.</p></main>`), 404);
+    }
+    return c.html(sourcePage({ path: requested, line: Number.isFinite(line) ? line : 1, text }));
+  });
 
   app.get("/api/answers", (c) =>
     withStore((store) => c.json({ contractVersion: 1, answers: store.listAnswers() })),

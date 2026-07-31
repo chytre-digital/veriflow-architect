@@ -9,6 +9,16 @@ import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
 import { AgentSession, ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
 import { serveRead, serveRun } from "@veriflow/mcp-server";
+import {
+  DRIFT_WINDOW,
+  THRESHOLDS,
+  diffAnswers,
+  loadStoredAnswer,
+  thresholdOf,
+  verifyStoredAnswer,
+  type StoredAnswer,
+  type Verification,
+} from "@veriflow/answers";
 import { startServer } from "@veriflow/server";
 import { classifyQuestion, rankEntryPoints } from "@veriflow/flow-answer";
 import { createInterface } from "node:readline/promises";
@@ -466,13 +476,33 @@ program
   .option("--timeout <ms>", "run timeout in milliseconds", "900000")
   .option("--entry <id>", "force an entry point instead of ranking")
   .option("--force", "run even when the question looks like a location question")
+  .option("--supersedes <answerId>", "re-answer: keep the old answer, mark it superseded, link the new one")
   .description("run your agent over the indexed project, streaming as it works")
   .action(async (
     question: string,
     pathArg: string | undefined,
-    options: { client: string; clientCommand?: string; timeout: string; entry?: string; force?: boolean },
+    options: {
+      client: string;
+      clientCommand?: string;
+      timeout: string;
+      entry?: string;
+      force?: boolean;
+      supersedes?: string;
+    },
   ) => {
     const ctx = open(pathArg);
+
+    // Resolved before the run so a typo costs nothing. Re-answering is an explicit action, never a
+    // side effect of asking the same question twice.
+    let superseded: string | undefined;
+    if (options.supersedes) {
+      const previous = loadStoredAnswer(ctx.store, ctx.root, options.supersedes);
+      if (!previous) {
+        ctx.close();
+        fail(`no stored answer with id or prefix "${options.supersedes}" - run: veriflow answers`);
+      }
+      superseded = previous.row.id;
+    }
 
     const classification = classifyQuestion(question);
     if (classification.kind === "location" && !options.force) {
@@ -637,6 +667,14 @@ program
       log(`    ${answer["verified"]}/${total} citations verified - ${answer["open_questions"]} open question(s)`);
     }
     if (answers.length === 0) log(`  No answer was submitted.`);
+
+    // Only once an answer actually exists: a failed re-answer must not leave the old one superseded
+    // by nothing.
+    if (superseded && answers[0]) {
+      ctx.store.supersedeAnswer(superseded, String(answers[0]["id"]));
+      log(`  ${superseded.slice(0, 8)} is now superseded; both stay readable, diff with:`);
+      log(`    veriflow diff ${superseded.slice(0, 8)} ${String(answers[0]["id"]).slice(0, 8)}`);
+    }
     ctx.close();
   });
 
@@ -697,6 +735,161 @@ program
         log(`${String(a["id"]).slice(0, 8)}  ${a["title"]}`);
         log(`          ${a["verified"]}/${total} verified - ${a["open_questions"]} open - ${a["review_state"]}`);
       }
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ verify */
+
+program
+  .command("verify")
+  .argument("[answerId]")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .option("--full", "re-search citations in unchanged files too, instead of trusting the file hash")
+  .option("--window <n>", "lines a citation may move and still count as an exact match", String(DRIFT_WINDOW))
+  .description("re-check a stored answer's citations against the code as it is now — no agent, no rewrite")
+  .action(async (
+    answerArg: string | undefined,
+    pathArg: string | undefined,
+    options: { json?: boolean; full?: boolean; window: string },
+  ) => {
+    // `veriflow verify <project>` is what everyone types first, and every other command takes the
+    // path in that position. An answer id is never an existing workspace directory, so this is a
+    // test rather than a guess.
+    let answer = answerArg;
+    let path = pathArg;
+    if (answer && !path && existsSync(join(resolve(answer), ".veriflow", "veriflow.db"))) {
+      path = answer;
+      answer = undefined;
+    }
+
+    const ctx = open(path);
+    const targets = answer ? [answer] : ctx.store.listAnswers().map((a) => String(a["id"]));
+    if (targets.length === 0) {
+      ctx.close();
+      fail("no answers to verify - run: veriflow ask");
+    }
+
+    const done: Array<{ stored: StoredAnswer; verification: Verification }> = [];
+    for (const target of targets) {
+      // Progress on the answer being read, because a large answer is thousands of citations and a
+      // silent minute is indistinguishable from a hang.
+      const found = verifyStoredAnswer(ctx.store, ctx.root, target, {
+        ...(options.full ? { full: true } : {}),
+        driftWindow: Number(options.window),
+        ...(options.json
+          ? {}
+          : {
+              onProgress: (n, total) => {
+                if (n === total || n % 200 === 0) {
+                  process.stdout.write(`\r  checking ${n}/${total} citations`);
+                }
+              },
+            }),
+      });
+      if (!found) {
+        ctx.close();
+        fail(`no stored answer with id or prefix "${target}" - run: veriflow answers`);
+      }
+      if (!options.json) process.stdout.write("\r".padEnd(40) + "\r");
+      ctx.store.insertVerification(found.verification);
+      done.push(found);
+    }
+
+    if (options.json) {
+      log(
+        JSON.stringify(
+          {
+            contractVersion: 1,
+            thresholds: THRESHOLDS,
+            verifications: done.map((d) => ({ title: d.stored.answer.title, ...d.verification })),
+          },
+          null,
+          2,
+        ),
+      );
+      ctx.close();
+      return;
+    }
+
+    for (const { stored, verification: v } of done) {
+      log(`${stored.row.id.slice(0, 8)}  ${stored.answer.title}`);
+      log(`  ${v.state.toUpperCase().padEnd(8)} ${thresholdOf(v.state)}`);
+      log(
+        `  ${v.citedFilesChanged} of ${v.citedFiles} cited files changed` +
+          (v.skippedUnchangedFiles ? ` · ${v.skippedUnchangedFiles} unchanged file(s) not re-searched` : "") +
+          (v.commitsSince === undefined ? "" : ` · ${v.commitsSince} commit(s) since capture`) +
+          (v.dirtyAtCapture ? " · tree was dirty at capture" : ""),
+      );
+      log(
+        `  ${v.total} citations: ${v.resolved} resolved · ${v.drifted} drifted · ` +
+          `${v.missing} missing · ${v.fileMissing} in files that are gone   (${v.durationMs} ms)`,
+      );
+      for (const r of v.results.filter((x) => x.outcome !== "resolved")) {
+        const where = r.toLine ? `${r.path}:${r.fromLine} → :${r.toLine}` : `${r.path}:${r.fromLine}`;
+        log(
+          `    ${r.outcome.padEnd(13)} ${where}${r.symbol ? `  ${r.symbol}` : ""}` +
+            `${r.confidence === "low" ? "  [low confidence]" : ""}`,
+        );
+        if (r.note) log(`                  ${r.note}`);
+      }
+      log("");
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ diff */
+
+program
+  .command("diff")
+  .argument("<answerA>")
+  .argument("<answerB>")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("what moved between two answers to the same question, taken at two tree states")
+  .action(async (a: string, b: string, pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const load = (id: string) => {
+      const stored = loadStoredAnswer(ctx.store, ctx.root, id);
+      if (!stored) {
+        ctx.close();
+        fail(`no stored answer with id or prefix "${id}" - run: veriflow answers`);
+      }
+      return {
+        id: stored.row.id,
+        title: stored.answer.title,
+        snapshotId: stored.row.snapshot_id,
+        answer: stored.answer,
+      };
+    };
+    const diff = diffAnswers(ctx.store, load(a), load(b));
+
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, ...diff }, null, 2));
+      ctx.close();
+      return;
+    }
+
+    log(`${diff.from.id.slice(0, 8)} ${diff.from.snapshot.commit ?? "no commit"}  →  ${diff.to.id.slice(0, 8)} ${diff.to.snapshot.commit ?? "no commit"}\n`);
+    log(`Evidence moved (${diff.movedEvidence.length})`);
+    for (const m of diff.movedEvidence) {
+      log(`  ${m.stepId.padEnd(8)} ${m.path}:${m.fromLine} → :${m.toLine}${m.symbol ? `  ${m.symbol}` : ""}`);
+    }
+    log(`\nOutcomes that lost evidence (${diff.branchesLostEvidence.length})`);
+    for (const x of diff.branchesLostEvidence) {
+      log(`  ${x.id.padEnd(8)} ${x.title}  ${x.was} → ${x.now} citations`);
+      log(`           protects: ${x.invariant}`);
+    }
+    for (const x of diff.branchesLost) log(`  gone     ${x.id}  ${x.title}`);
+    for (const x of diff.branchesGained) log(`  new      ${x.id}  ${x.title}`);
+    log(`\nEntry points   +${diff.entryPoints.added.length} / -${diff.entryPoints.removed.length}`);
+    for (const id of diff.entryPoints.removed) log(`  removed  ${id}`);
+    for (const id of diff.entryPoints.added) log(`  added    ${id}`);
+    log(`\nCall-graph nodes that vanished under cited files: ${diff.vanishedNodesTotal}`);
+    for (const n of diff.vanishedNodes) log(`  ${n.symbol}  ${n.path}`);
+    if (diff.vanishedNodesTotal > diff.vanishedNodes.length) {
+      log(`  … and ${diff.vanishedNodesTotal - diff.vanishedNodes.length} more`);
     }
     ctx.close();
   });

@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -7,12 +5,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Store } from "@veriflow/store";
 import {
   answerEnvelope,
-  citationFreshness,
+  fileStates,
   fitWholeAnswer,
   loadStoredAnswer,
   paginate,
   paginateWithin,
   projectEnvelope,
+  thresholdOf,
+  verifyStoredAnswer,
   type StoredAnswer,
   type ToolResponseEnvelope,
 } from "@veriflow/answers";
@@ -57,9 +57,13 @@ const INSTRUCTIONS = [
   "- review.state `unreviewed` means no person has ever confirmed this answer. It is still served,",
   "  because withholding it would hide what is known — but say so when you build on it.",
   "- review.state `machine-derived` means nobody authors this data; it is measured from the repository.",
-  "- freshness.state `drifted` or `stale` means cited files changed after the answer was written;",
-  "  `broken` means a cited file is gone and the claim can no longer be re-checked. Re-verify before",
-  "  you assert anything from a drifted answer.",
+  "- freshness.state is a ladder: `fresh` nothing it cites changed; `drifted` something changed and",
+  "  every citation still locates; `stale` at least one citation no longer locates; `broken` the",
+  "  flow's first steps are gone, so there is no way in left to re-check. Off `fresh`, call",
+  "  get_freshness — it says citation by citation what resolved, what moved and to which line, and",
+  "  what is gone.",
+  "- freshness.source `verification` means every citation was re-located; `estimate` means only file",
+  "  hashes were compared, which can miss a symbol deleted from a file that still exists.",
   "- citations carry their own state: `verified` was found at the cited line, `unverified` was not.",
   "- an inferred call edge is marked `inferred` with the rule that produced it. It is a deduction,",
   "  not an observed call.",
@@ -136,27 +140,27 @@ export function createReadServer(options: ReadServerOptions): McpServer {
       const page = paginate(rows, Math.min(pageSize, ANSWER_PAGE), cursor);
       const answers = page.items.map((a) => {
         const id = String(a["id"]);
-        const citations = store.readAnswerCitations(id);
+        // The whole answer is loaded rather than just its citation rows: freshness on the list has
+        // to be the same number the detail shows, and that needs the first phase and any stored
+        // verification, neither of which a citation row carries.
+        const stored = loadStoredAnswer(store, root, id);
         return {
           id,
           title: a["title"],
           snapshotId: a["snapshot_id"],
+          status: a["status"],
+          ...(a["parent_answer_id"] ? { supersedes: a["parent_answer_id"] } : {}),
           review: {
             state: a["review_state"],
             openQuestions: a["open_questions"],
-            corrections: store.readCorrections(id).length,
+            corrections: stored?.corrections.length ?? 0,
           },
           citations: {
             verified: a["verified"],
             unverified: a["unverified"],
           },
           // Per answer, because "which of these can I still trust" is the question a list is for.
-          freshness: citationFreshness(
-            store,
-            root,
-            String(a["snapshot_id"]),
-            citations.map((c) => String(c["path"])),
-          ),
+          freshness: stored?.freshness,
           createdAt: a["created_at"],
         };
       });
@@ -315,37 +319,54 @@ export function createReadServer(options: ReadServerOptions): McpServer {
   server.registerTool(
     "get_freshness",
     {
-      title: "How much of what this answer cites has changed",
+      title: "How much of what this answer cites has changed, citation by citation",
       description:
-        "Measured by hashing the files the answer cites against what the snapshot recorded — not by " +
-        "counting commits. Lists the changed files so you know what to re-verify.",
-      inputSchema: { answerId: z.string() },
+        "Measured by hashing the files the answer cites and re-locating every citation in them — not " +
+        "by counting commits. Names the changed files, and says for each citation whether it still " +
+        "resolves, moved (with its new line), or is gone. Pass detail:false for the file summary only.",
+      inputSchema: {
+        answerId: z.string(),
+        detail: z.boolean().optional().describe("Per-citation outcomes. Default true."),
+        outcome: z
+          .enum(["resolved", "drifted", "missing", "file-missing"])
+          .optional()
+          .describe("Only citations with this outcome"),
+      },
     },
-    async ({ answerId }) => {
-      const stored = answerOr(answerId);
-      if (typeof stored === "string") return refuse(stored);
-      const recorded = new Map(store.readFileHashes(stored.row.snapshot_id).map((h) => [h.path, h.sha256]));
-      const cited = [...new Set(stored.citations.map((c) => c.path))];
-      const changed: string[] = [];
-      const missing: string[] = [];
-      for (const path of cited) {
-        const file = join(root, path);
-        if (!existsSync(file)) {
-          changed.push(path);
-          missing.push(path);
-          continue;
-        }
-        const before = recorded.get(path);
-        if (before === undefined) continue;
-        if (before !== createHash("sha256").update(readFileSync(file)).digest("hex")) changed.push(path);
-      }
+    async ({ answerId, detail, outcome }) => {
+      const found = verifyStoredAnswer(store, root, answerId, {});
+      if (!found) return refuse(`no stored answer with id or prefix "${answerId}" — call list_flow_answers first`);
+      const { stored, verification } = found;
+
+      const states = fileStates(store, root, stored.row.snapshot_id, stored.citations.map((c) => c.path));
+      const results = outcome ? verification.results.filter((r) => r.outcome === outcome) : verification.results;
+      const page = detail === false ? { items: [] as typeof results } : paginateWithin(results, pageSize, undefined, budget);
+
       return ok(
-        answerEnvelope(stored, {
-          citedFiles: cited,
-          changedFiles: changed,
-          missingFiles: missing,
-          filesNeverHashed: cited.filter((p) => !recorded.has(p)),
-        }),
+        answerEnvelope(
+          stored,
+          {
+            state: verification.state,
+            threshold: thresholdOf(verification.state),
+            citedFiles: states.map((s) => s.path),
+            changedFiles: states.filter((s) => s.changed && !s.missing).map((s) => s.path),
+            missingFiles: states.filter((s) => s.missing).map((s) => s.path),
+            filesNeverHashed: states.filter((s) => s.unknown).map((s) => s.path),
+            counts: {
+              total: verification.total,
+              resolved: verification.resolved,
+              drifted: verification.drifted,
+              missing: verification.missing,
+              fileMissing: verification.fileMissing,
+            },
+            ...(verification.commitsSince === undefined
+              ? {}
+              : { commitsSince: verification.commitsSince, commitsNote: "supporting metadata; never drives the state" }),
+            driftWindow: verification.driftWindow,
+            ...(detail === false ? { citations: "omitted — call again without detail:false" } : { citations: page.items }),
+          },
+          page.truncated,
+        ),
       );
     },
   );

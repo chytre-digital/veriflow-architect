@@ -391,7 +391,7 @@ describe("reading a stored answer", () => {
 });
 
 describe("freshness", () => {
-  it("reports a stale answer with its state rather than withholding it", async () => {
+  it("reports a drifted answer with its state rather than withholding it", async () => {
     const { root, answerId } = fixture();
     writeFileSync(join(root, ROUTE), "export async function POST() {\n  // rewritten\n}\n");
     writeFileSync(join(root, REFUND), "export function refundBooking() {}\n");
@@ -399,18 +399,28 @@ describe("freshness", () => {
 
     const envelope = dataOf(await client.callTool({ name: "get_flow_answer", arguments: { answerId } }));
     const freshness = envelope["freshness"] as Record<string, unknown>;
-    expect(freshness["state"]).toBe("stale");
+    expect(freshness["state"]).toBe("drifted");
     expect(freshness["citedFilesChanged"]).toBe(2);
     // Still served. Withholding it would hide what is known; the label is the mitigation.
     expect(((envelope["data"] as Record<string, unknown>)["answer"] as Record<string, unknown>)["title"]).toBe("Refund a booking");
   });
 
-  it("calls a deleted cited file broken, because that claim can no longer be re-checked", async () => {
+  it("calls a deleted cited file stale — the claim cannot be re-checked, but the flow still runs", async () => {
     const { root, answerId } = fixture();
     rmSync(join(root, REFUND));
     const client = await connect(root);
     const envelope = dataOf(await client.callTool({ name: "get_flow_answer", arguments: { answerId } }));
-    expect((envelope["freshness"] as Record<string, unknown>)["state"]).toBe("broken");
+    expect((envelope["freshness"] as Record<string, unknown>)["state"]).toBe("stale");
+  });
+
+  it("reserves broken for losing the way in, not for losing any one cited file", async () => {
+    const { root, answerId } = fixture();
+    rmSync(join(root, ROUTE)); // the file the flow's first step cites
+    const client = await connect(root);
+    const envelope = dataOf(await client.callTool({ name: "get_flow_answer", arguments: { answerId } }));
+    const freshness = envelope["freshness"] as Record<string, unknown>;
+    expect(freshness["state"]).toBe("broken");
+    expect(freshness["entryFilesMissing"]).toBe(1);
   });
 
   it("names the files that changed, so re-verification has somewhere to start", async () => {

@@ -176,6 +176,44 @@ CREATE TABLE IF NOT EXISTS answer_corrections (
   PRIMARY KEY (answer_id, id)
 );
 
+CREATE TABLE IF NOT EXISTS verifications (
+  id TEXT PRIMARY KEY,
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  checked_at TEXT NOT NULL,
+  cited_files INTEGER NOT NULL,
+  cited_files_changed INTEGER NOT NULL,
+  commits_since INTEGER,
+  dirty_at_capture INTEGER NOT NULL,
+  total INTEGER NOT NULL,
+  resolved INTEGER NOT NULL,
+  drifted INTEGER NOT NULL,
+  missing INTEGER NOT NULL,
+  file_missing INTEGER NOT NULL,
+  state TEXT NOT NULL,
+  skipped_unchanged_files INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  drift_window INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS verifications_by_answer ON verifications(answer_id, checked_at DESC);
+
+CREATE TABLE IF NOT EXISTS verification_results (
+  verification_id TEXT NOT NULL REFERENCES verifications(id),
+  seq INTEGER NOT NULL,
+  citation_id TEXT NOT NULL,
+  subject_kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  symbol TEXT,
+  outcome TEXT NOT NULL,
+  from_line INTEGER NOT NULL,
+  to_line INTEGER,
+  confidence TEXT,
+  note TEXT,
+  entry INTEGER NOT NULL,
+  PRIMARY KEY (verification_id, seq)
+);
+
 CREATE TABLE IF NOT EXISTS call_nodes (
   snapshot_id TEXT NOT NULL,
   id TEXT NOT NULL,
@@ -589,7 +627,7 @@ export class Store {
   listAnswers(): Array<Record<string, unknown>> {
     return this.db
       .prepare(
-        `SELECT id, question_id, run_id, snapshot_id, title, status, review_state,
+        `SELECT id, question_id, run_id, snapshot_id, parent_answer_id, title, status, review_state,
                 verified, unverified, open_questions, created_at
          FROM answers ORDER BY created_at DESC`,
       )
@@ -613,10 +651,15 @@ export class Store {
       | undefined;
   }
 
+  /**
+   * `seq` and `line_hash` come along because re-verification needs them: the sequence is what makes
+   * a citation addressable across runs, and the line hash is the anchor that tells a moved symbol
+   * from a deleted one.
+   */
   readAnswerCitations(answerId: string): Array<Record<string, unknown>> {
     return this.db
       .prepare(
-        `SELECT subject_kind, subject_id, path, line, symbol, state, reason
+        `SELECT seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason
          FROM answer_citations WHERE answer_id = ? ORDER BY seq`,
       )
       .all(answerId) as Array<Record<string, unknown>>;
@@ -686,6 +729,155 @@ export class Store {
       note: r["note"] ?? undefined,
       createdAt: r["created_at"],
     }));
+  }
+
+  /* ------------------------------------------------------- verifications (F007) */
+
+  /**
+   * A verification never edits the answer it checked. It is a new row describing one moment, so an
+   * answer accumulates a history of how the code moved under it rather than a single mutable label.
+   */
+  insertVerification(v: {
+    id: string;
+    answerId: string;
+    checkedAt: string;
+    citedFiles: number;
+    citedFilesChanged: number;
+    commitsSince?: number;
+    dirtyAtCapture: boolean;
+    total: number;
+    resolved: number;
+    drifted: number;
+    missing: number;
+    fileMissing: number;
+    state: string;
+    skippedUnchangedFiles: number;
+    fingerprint: string;
+    driftWindow: number;
+    durationMs: number;
+    results: ReadonlyArray<{
+      citationId: string;
+      subjectKind: string;
+      subjectId: string;
+      path: string;
+      symbol?: string;
+      outcome: string;
+      fromLine: number;
+      toLine?: number;
+      confidence?: string;
+      note?: string;
+      entry: boolean;
+    }>;
+  }): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO verifications
+           (id, answer_id, checked_at, cited_files, cited_files_changed, commits_since, dirty_at_capture,
+            total, resolved, drifted, missing, file_missing, state, skipped_unchanged_files,
+            fingerprint, drift_window, duration_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          v.id,
+          v.answerId,
+          v.checkedAt,
+          v.citedFiles,
+          v.citedFilesChanged,
+          v.commitsSince ?? null,
+          v.dirtyAtCapture ? 1 : 0,
+          v.total,
+          v.resolved,
+          v.drifted,
+          v.missing,
+          v.fileMissing,
+          v.state,
+          v.skippedUnchangedFiles,
+          v.fingerprint,
+          v.driftWindow,
+          v.durationMs,
+        );
+      const stmt = this.db.prepare(
+        `INSERT INTO verification_results
+         (verification_id, seq, citation_id, subject_kind, subject_id, path, symbol, outcome,
+          from_line, to_line, confidence, note, entry)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      v.results.forEach((r, i) => {
+        stmt.run(
+          v.id,
+          i,
+          r.citationId,
+          r.subjectKind,
+          r.subjectId,
+          r.path,
+          r.symbol ?? null,
+          r.outcome,
+          r.fromLine,
+          r.toLine ?? null,
+          r.confidence ?? null,
+          r.note ?? null,
+          r.entry ? 1 : 0,
+        );
+      });
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  latestVerification(answerId: string): Record<string, unknown> | undefined {
+    return this.db
+      .prepare("SELECT * FROM verifications WHERE answer_id = ? ORDER BY checked_at DESC LIMIT 1")
+      .get(answerId) as Record<string, unknown> | undefined;
+  }
+
+  /**
+   * The most recent verification taken over this exact tree state, if there is one. A fingerprint
+   * match means the files have not moved since, so the stored result is not stale cache — it is the
+   * same measurement, already paid for.
+   */
+  verificationFor(answerId: string, fingerprint: string): Record<string, unknown> | undefined {
+    return this.db
+      .prepare(
+        "SELECT * FROM verifications WHERE answer_id = ? AND fingerprint = ? ORDER BY checked_at DESC LIMIT 1",
+      )
+      .get(answerId, fingerprint) as Record<string, unknown> | undefined;
+  }
+
+  listVerifications(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare("SELECT * FROM verifications WHERE answer_id = ? ORDER BY checked_at DESC")
+      .all(answerId) as Array<Record<string, unknown>>;
+  }
+
+  verificationResults(verificationId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT citation_id, subject_kind, subject_id, path, symbol, outcome, from_line, to_line,
+                confidence, note, entry
+         FROM verification_results WHERE verification_id = ? ORDER BY seq`,
+      )
+      .all(verificationId) as Array<Record<string, unknown>>;
+  }
+
+  /**
+   * Re-answering keeps both. The old answer stays readable with its transcript — it is the record of
+   * what the code did then, and deleting it would throw away the only thing a diff can be taken
+   * against.
+   */
+  supersedeAnswer(oldAnswerId: string, newAnswerId: string): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare("UPDATE answers SET status = 'superseded' WHERE id = ?").run(oldAnswerId);
+      this.db.prepare("UPDATE answers SET parent_answer_id = ? WHERE id = ?").run(oldAnswerId, newAnswerId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   /**

@@ -2,12 +2,21 @@ import { FlowAnswerSchema, type FlowAnswer } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
 import { applyCorrections, type Correction } from "./corrections.js";
 import {
-  citationFreshness,
+  fileStates,
+  freshnessFromStates,
   snapshotDrift,
   snapshotFacts,
   type Freshness,
+  type FreshnessState,
   type SnapshotFacts,
 } from "./freshness.js";
+import {
+  entryPathsOf,
+  verifyAnswer,
+  type StoredCitation,
+  type Verification,
+  type VerifyOptions,
+} from "./verification.js";
 
 /**
  * Reads over stored answers, shared by the browser and the MCP server. Nothing here recomputes an
@@ -23,20 +32,14 @@ export interface AnswerRow {
   review_state: string;
   created_at: string;
   snapshot_id: string;
+  /** `draft` or `superseded`. A superseded answer stays readable — it is what the code did then. */
+  status?: string;
   run_id?: string;
   question_id?: string;
   parent_answer_id?: string | null;
 }
 
-export interface CitationRow {
-  subject_kind: string;
-  subject_id: string;
-  path: string;
-  line: number;
-  symbol: string | null;
-  state: string;
-  reason: string | null;
-}
+export interface CitationRow extends StoredCitation {}
 
 export interface StoredAnswer {
   row: AnswerRow;
@@ -62,6 +65,9 @@ export function loadStoredAnswer(store: Store, root: string, idOrPrefix: string)
   const { answer, applied, unresolved } = applyCorrections(submitted, corrections);
   const citations = store.readAnswerCitations(row.id) as unknown as CitationRow[];
 
+  const states = fileStates(store, root, row.snapshot_id, citations.map((c) => c.path));
+  const estimate = freshnessFromStates(states, entryPathsOf(answer, citations));
+
   return {
     row,
     answer,
@@ -70,7 +76,55 @@ export function loadStoredAnswer(store: Store, root: string, idOrPrefix: string)
     unresolvedCorrections: unresolved,
     citations,
     snapshot: snapshotFacts(store, row.snapshot_id, row.created_at),
-    freshness: citationFreshness(store, root, row.snapshot_id, citations.map((c) => c.path)),
+    freshness: preferVerification(store, row.id, estimate),
+  };
+}
+
+/**
+ * A stored verification taken over this exact tree state is not a cache of the estimate — it is a
+ * better measurement of the same moment, and the browser and the MCP server must both serve it or
+ * they will disagree with `veriflow verify` about the same answer.
+ *
+ * The fingerprint is what makes this safe: it is the identity of the cited files as they are now, so
+ * a match means nothing has moved since the verification ran.
+ */
+function preferVerification(store: Store, answerId: string, estimate: Freshness): Freshness {
+  const stored = store.verificationFor(answerId, estimate.fingerprint);
+  if (!stored) return estimate;
+  return {
+    ...estimate,
+    state: String(stored["state"]) as FreshnessState,
+    source: "verification",
+    measuredAt: String(stored["checked_at"]),
+    verificationId: String(stored["id"]),
+  };
+}
+
+/**
+ * Load and re-verify in one step. Deliberately does not write: the CLI stores the result, the MCP
+ * server does not, and a read surface that silently wrote to the database would stop being one.
+ */
+export function verifyStoredAnswer(
+  store: Store,
+  root: string,
+  idOrPrefix: string,
+  options: VerifyOptions = {},
+): { stored: StoredAnswer; verification: Verification } | undefined {
+  const stored = loadStoredAnswer(store, root, idOrPrefix);
+  if (!stored) return undefined;
+  return {
+    stored,
+    verification: verifyAnswer(
+      store,
+      root,
+      {
+        answerId: stored.row.id,
+        snapshotId: stored.row.snapshot_id,
+        answer: stored.answer,
+        citations: stored.citations,
+      },
+      options,
+    ),
   };
 }
 

@@ -90,6 +90,9 @@ features:
     status: ready
     dependsOn: [F005, F006]
     outcome: Changed cited files and per-citation drift, re-verified without re-answering.
+    notes: >-
+      Owns the freshness thresholds. F010's file-level estimate is the cheap grade of the same
+      ladder and can be escalated by a verification, never contradicted by one.
   F008:
     title: Flow metrics — debt, structure, coupling, coverage proxy
     spec: 08-flow-metrics.md

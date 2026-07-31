@@ -39,6 +39,9 @@ importers:
       '@veriflow/agent-session':
         specifier: workspace:*
         version: link:../../packages/agent-session
+      '@veriflow/answers':
+        specifier: workspace:*
+        version: link:../../packages/answers
       '@veriflow/callgraph':
         specifier: workspace:*
         version: link:../../packages/callgraph
@@ -87,6 +90,9 @@ importers:
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../../packages/flow-answer
+      '@veriflow/snapshot':
+        specifier: workspace:*
+        version: link:../../packages/snapshot
       '@veriflow/store':
         specifier: workspace:*
         version: link:../../packages/store

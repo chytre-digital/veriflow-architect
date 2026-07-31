@@ -7,6 +7,7 @@
     "veriflow": "./src/main.ts"
   },
   "dependencies": {
+    "@veriflow/answers": "workspace:*",
     "@veriflow/callgraph": "workspace:*",
     "@veriflow/contracts": "workspace:*",
     "@veriflow/diagram": "workspace:*",

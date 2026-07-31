@@ -8,6 +8,7 @@
     "@veriflow/answers": "workspace:*",
     "@veriflow/diagram": "workspace:*",
     "@veriflow/flow-answer": "workspace:*",
+    "@veriflow/snapshot": "workspace:*",
     "@veriflow/store": "workspace:*",
     "hono": "^4.6.14"
   }

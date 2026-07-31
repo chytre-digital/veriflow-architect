@@ -55,21 +55,41 @@ three labels are present.
 | `reviewed` | A human has read it. Only a human can set this. |
 | `machine-derived` | Nobody authors this data. The module registry and the call graph are measured from the repository, so there is nothing for a person to have checked. |
 
-**`freshness.state`** is measured by hashing files, never by counting commits. A week of work
-elsewhere does not make an answer about checkout stale, and an uncommitted edit to a cited file does
-not hide behind an unchanged HEAD.
+**`freshness.state`** is measured by hashing files and re-locating citations, never by counting
+commits. A week of work elsewhere does not make an answer about checkout stale, and an uncommitted
+edit to a cited file does not hide behind an unchanged HEAD.
 
-| value | meaning |
+| value | rule |
 |---|---|
-| `fresh` | Nothing the answer cites has changed. |
-| `drifted` | Some of the cited files changed. Re-verify before quoting. |
-| `stale` | Most of them changed. |
-| `broken` | A cited file is gone, so the claim can no longer be re-checked at all. |
+| `fresh` | No cited file changed. |
+| `drifted` | Something changed, and every citation still locates. Re-verify before quoting. |
+| `stale` | At least one citation no longer locates. |
+| `broken` | Every citation on the flow's first steps is gone — there is no way in left to re-check. |
+
+`broken` is deliberately not "a cited file is gone". Losing one file a flow touches is a claim that
+needs re-checking; losing the way in means there is no flow left to re-check, and collapsing the two
+would make the loudest word the least informative one.
 
 `scope` says what was measured: `answer-citations` for an answer, `whole-snapshot` for data derived
 from the index. Whole-tree drift is cached for a minute and stamped with `measuredAt`, because
 re-hashing a repository on every call is not free and pretending the number is instantaneous would be
 a lie.
+
+`source` says how: `verification` means every citation was re-located, `estimate` means only file
+hashes were compared. The estimate is cheap and cannot see a symbol deleted from a file that still
+exists, so it can understate — never overstate — how far an answer has moved. Off `fresh`, call
+`get_freshness`: it re-locates every citation and reports, per citation, `resolved`, `drifted` with
+the line it moved to, `missing`, or `file-missing`.
+
+```jsonc
+{ "citationId": "step:s2#1", "path": "src/…/fulfillLessonCheckout.ts", "symbol": "confirmLessonCheckoutBySession",
+  "outcome": "drifted", "fromLine": 550, "toLine": 645, "confidence": "exact",
+  "note": "moved down 95 lines, matched by line-hash" }
+```
+
+A match further than the drift window (120 lines) is reported `low` rather than discarded — a
+function that moved four hundred lines has moved, and calling it deleted would cost you the one thing
+you came for.
 
 ## The two workflows this exists for
 
@@ -94,8 +114,10 @@ record of intent, but the code they describe has moved — re-verify the citatio
 1. For each changed file, `search_answers` with its path → the affected flows.
 2. `get_flow_answer` → freshness for each. A `drifted` answer is the interesting case: the change is
    in territory a stored answer describes.
-3. `get_flow_paths` → which alternative outcomes cross the changed code, and what each protects.
-4. `get_open_questions` → gaps that were already known, so a review does not report them as new.
+3. `get_freshness` on those → which citations moved and where to, and which no longer locate at all.
+   A `missing` citation under a file you are changing is the review's first finding, not a footnote.
+4. `get_flow_paths` → which alternative outcomes cross the changed code, and what each protects.
+5. `get_open_questions` → gaps that were already known, so a review does not report them as new.
 
 *"…and which of those have no test"* becomes answerable when F008 adds the coverage tools. Those
 tools are absent from the tool list until then, rather than present and returning nothing, so an
@@ -112,7 +134,7 @@ agent never plans around a capability that is not there.
 | `get_flow_modules` | Module edges with their contracts, plus the registry. |
 | `get_external_systems` | What is outside the repository, and what happens when it fails. |
 | `get_open_questions` | What the repository could not answer. |
-| `get_freshness` | Which cited files changed, by name. |
+| `get_freshness` | Which cited files changed, and per citation whether it resolved, moved (to which line), or is gone. |
 | `search_answers` | Title, body, or cited path. |
 | `get_architecture` | Module registry, entry points, measured traffic, flows per module. |
 | `get_call_graph` | The stored graph, or one entry point's closure. |
