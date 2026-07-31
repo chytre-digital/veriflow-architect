@@ -135,7 +135,23 @@ live, so the CLI and the UI never show different histories.
   Timeouts on an unanswered question are configurable and end the run as `timed-out`, never as a
   guess.
 - **Client prompts are answerable too.** A permission or trust prompt that a client emits on its own
-  stream is surfaced and can be answered via `write()` on the PTY path.
+  stream is surfaced and can be answered via `write()`.
+
+## The PTY transport is deliberately not built
+
+`ClientCapabilities.transport` reports `pty` when a client cannot stream structured events, and
+nothing implements it: both adapters spawn with pipes either way, and a client that emitted raw text
+would have every line delivered as assistant output rather than parsed.
+
+This is recorded rather than quietly shipped because the alternative is worse. Both clients on the
+supported matrix stream JSON — Claude Code 2.1.220 through `--output-format stream-json`, Codex
+0.144.3 through `exec --json` — so a PTY implementation would be a code path that no run exercises,
+and an untested fallback is a fallback that does not work. The probe still detects the condition, so
+an old client is refused with a reason instead of half-working.
+
+It becomes worth building when a client in real use lacks structured streaming. Until then, the
+honest state is: detected, reported, not implemented. Tracked as an unmet acceptance criterion in
+[acceptance.yaml](acceptance.yaml) rather than as a criterion silently reworded to match the code.
 - **Cancellation is real.** Cancel terminates the child process tree and stores the partial transcript
   with `status: cancelled`.
 - **Provenance is recorded.** Client id, client version, model when the client reports it, transport,

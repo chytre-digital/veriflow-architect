@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -10,6 +10,8 @@ import {
   EventStream,
   FakeClient,
   LineSplitter,
+  normalizeCodex,
+  type AgentRunOutcome,
   type RunEvent,
 } from "@veriflow/agent-session";
 import { Store } from "@veriflow/store";
@@ -38,6 +40,103 @@ const collect = (): { sink: { onEvent(e: RunEvent): void }; events: RunEvent[] }
   const events: RunEvent[] = [];
   return { sink: { onEvent: (e) => events.push(e) }, events };
 };
+
+describe("the MCP server VeriFlow hands the agent", () => {
+  it("resolves every package it imports without depending on the working directory", () => {
+    // The server is spawned by whichever client is running, in whichever directory that client
+    // chose. An import that only resolves from the repository root exits the process at once, and
+    // the agent then sees no VeriFlow tools with nothing on stderr to say why. Claude Code happened
+    // to inherit a working directory that hid a missing dependency; Codex did not, and one real run
+    // found it. So: every @veriflow package the CLI imports must be declared by the CLI.
+    const cliDir = resolve(__dirname, "..", "apps", "cli");
+    const manifest = JSON.parse(readFileSync(join(cliDir, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    const source = readFileSync(join(cliDir, "src", "main.ts"), "utf8");
+    const imported = [...source.matchAll(/from "(@veriflow\/[a-z-]+)"/g)].map((m) => m[1]!);
+
+    expect(imported.length).toBeGreaterThan(5);
+    for (const name of new Set(imported)) {
+      expect(manifest.dependencies[name], `${name} is imported but not declared`).toBeDefined();
+      expect(existsSync(join(cliDir, "node_modules", ...name.split("/")))).toBe(true);
+    }
+  });
+});
+
+describe("codex stream normalization", () => {
+  // These lines are what `codex exec --json` actually emitted on 2026-07-31 (codex-cli 0.144.3),
+  // captured from a real run rather than written from the documentation.
+  const feed = (lines: unknown[]): RunEvent[] => {
+    const stream = new EventStream("r1");
+    for (const line of lines) normalizeCodex(line, stream);
+    return stream.history();
+  };
+
+  it("turns an agent message into assistant text on the same channel Claude Code uses", () => {
+    const events = feed([
+      { type: "thread.started", thread_id: "019fb73d" },
+      { type: "turn.started" },
+      { type: "item.completed", item: { id: "item_0", type: "agent_message", text: "ok" } },
+      { type: "turn.completed", usage: { input_tokens: 16877, output_tokens: 5 } },
+    ]);
+    const assistant = events.filter((e) => e.channel === "assistant");
+    expect(assistant).toHaveLength(1);
+    expect((assistant[0]!.payload as { text: string }).text).toBe("ok");
+    expect(events.some((e) => (e.payload as { state?: string }).state === "client-result")).toBe(true);
+  });
+
+  it("reports an MCP tool call as a call and a result, so the transcript reads the same", () => {
+    const events = feed([
+      {
+        type: "item.completed",
+        item: {
+          id: "i1",
+          type: "mcp_tool_call",
+          server: "veriflow",
+          tool: "read_evidence",
+          arguments: { path: "a.ts" },
+          result: "1: x",
+          error: null,
+          status: "completed",
+        },
+      },
+    ]);
+    expect(events.map((e) => e.channel)).toEqual(["tool-call", "tool-result"]);
+    expect((events[0]!.payload as { name: string }).name).toBe("veriflow__read_evidence");
+    expect((events[1]!.payload as { content: string }).content).toBe("1: x");
+    expect(events[1]!.payload).not.toHaveProperty("raw");
+  });
+
+  it("keeps the reason a tool call failed, instead of an empty result row", () => {
+    // Verbatim from a real run: a call Codex refused carries result: null and the reason in error.
+    // Reading only `result` produced blank transcript rows and hid the cause of two failed runs.
+    const events = feed([
+      {
+        type: "item.completed",
+        item: {
+          id: "i2",
+          type: "mcp_tool_call",
+          server: "veriflow",
+          tool: "get_architecture",
+          arguments: {},
+          result: null,
+          error: { message: "user cancelled MCP tool call" },
+          status: "failed",
+        },
+      },
+    ]);
+    const result = events[1]!.payload as { error: { message: string }; status: string; raw: unknown };
+    expect(result.error.message).toBe("user cancelled MCP tool call");
+    expect(result.status).toBe("failed");
+    expect(result.raw).toBeDefined();
+  });
+
+  it("shows an unknown item kind rather than dropping it", () => {
+    const events = feed([{ type: "item.completed", item: { type: "something_new_in_a_later_release" } }]);
+    expect(events).toHaveLength(1);
+    expect((events[0]!.payload as { state: string }).state).toBe("item.completed:something_new_in_a_later_release");
+  });
+});
 
 describe("event stream", () => {
   it("numbers events gap-free", () => {
@@ -124,6 +223,58 @@ describe("agent session", () => {
     // The run announces what it started with, including the permission mode.
     expect(events[0]!.channel).toBe("status");
     expect((events[0]!.payload as Record<string, unknown>)["permissionMode"]).toBe("plan");
+  });
+
+  it("does not report a run as answerless when the answer landed in another process", async () => {
+    // submit_flow_answer runs inside the MCP server, a child of the agent, so the session sees no
+    // event for it. A real Codex run submitted 106 citations and was still stored as
+    // completed-without-answer, because nothing asked the store.
+    const stored: AgentRunOutcome[] = [];
+    const session = new AgentSession({
+      client: new FakeClient({
+        events: [{ channel: "assistant", payload: { text: "submitted through MCP" } }],
+        outcome: { status: "completed-without-answer" },
+      }),
+      cwd: process.cwd(),
+      prompt: "how does the refund work?",
+      questionId: "q1",
+      snapshotId: "s1",
+      runId: "run-1",
+      sink: { onEvent: () => {} },
+      persistence: {
+        startRun: () => {},
+        appendEvents: () => {},
+        finishRun: (_id, outcome) => stored.push(outcome),
+        submittedAnswerId: (id) => (id === "run-1" ? "answer-1" : undefined),
+      },
+    });
+
+    const result = await session.run();
+    expect(result.outcome.status).toBe("submitted");
+    expect(result.outcome.submittedAnswerId).toBe("answer-1");
+    expect(stored[0]!.status).toBe("submitted");
+  });
+
+  it("leaves a genuinely answerless run alone", async () => {
+    const session = new AgentSession({
+      client: new FakeClient({
+        events: [{ channel: "assistant", payload: { text: "I could not evidence this" } }],
+        outcome: { status: "completed-without-answer" },
+      }),
+      cwd: process.cwd(),
+      prompt: "how does the refund work?",
+      questionId: "q1",
+      snapshotId: "s1",
+      runId: "run-2",
+      sink: { onEvent: () => {} },
+      persistence: {
+        startRun: () => {},
+        appendEvents: () => {},
+        finishRun: () => {},
+        submittedAnswerId: () => undefined,
+      },
+    });
+    expect((await session.run()).outcome.status).toBe("completed-without-answer");
   });
 
   it("parks on a question and resumes with the answer", async () => {

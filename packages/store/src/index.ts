@@ -582,6 +582,17 @@ export class Store {
       .all() as Array<Record<string, unknown>>;
   }
 
+  /**
+   * The answer a run produced, if it produced one. Submission happens inside the MCP server — a
+   * separate process — so the session cannot know from its own event stream and has to ask.
+   */
+  answerIdForRun(runId: string): string | undefined {
+    const row = this.db
+      .prepare("SELECT id FROM answers WHERE run_id = ? ORDER BY created_at DESC LIMIT 1")
+      .get(runId) as { id: string } | undefined;
+    return row?.id;
+  }
+
   findAnswerByPrefix(prefix: string): Record<string, unknown> | undefined {
     return this.db.prepare("SELECT * FROM answers WHERE id LIKE ? LIMIT 1").get(`${prefix}%`) as
       | Record<string, unknown>

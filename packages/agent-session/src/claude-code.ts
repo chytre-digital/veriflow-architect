@@ -104,7 +104,10 @@ export class CodexAdapter implements AgentClientAdapter {
     let help: string;
     try {
       version = execFileSync(this.command, ["--version"], { encoding: "utf8" }).trim();
-      help = execFileSync(this.command, ["--help"], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+      // The flags that matter live on the subcommand we actually run. Probing the top-level help
+      // reported no structured streaming and dropped a real run onto the unimplemented PTY path —
+      // found by running it, not by reading it.
+      help = execFileSync(this.command, ["exec", "--help"], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
     } catch {
       return undefined;
     }
@@ -114,7 +117,9 @@ export class CodexAdapter implements AgentClientAdapter {
       command: this.command,
       version,
       transport: supportsJson ? "stream-json" : "pty",
-      supportsMcpConfig: /--mcp|mcp-config/.test(help),
+      // Codex has no --mcp-config file. Servers arrive as config overrides, so the capability to
+      // look for is -c, not a flag named after the file Claude Code happens to read.
+      supportsMcpConfig: /-c, --config|--config <key=value>/.test(help),
       supportsPermissionMode: /--sandbox|--ask-for-approval/.test(help),
       readOnlyMode: /read-only/.test(help) ? "read-only" : undefined,
     };
@@ -123,12 +128,30 @@ export class CodexAdapter implements AgentClientAdapter {
   async start(request: AgentRunRequest): Promise<AgentRunHandle> {
     const capabilities = await this.probe();
     if (!capabilities) {
-      throw new AgentUnavailableError(`${this.command} is not available`, this.id);
+      throw new AgentUnavailableError(
+        `${this.command} is not available — pass its path with --client-command if it is installed behind a shim`,
+        this.id,
+      );
     }
     const args = ["exec"];
     if (capabilities.transport === "stream-json") args.push("--json");
     if (capabilities.readOnlyMode) args.push("--sandbox", "read-only");
-    args.push(request.prompt);
+    if (capabilities.supportsMcpConfig && request.mcpServers) {
+      for (const [name, server] of Object.entries(request.mcpServers)) {
+        args.push("-c", `mcp_servers.${name}.command=${toml(server.command)}`);
+        args.push("-c", `mcp_servers.${name}.args=[${server.args.map(toml).join(",")}]`);
+        // Codex starts MCP servers in the session workdir — the repository under analysis. A server
+        // that resolves its own dependencies would die there, so it says where it lives.
+        if (server.cwd) args.push("-c", `mcp_servers.${name}.cwd=${toml(server.cwd)}`);
+        // Codex asks before every MCP call, and an unattended run has nobody to ask, so each call
+        // comes back "user cancelled MCP tool call" and the agent concludes its own tools are
+        // broken. `approve` pre-approves this server's tools; `auto` and `writes` do not — measured
+        // against a one-tool server, not read off the flag name. These are VeriFlow's read tools,
+        // the same surface Claude Code gets through --allowedTools, so this widens nothing.
+        args.push("-c", `mcp_servers.${name}.default_tools_approval_mode="approve"`);
+      }
+    }
+    args.push("--color", "never", request.prompt);
 
     const child = spawn(this.command, args, {
       cwd: request.cwd,
@@ -136,8 +159,17 @@ export class CodexAdapter implements AgentClientAdapter {
       env: process.env,
     }) as ChildProcessWithoutNullStreams;
 
+    // The prompt is an argument, so there is nothing more to send. Left open, Codex waits on stdin
+    // and says so — observed, not assumed.
+    child.stdin.end();
+
     return driveChild(child, request, capabilities);
   }
+}
+
+/** A TOML string literal. Codex parses each -c value as TOML before applying it. */
+function toml(value: string): string {
+  return JSON.stringify(value);
 }
 
 /**
@@ -180,7 +212,8 @@ function driveChild(
       stream.emit("assistant", { text: line });
       return;
     }
-    normalize(parsed, stream);
+    if (capabilities.id === "codex") normalizeCodex(parsed, stream);
+    else normalize(parsed, stream);
   };
 
   child.stdout.setEncoding("utf8");
@@ -239,7 +272,8 @@ function driveChild(
       stream.emit("answer", { questionId, value });
     },
     async write(input) {
-      child.stdin.write(input);
+      // Codex takes its prompt as an argument and has its stdin closed; writing would raise EPIPE.
+      if (child.stdin.writable) child.stdin.write(input);
     },
     async cancel(reason) {
       cancelReason = reason;
@@ -275,6 +309,75 @@ function normalize(message: unknown, stream: EventStream): void {
   }
 
   if (type === "result") {
+    stream.emit("status", { state: "client-result", raw: m });
+    return;
+  }
+
+  stream.emit("status", { state: type, raw: m });
+}
+
+/**
+ * Map a Codex JSONL event onto the same channels. Its stream is item-shaped rather than
+ * message-shaped: `{"type":"item.completed","item":{"type":"agent_message","text":"…"}}`. Anything
+ * unrecognized still reaches the transcript as a status event, so a Codex release that adds an item
+ * kind degrades to "shown but not classified" rather than to silence.
+ */
+export function normalizeCodex(message: unknown, stream: EventStream): void {
+  const m = message as Record<string, unknown>;
+  const type = typeof m["type"] === "string" ? (m["type"] as string) : "unknown";
+
+  if (type === "item.started" || type === "item.completed" || type === "item.updated") {
+    const item = (m["item"] ?? {}) as Record<string, unknown>;
+    const kind = typeof item["type"] === "string" ? (item["type"] as string) : "unknown";
+    const done = type === "item.completed";
+
+    if (kind === "agent_message") {
+      if (done) stream.emit("assistant", { text: item["text"] });
+      return;
+    }
+    if (kind === "reasoning") {
+      if (done) stream.emit("assistant", { text: item["text"] ?? item["summary"], reasoning: true });
+      return;
+    }
+    if (kind === "command_execution") {
+      if (done) {
+        stream.emit("tool-call", { name: "shell", input: { command: item["command"] }, id: item["id"] });
+        stream.emit("tool-result", {
+          id: item["id"],
+          content: item["aggregated_output"] ?? item["output"],
+          exitCode: item["exit_code"],
+        });
+      }
+      return;
+    }
+    if (kind === "mcp_tool_call") {
+      const name = [item["server"], item["tool"]].filter(Boolean).join("__") || "mcp";
+      if (done) {
+        stream.emit("tool-call", { name, input: item["arguments"], id: item["id"] });
+        // A failed call carries `result: null` and the reason in `error`. Reading only `result`
+        // wrote empty rows into the transcript and hid a diagnosis for two runs, so the failure
+        // fields are first-class here — and the raw item goes along whenever the call did not
+        // succeed, so a renamed field cannot make a failure silent again.
+        const failed = item["status"] !== "completed" || item["error"] != null;
+        stream.emit("tool-result", {
+          id: item["id"],
+          content: item["result"] ?? item["output"] ?? null,
+          ...(item["error"] != null ? { error: item["error"] } : {}),
+          ...(item["status"] !== undefined ? { status: item["status"] } : {}),
+          ...(failed ? { raw: item } : {}),
+        });
+      }
+      return;
+    }
+    if (kind === "error") {
+      stream.emit("stderr", { text: item["message"] ?? JSON.stringify(item) });
+      return;
+    }
+    stream.emit("status", { state: `${type}:${kind}`, raw: item });
+    return;
+  }
+
+  if (type === "turn.completed" || type === "turn.failed") {
     stream.emit("status", { state: "client-result", raw: m });
     return;
   }

@@ -9,6 +9,7 @@
   "dependencies": {
     "@veriflow/callgraph": "workspace:*",
     "@veriflow/contracts": "workspace:*",
+    "@veriflow/diagram": "workspace:*",
     "@veriflow/provider-protocol": "workspace:*",
     "@veriflow/snapshot": "workspace:*",
     "@veriflow/store": "workspace:*",

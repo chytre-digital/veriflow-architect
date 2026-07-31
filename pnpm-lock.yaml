@@ -45,6 +45,9 @@ importers:
       '@veriflow/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@veriflow/diagram':
+        specifier: workspace:*
+        version: link:../../packages/diagram
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../../packages/flow-answer

@@ -56,6 +56,12 @@ export interface AgentRunRequest {
   prompt: string;
   /** Written per run, contains read tools only, removed afterwards. */
   mcpConfigPath?: string;
+  /**
+   * The same servers as data. A JSON file on disk is one client's idea of how MCP is configured;
+   * another takes them as config overrides on the command line. Each adapter renders these its own
+   * way, which is where the abstraction has to be real rather than Claude Code with a coat of paint.
+   */
+  mcpServers?: Record<string, { command: string; args: string[]; cwd?: string }>;
   timeoutMs?: number;
 }
 

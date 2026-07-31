@@ -48,7 +48,7 @@ export interface SessionOptions {
   persistence?: RunPersistence;
   timeoutMs?: number;
   /** Read-only MCP servers offered to the agent for the duration of the run. */
-  mcpServers?: Record<string, { command: string; args: string[] }>;
+  mcpServers?: Record<string, { command: string; args: string[]; cwd?: string }>;
   runId?: string;
 }
 
@@ -96,6 +96,7 @@ export class AgentSession {
       cwd: resolve(this.options.cwd),
       prompt: this.options.prompt,
       mcpConfigPath,
+      ...(this.options.mcpServers ? { mcpServers: this.options.mcpServers } : {}),
       timeoutMs: this.options.timeoutMs,
     });
     this.handle = handle;

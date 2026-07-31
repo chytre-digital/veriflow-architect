@@ -446,6 +446,7 @@ program
   .argument("<question>")
   .argument("[path]")
   .option("--client <id>", "agent client", "claude-code")
+  .option("--client-command <path>", "path to the client executable, when it is behind a shim")
   .option("--timeout <ms>", "run timeout in milliseconds", "900000")
   .option("--entry <id>", "force an entry point instead of ranking")
   .option("--force", "run even when the question looks like a location question")
@@ -453,7 +454,7 @@ program
   .action(async (
     question: string,
     pathArg: string | undefined,
-    options: { client: string; timeout: string; entry?: string; force?: boolean },
+    options: { client: string; clientCommand?: string; timeout: string; entry?: string; force?: boolean },
   ) => {
     const ctx = open(pathArg);
 
@@ -499,11 +500,19 @@ program
     }
     if (!chosen) log(`  ranking is ambiguous - the agent picks, and says so in the transcript`);
 
-    const client = options.client === "codex" ? new CodexAdapter() : new ClaudeCodeAdapter();
+    const client =
+      options.client === "codex"
+        ? new CodexAdapter(options.clientCommand)
+        : new ClaudeCodeAdapter(options.clientCommand);
     const capabilities = await client.probe();
     if (!capabilities) {
       ctx.close();
-      fail(`agent client "${options.client}" is not available on this machine`);
+      // An npm shim on Windows is a .ps1 or .cmd, which cannot be spawned directly. Rather than
+      // guess at every packaging layout, say where to point us.
+      fail(
+        `agent client "${options.client}" is not available on this machine - ` +
+          `if it is installed, give the executable directly with --client-command <path>`,
+      );
     }
 
     const questionId = randomUUID();
@@ -543,6 +552,11 @@ program
       mcpServers: {
         veriflow: {
           command: process.execPath,
+          // Where VeriFlow itself lives, not where the analysed project is. The server resolves its
+          // own workspace packages from here; started in the target repository it exits immediately
+          // and the agent silently sees no VeriFlow tools at all. Claude Code happened to inherit a
+          // working directory that hid this; Codex does not.
+          cwd: resolve(fileURLToPath(import.meta.url), "..", "..", "..", ".."),
           args: [
             "--no-warnings=ExperimentalWarning",
             "--import",
@@ -581,6 +595,10 @@ program
         startRun: (run) => ctx.store.startRun(run),
         appendEvents: (id, events) => ctx.store.appendRunEvents(id, events),
         finishRun: (id, outcome) => ctx.store.finishRun(id, outcome),
+        // Without this the session cannot see a submission made in the MCP server's process, and a
+        // run that produced a good answer is recorded as having produced none. The hook existed;
+        // nothing passed it, so every stored run said completed-without-answer.
+        submittedAnswerId: (id) => ctx.store.answerIdForRun(id),
       },
     });
 

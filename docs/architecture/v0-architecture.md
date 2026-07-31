@@ -403,9 +403,29 @@ Requirements that shape the implementation:
   is the vendor-neutral path. Raw stdin writes into the child process are the fallback for client
   prompts that are not expressible as a tool call.
 - **Structured where possible, raw where not.** The adapter prefers a client's structured streaming
-  mode (for example a JSON event stream) and falls back to a PTY, normalizing both into one
-  `RunEvent` shape. Client capability is probed, not assumed, because these flags move between
-  versions.
+  mode (for example a JSON event stream), normalizing into one `RunEvent` shape. Client capability is
+  probed, not assumed, because these flags move between versions. The PTY fallback is probed for and
+  deliberately not implemented — see [F004](../../roadmap/04-agent-session.md).
+- **What differs between clients is more than flag spelling.** Measured on Claude Code 2.1.220 and
+  Codex 0.144.3, each of these was found by running the thing, not by reading its help:
+  - *Where the capability is written.* Codex advertises `--json` on `exec`, not at top level.
+    Probing the wrong help text silently downgrades the transport.
+  - *How MCP servers arrive.* Claude Code reads a JSON config file; Codex takes config overrides on
+    the command line. So `AgentRunRequest` carries the servers **as data** alongside the file path,
+    and each adapter renders them its own way.
+  - *Where the server is started.* Codex starts MCP servers in the session workdir — the repository
+    under analysis. A server that cannot resolve its own dependencies there exits instantly and the
+    agent simply sees no tools, with nothing on stderr. VeriFlow therefore states the server's `cwd`
+    and declares every package it imports.
+  - *Whether a tool call needs approving.* Codex asks per call, and an unattended run has nobody to
+    ask, so every call returns `user cancelled MCP tool call`. Only
+    `default_tools_approval_mode = "approve"` pre-approves a server; `auto` and `writes` do not.
+    This is scoped to VeriFlow's own read-only server and does not touch the sandbox.
+  - *How failure is reported.* A failed Codex tool call carries `result: null` with the reason in
+    `error`. A normalizer that reads only the success field writes blank rows and hides the cause.
+
+  None of these are Codex being awkward. They are what "one adapter per client" has to absorb for
+  the abstraction to be real rather than Claude Code with a second name.
 - **The agent runs in the working tree, so containment is explicit.** Indexing in place means there is
   no copy to sandbox the agent in — an honest downgrade from a materialized snapshot. Containment
   therefore rests on three things that are all verifiable: VeriFlow's MCP exposes no tool that writes
@@ -582,7 +602,8 @@ exports             id, answer_id, target_path, written_at, revision
 - SQLite via Drizzle, WAL mode;
 - Vite + React for the local SPA;
 - Zod for every runtime contract;
-- `node-pty` for the PTY fallback in the agent adapter;
+- `node-pty` if the PTY fallback is ever built — it is not, and no client on the supported matrix
+  needs it;
 - MCP TypeScript SDK for both the server and the provider client;
 - a small deterministic SVG engine for the sequence diagram and the maps, because phase bands,
   divergence dimming, and per-step selection are the point and mermaid does not control them;
