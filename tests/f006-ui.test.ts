@@ -296,8 +296,37 @@ describe("architecture and modules screens", () => {
     expect(html).toContain("src/modules/payments");
     expect(html).toContain("29 files");
     expect(html).toContain("explicit-module-root");
-    expect(html).toContain("0 stored answers");
     expect(html).toContain("No agent ran to produce this");
+    // Without a stored call graph there is no traffic, and the screen says so rather than passing a
+    // folder listing off as an architecture.
+    expect(html).toContain("no traffic to draw");
+    expect(html).not.toContain("Answered flows through here");
+  });
+
+  it("draws the traffic between modules, not just the folders they live in", async () => {
+    const root = indexedProject();
+    const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    store.saveCallGraph(
+      "s1",
+      [],
+      [],
+      { modules: [], files: [], dots: [], width: 10, height: 10 },
+      [
+        { from: "src-app", to: "src-modules-payments", calls: 22, edges: 6, backward: false, note: "route into the module barrel" },
+        { from: "src-modules-payments", to: "src-app", calls: 11, edges: 3, backward: true, note: "best-effort tail calls back up" },
+      ],
+      { total: 0, resolved: 0, database: 0, stdlib: 0, unresolved: 0, packages: [], externalSdk: [], exact: true },
+      new Map(),
+    );
+    store.close();
+
+    const html = await (await createApp(root).request("/architecture")).text();
+    expect(html).toContain("modmap");
+    expect(html).toContain("2 module-to-module traffic cell");
+    expect(html).toContain("1 running back up a layer");
+    // The violation is routed, not merely listed.
+    expect(html).toContain("is-backward");
+    expect(html).toContain("best-effort tail calls back up");
   });
 
   it("attributes an entry point to the module that owns its path", async () => {

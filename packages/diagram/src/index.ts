@@ -1,5 +1,7 @@
 export * from "./callmap.js";
-import type { FlowAnswer, Lane, Step } from "@veriflow/flow-answer";
+export * from "./paths.js";
+export * from "./modules.js";
+import type { Branch, FlowAnswer, Lane, Step } from "@veriflow/flow-answer";
 
 /**
  * A deterministic sequence-diagram layout, computed as data before anything is drawn.
@@ -13,6 +15,8 @@ export interface LaneBox {
   id: string;
   name: string;
   kind: Lane["kind"];
+  /** The stack this participant is, when the answer named one. Drawn under the name. */
+  technology?: string;
   x: number;
   headerY: number;
   width: number;
@@ -37,6 +41,21 @@ export interface Arrow {
   self: boolean;
   citations: number;
   verified: number;
+  /** Position down the page, 1-based. What the reader counts along. */
+  ordinal: number;
+  /** Belongs to the selected variant rather than to the happy path. */
+  branch: boolean;
+  /** A happy-path step the selected variant never reaches — drawn, but faded. */
+  dimmed: boolean;
+}
+
+export interface VariantHeader {
+  id: string;
+  title: string;
+  tone: Branch["tone"];
+  invariant: string;
+  forkStepId: string;
+  forkLabel: string;
 }
 
 export interface DiagramLayout {
@@ -45,6 +64,8 @@ export interface DiagramLayout {
   lanes: LaneBox[];
   phases: PhaseBand[];
   arrows: Arrow[];
+  /** Present when a branch was selected. The happy path has no variant header. */
+  variant?: VariantHeader;
 }
 
 export interface LayoutOptions {
@@ -57,25 +78,55 @@ export interface LayoutOptions {
   marginTop?: number;
   /** Citation states by step id, so a step with unverified evidence can be drawn as such. */
   verifiedByStep?: Map<string, { total: number; verified: number }>;
+  /** Draw this alternative outcome against the steps that still ran. Omit for the happy path. */
+  branchId?: string;
 }
 
 const DEFAULTS = {
   laneWidth: 168,
   laneGap: 28,
-  headerHeight: 62,
+  headerHeight: 74,
   stepHeight: 46,
   phaseGap: 34,
   marginX: 24,
   marginTop: 16,
 };
 
+/** A step placed on the page, and what it is: happy path, the selected variant, or bypassed. */
+interface Placed {
+  step: Step;
+  branch: boolean;
+  dimmed: boolean;
+}
+
+/**
+ * The happy path plus, when a variant is selected, that variant's steps spliced in at its fork —
+ * with everything the fork skips kept on the page and marked bypassed. Deleting those steps would
+ * make the two pictures incomparable; fading them is the whole point of the screen.
+ */
+function placeSteps(answer: FlowAnswer, branch: Branch | undefined): Placed[] {
+  const forkIndex = branch ? answer.steps.findIndex((s) => s.id === branch.forkStepId) : -1;
+  const placed: Placed[] = answer.steps.map((step, i) => ({
+    step,
+    branch: false,
+    dimmed: branch !== undefined && forkIndex >= 0 && i > forkIndex,
+  }));
+  if (branch && branch.steps.length > 0) {
+    const at = forkIndex >= 0 ? forkIndex + 1 : placed.length;
+    placed.splice(at, 0, ...branch.steps.map((step) => ({ step, branch: true, dimmed: false })));
+  }
+  return placed;
+}
+
 export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): DiagramLayout {
   const o = { ...DEFAULTS, ...options };
+  const branch = options.branchId ? answer.branches.find((b) => b.id === options.branchId) : undefined;
 
-  // Only lanes the flow actually uses get a column: an unused participant is noise, and the mermaid
-  // export has the same rule.
+  // Columns are the union over the happy path and every branch, not over what is currently drawn.
+  // Otherwise picking a variant would shift the lanes sideways and two pictures of one flow could
+  // not be compared. An unused participant still gets no column.
   const used = new Set<string>();
-  for (const step of answer.steps) {
+  for (const step of [...answer.steps, ...answer.branches.flatMap((b) => b.steps)]) {
     used.add(step.from);
     used.add(step.to);
   }
@@ -89,6 +140,7 @@ export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): Dia
       id: lane.id,
       name: lane.name,
       kind: lane.kind,
+      ...(lane.technology ? { technology: lane.technology } : {}),
       x,
       headerY: o.marginTop,
       width: o.laneWidth,
@@ -97,23 +149,25 @@ export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): Dia
   });
 
   const phases = [...answer.phases].sort((a, b) => a.ordinal - b.ordinal);
-  const stepsByPhase = new Map<string, Step[]>();
-  for (const step of answer.steps) {
-    const list = stepsByPhase.get(step.phaseId);
-    if (list) list.push(step);
-    else stepsByPhase.set(step.phaseId, [step]);
+  const stepsByPhase = new Map<string, Placed[]>();
+  for (const entry of placeSteps(answer, branch)) {
+    const list = stepsByPhase.get(entry.step.phaseId);
+    if (list) list.push(entry);
+    else stepsByPhase.set(entry.step.phaseId, [entry]);
   }
 
   const bands: PhaseBand[] = [];
   const arrows: Arrow[] = [];
   let y = o.marginTop + o.headerHeight + o.phaseGap;
+  let ordinal = 0;
 
   for (const phase of phases) {
     const steps = stepsByPhase.get(phase.id) ?? [];
     const bandTop = y;
     let stepY = y + o.phaseGap;
 
-    for (const step of steps) {
+    for (const entry of steps) {
+      const step = entry.step;
       const fromX = laneX.get(step.from);
       const toX = laneX.get(step.to);
       // A step referencing an undeclared lane cannot be drawn. Validation rejects those before they
@@ -121,6 +175,7 @@ export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): Dia
       // than inventing a coordinate.
       if (fromX === undefined || toX === undefined) continue;
       const evidence = options.verifiedByStep?.get(step.id);
+      ordinal += 1;
       arrows.push({
         stepId: step.id,
         label: step.label,
@@ -131,6 +186,9 @@ export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): Dia
         self: step.from === step.to,
         citations: evidence?.total ?? step.citations.length,
         verified: evidence?.verified ?? 0,
+        ordinal,
+        branch: entry.branch,
+        dimmed: entry.dimmed,
       });
       stepY += step.from === step.to ? o.stepHeight + 14 : o.stepHeight;
     }
@@ -140,12 +198,24 @@ export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): Dia
     y = bandTop + bandHeight + o.phaseGap / 2;
   }
 
+  const variant: VariantHeader | undefined = branch
+    ? {
+        id: branch.id,
+        title: branch.title,
+        tone: branch.tone,
+        invariant: branch.invariant,
+        forkStepId: branch.forkStepId,
+        forkLabel: answer.steps.find((s) => s.id === branch.forkStepId)?.label ?? branch.forkStepId,
+      }
+    : undefined;
+
   return {
     width: o.marginX * 2 + Math.max(1, lanes.length) * (o.laneWidth + o.laneGap),
     height: y + o.marginTop,
     lanes: laneBoxes,
     phases: bands,
     arrows,
+    ...(variant ? { variant } : {}),
   };
 }
 
@@ -170,8 +240,14 @@ function escapeXml(value: string): string {
 /** Renders the computed layout. Nothing is decided here — the geometry already exists. */
 export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): string {
   const parts: string[] = [];
+  const tone = layout.variant ? ` tone-${layout.variant.tone}` : "";
+  // Selecting a step must not drop the variant the reader is looking at.
+  const keepQuery = (stepId: string): string =>
+    layout.variant
+      ? `?branch=${encodeURIComponent(layout.variant.id)}&amp;step=${encodeURIComponent(stepId)}`
+      : `?step=${encodeURIComponent(stepId)}`;
   parts.push(
-    `<svg viewBox="0 0 ${layout.width} ${layout.height}" width="${layout.width}" height="${layout.height}" class="flow" xmlns="http://www.w3.org/2000/svg">`,
+    `<svg viewBox="0 0 ${layout.width} ${layout.height}" width="${layout.width}" height="${layout.height}" class="flow${tone}" xmlns="http://www.w3.org/2000/svg">`,
   );
   parts.push(
     `<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>`,
@@ -189,9 +265,16 @@ export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): s
     parts.push(
       `<rect class="lane lane-${lane.kind}" x="${lane.x - lane.width / 2}" y="${lane.headerY}" width="${lane.width}" height="${lane.height}" rx="8"/>`,
     );
-    for (const [i, line] of wrap(lane.name, 22).entries()) {
+    const nameLines = wrap(lane.name, 24).slice(0, lane.technology ? 2 : 3);
+    for (const [i, line] of nameLines.entries()) {
       parts.push(
-        `<text class="lane-name" x="${lane.x}" y="${lane.headerY + 24 + i * 14}" text-anchor="middle">${escapeXml(line)}</text>`,
+        `<text class="lane-name" x="${lane.x}" y="${lane.headerY + 20 + i * 13}" text-anchor="middle">${escapeXml(line)}</text>`,
+      );
+    }
+    if (lane.technology) {
+      const y = lane.headerY + 20 + nameLines.length * 13 + 4;
+      parts.push(
+        `<text class="lane-tech" x="${lane.x}" y="${y}" text-anchor="middle">${escapeXml(truncate(lane.technology, 28))}</text>`,
       );
     }
   }
@@ -202,14 +285,18 @@ export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): s
     const selected = arrow.stepId === selectedStepId ? " is-selected" : "";
     const unverified = arrow.citations > 0 && arrow.verified < arrow.citations ? " is-unverified" : "";
     const bare = arrow.citations === 0 ? " is-bare" : "";
+    const branch = arrow.branch ? " is-branch" : "";
+    const dimmed = arrow.dimmed ? " is-dim" : "";
+    const href = keepQuery(arrow.stepId);
 
-    parts.push(`<a href="?step=${encodeURIComponent(arrow.stepId)}" class="step${selected}${unverified}${bare}">`);
+    parts.push(`<a href="${href}" class="step${selected}${unverified}${bare}${branch}${dimmed}">`);
     if (arrow.self) {
       const x = arrow.fromX;
       parts.push(
         `<path class="arrow" d="M${x},${arrow.y} h34 v22 h-34" fill="none" marker-end="url(#head)"${dash}/>`,
       );
       parts.push(`<text class="step-label" x="${x + 42}" y="${arrow.y + 6}">${escapeXml(arrow.label)}</text>`);
+      parts.push(marker(x, arrow.y, arrow.ordinal));
     } else {
       parts.push(
         `<line class="arrow" x1="${arrow.fromX}" y1="${arrow.y}" x2="${arrow.toX}" y2="${arrow.y}" marker-end="url(#head)"${dash}/>`,
@@ -218,12 +305,22 @@ export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): s
       parts.push(
         `<text class="step-label" x="${mid}" y="${arrow.y - 8}" text-anchor="middle">${escapeXml(arrow.label)}</text>`,
       );
+      parts.push(marker(arrow.fromX, arrow.y, arrow.ordinal));
     }
     parts.push(`</a>`);
   }
 
   parts.push(`</svg>`);
   return parts.join("\n");
+}
+
+/** The numbered dot at the tail of an arrow — what the reader counts along. */
+function marker(x: number, y: number, ordinal: number): string {
+  return `<g class="step-no"><circle cx="${x}" cy="${y}" r="8"/><text x="${x}" y="${y + 3.5}" text-anchor="middle">${ordinal}</text></g>`;
+}
+
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 function wrap(text: string, max: number): string[] {

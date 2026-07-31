@@ -1,4 +1,13 @@
-import { layoutFlow, renderCallMapSvg, renderFlowSvg, renderTrafficTable } from "@veriflow/diagram";
+import {
+  layoutFlow,
+  layoutModules,
+  layoutPaths,
+  renderCallMapSvg,
+  renderFlowSvg,
+  renderModulesSvg,
+  renderPathsSvg,
+  renderTrafficTable,
+} from "@veriflow/diagram";
 import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
 
@@ -98,6 +107,55 @@ table.traffic { border-collapse:collapse; width:100%; max-width:900px; font-size
 table.traffic th { text-align:left; color:var(--dim); font-weight:500; border-bottom:1px solid var(--line); padding:5px 8px; }
 table.traffic td { border-bottom:1px solid var(--line); padding:5px 8px; }
 table.traffic tr.backward td { background:color-mix(in srgb, var(--bad) 8%, transparent); }
+.lane-tech { font-size:9px; fill:var(--dim); }
+.step-no circle { fill:var(--card); stroke:var(--line); }
+.step-no text { font-size:9px; fill:var(--dim); }
+.step.is-dim { opacity:.2; }
+.step.is-branch .arrow { stroke:var(--warn); stroke-width:1.8; }
+.step.is-branch .step-label { fill:var(--warn); font-weight:600; }
+.flow.tone-refused .step.is-branch .arrow { stroke:var(--bad); }
+.flow.tone-refused .step.is-branch .step-label { fill:var(--bad); }
+.flow.tone-recovered .step.is-branch .arrow { stroke:var(--accent); }
+.flow.tone-recovered .step.is-branch .step-label { fill:var(--accent); }
+.chips { display:flex; gap:7px; flex-wrap:wrap; margin:0 0 14px; }
+.chip { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border:1px solid var(--line);
+  border-radius:99px; font-size:13px; text-decoration:none; color:var(--dim); background:var(--card); }
+.chip.on { color:var(--fg); border-color:var(--fg); }
+.chip i { width:7px; height:7px; border-radius:99px; background:var(--dim); display:inline-block; }
+.chip.refused i { background:var(--bad); }
+.chip.compensated i { background:var(--warn); }
+.chip.recovered i { background:var(--accent); }
+.chip.happy i { background:var(--fg); }
+svg.paths { display:block; min-width:100%; }
+.pt-spine { stroke:var(--line); stroke-width:1.5; }
+.pt-link { stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 4; }
+.pt-phase { fill:var(--card); stroke:var(--line); }
+.pt-phase-title { font-size:12px; fill:var(--fg); font-weight:600; }
+.pt-phase-sub { font-size:10.5px; fill:var(--dim); }
+.pt-card { cursor:pointer; }
+.pt-card-box { fill:var(--card); stroke:var(--line); }
+.pt-card:hover .pt-card-box { stroke:var(--accent); }
+.pt-card.is-selected .pt-card-box { stroke:var(--accent); stroke-width:2; }
+.pt-dot { fill:var(--dim); }
+.pt-card.tone-refused .pt-dot { fill:var(--bad); }
+.pt-card.tone-compensated .pt-dot { fill:var(--warn); }
+.pt-card.tone-recovered .pt-dot { fill:var(--accent); }
+.pt-card-title { font-size:13px; fill:var(--fg); font-weight:600; }
+.pt-card-outcome { font-size:11.5px; fill:var(--fg); font-family:ui-monospace,monospace; }
+.pt-card-inv { font-size:11px; fill:var(--dim); }
+.pt-card-steps { font-size:10.5px; fill:var(--dim); }
+svg.modmap { display:block; }
+.mm-box { fill:var(--card); stroke:var(--line); }
+.mm-node.kind-external .mm-box, .mm-node.kind-gateway .mm-box { stroke-dasharray:4 3; }
+.mm-kind { font-size:8.5px; fill:var(--dim); letter-spacing:.09em; }
+.mm-name { font-size:13px; fill:var(--fg); font-weight:600; }
+.mm-detail { font-size:10px; fill:var(--dim); font-family:ui-monospace,monospace; }
+.mm-line { stroke:var(--fg); stroke-width:1.3; }
+.mm-head { fill:var(--fg); }
+.mm-label { font-size:10px; fill:var(--dim); }
+.mm-edge.is-inferred .mm-line { stroke-dasharray:5 4; }
+.mm-edge.is-backward .mm-line { stroke:var(--bad); stroke-dasharray:6 4; }
+.mm-edge.is-backward .mm-label { fill:var(--bad); }
 `;
 
 export function page(title: string, body: string): string {
@@ -156,6 +214,24 @@ export interface FlowPageInput {
   citations: CitationRow[];
   freshness: Freshness;
   selectedStepId?: string;
+  selectedBranchId?: string;
+}
+
+/**
+ * One flow has as many shapes as it has ways to end. The chips pick which one is drawn; the steps
+ * the chosen outcome never reaches stay on the page, faded, because "what did it skip" is the
+ * question a reader actually has.
+ */
+function variantChips(answer: FlowAnswer, id: string, selected?: string): string {
+  const chips = [
+    `<a class="chip happy${selected ? "" : " on"}" href="/answers/${id}"><i></i>Happy path</a>`,
+    ...answer.branches.map(
+      (b) =>
+        `<a class="chip ${esc(b.tone)}${b.id === selected ? " on" : ""}" href="/answers/${id}?branch=${encodeURIComponent(b.id)}"
+           title="${esc(b.invariant)}"><i></i>${esc(b.title)}</a>`,
+    ),
+  ];
+  return `<div class="chips">${chips.join("")}</div>`;
 }
 
 export function flowPage(input: FlowPageInput): string {
@@ -170,7 +246,10 @@ export function flowPage(input: FlowPageInput): string {
     byStep.set(c.subject_id, entry);
   }
 
-  const layout = layoutFlow(answer, { verifiedByStep: byStep });
+  const layout = layoutFlow(answer, {
+    verifiedByStep: byStep,
+    ...(input.selectedBranchId ? { branchId: input.selectedBranchId } : {}),
+  });
   const svg = renderFlowSvg(layout, input.selectedStepId);
 
   const allSteps: Step[] = [...answer.steps, ...answer.branches.flatMap((b) => b.steps)];
@@ -206,7 +285,15 @@ export function flowPage(input: FlowPageInput): string {
        ${freshness.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}</div>
      </header>
      ${nav(row.id, "flow")}
-     <main><div class="split">
+     <main>
+       ${variantChips(answer, row.id, input.selectedBranchId)}
+       ${
+         layout.variant
+           ? `<p class="legend" style="margin:0 0 10px">Drawn from <b>${esc(layout.variant.forkLabel)}</b>.
+              Faded steps are what this outcome skips. Protects: ${esc(layout.variant.invariant)}</p>`
+           : ""
+       }
+       <div class="split">
        <div><div class="scroll">${svg}</div>
          <p class="legend">Dotted arrow: no citation. Amber label: at least one citation did not verify.
          Click a step for its evidence.</p></div>
@@ -216,17 +303,11 @@ export function flowPage(input: FlowPageInput): string {
 }
 
 export function pathsPage(answer: FlowAnswer, row: AnswerRow): string {
-  const stepById = new Map(answer.steps.map((s) => [s.id, s]));
-  const branches = answer.branches
-    .map((b) => {
-      const fork = stepById.get(b.forkStepId);
-      return `<div class="branch ${esc(b.tone)}">
-        <h3>${esc(b.title)}</h3>
-        <div class="meta">${esc(b.tone)} · forks at ${esc(fork?.label ?? b.forkStepId)} · ${b.steps.length} step${b.steps.length === 1 ? "" : "s"}</div>
-        <div class="inv"><b>Protects:</b> ${esc(b.invariant)}</div>
-      </div>`;
-    })
-    .join("\n");
+  const layout = layoutPaths(answer);
+  const svg = renderPathsSvg(layout, {
+    hrefOf: (branchId) => `/answers/${row.id}?branch=${encodeURIComponent(branchId)}`,
+  });
+  const forks = new Set(answer.branches.map((b) => b.forkStepId)).size;
 
   const open = answer.openQuestions.length
     ? `<h2 style="font-size:16px;margin:26px 0 8px">Open questions</h2>` +
@@ -242,11 +323,15 @@ export function pathsPage(answer: FlowAnswer, row: AnswerRow): string {
 
   return page(
     `${answer.title} — paths`,
-    `<header><h1>${esc(answer.title)}</h1>
-       <div class="meta">${answer.branches.length} alternative outcome${answer.branches.length === 1 ? "" : "s"}, each stating what it protects</div>
+    `<header><h1>Where this flow can end</h1>
+       <div class="meta">${answer.branches.length} alternative outcome${answer.branches.length === 1 ? "" : "s"}
+       plus the happy path, leaving at ${forks} point${forks === 1 ? "" : "s"} across
+       ${layout.spine.length} phase${layout.spine.length === 1 ? "" : "s"}.
+       Pick one to see it drawn against the steps that still ran.</div>
      </header>
      ${nav(row.id, "paths")}
-     <main style="max-width:900px">${branches}${open}</main>`,
+     <main><div class="scroll">${svg}</div>
+       <div style="max-width:900px">${open}</div></main>`,
   );
 }
 
@@ -271,30 +356,69 @@ export interface EntryPointRow {
   path: string;
 }
 
+/** The module a repository-relative path belongs to: the longest declared prefix wins. */
+export function moduleOwning(path: string, modules: ModuleRow[]): ModuleRow | undefined {
+  return modules
+    .filter((m) => m.paths.some((p) => path === p || path.startsWith(p + "/")))
+    .sort((a, b) => Math.max(...b.paths.map((p) => p.length)) - Math.max(...a.paths.map((p) => p.length)))[0];
+}
+
+export interface ArchitectureInput {
+  project: string;
+  modules: ModuleRow[];
+  entryPoints: EntryPointRow[];
+  /** Cross-module calls measured by the call graph. This is the architecture, not the folder list. */
+  traffic: TrafficCell[];
+  /** Stored answers, and how many of each one's citations land in each module. */
+  answers: Array<{ id: string; title: string; modules: Record<string, number> }>;
+}
+
 /**
  * The project's architecture, derived from the index alone. This screen exists after `veriflow index`
  * and before any agent has run — it is the deliverable that needs no AI at all.
+ *
+ * The module registry on its own is a folder listing, which says nothing an `ls` would not. What
+ * makes it architecture is the measured traffic between the modules and the direction it runs in, so
+ * that is the picture; the registry is the index underneath it.
  */
-export function architecturePage(
-  project: string,
-  modules: ModuleRow[],
-  entryPoints: EntryPointRow[],
-  answers: number,
-): string {
+export function architecturePage(input: ArchitectureInput): string {
+  const { project, modules, entryPoints, traffic, answers } = input;
+
   const byModule = new Map<string, EntryPointRow[]>();
   for (const entry of entryPoints) {
-    const owner = modules
-      .filter((m) => m.paths.some((p) => entry.path === p || entry.path.startsWith(p + "/")))
-      .sort((a, b) => Math.max(...b.paths.map((p) => p.length)) - Math.max(...a.paths.map((p) => p.length)))[0];
-    const key = owner?.id ?? "unassigned";
+    const key = moduleOwning(entry.path, modules)?.id ?? "unassigned";
     const list = byModule.get(key);
     if (list) list.push(entry);
     else byModule.set(key, [entry]);
   }
 
+  const inTraffic = new Set(traffic.flatMap((t) => [t.from, t.to]));
+  const layout = layoutModules(
+    modules
+      .filter((m) => inTraffic.has(m.id))
+      .map((m) => ({ id: m.id, label: m.label, kind: "module", detail: m.paths.join(", ") })),
+    traffic.map((t) => ({
+      from: t.from,
+      to: t.to,
+      contract: `${t.calls} calls · ${t.note}`,
+      kind: "calls",
+      backward: t.backward,
+    })),
+  );
+  const svg = renderModulesSvg(layout);
+  const backward = traffic.filter((t) => t.backward);
+  const silent = modules.filter((m) => !inTraffic.has(m.id));
+
+  const answersOf = (id: string): Array<{ id: string; title: string; count: number }> =>
+    answers
+      .filter((a) => (a.modules[id] ?? 0) > 0)
+      .map((a) => ({ id: a.id, title: a.title, count: a.modules[id] ?? 0 }))
+      .sort((a, b) => b.count - a.count);
+
   const rows = modules
     .map((m) => {
       const entries = byModule.get(m.id) ?? [];
+      const touching = answersOf(m.id);
       return `<div class="card">
         <h2>${esc(m.paths.join(", "))}</h2>
         <div class="meta">
@@ -302,6 +426,7 @@ export function architecturePage(
           <span class="pill">${m.symbols} symbols</span>
           <span class="pill">${esc(m.source)}</span>
           ${entries.length ? `<span class="pill good">${entries.length} entry point${entries.length === 1 ? "" : "s"}</span>` : ""}
+          ${inTraffic.has(m.id) ? "" : `<span class="pill">no cross-module traffic</span>`}
         </div>
         ${m.cohesionWarning ? `<div class="inv" style="margin-top:6px">⚠ ${esc(m.cohesionWarning)}</div>` : ""}
         ${
@@ -312,6 +437,13 @@ export function architecturePage(
                 .join("<br>")}${entries.length > 6 ? `<br>… and ${entries.length - 6} more` : ""}</div>`
             : ""
         }
+        ${
+          touching.length
+            ? `<div class="inv" style="margin-top:8px">Answered flows through here: ${touching
+                .map((a) => `<a href="/answers/${a.id}">${esc(a.title)}</a> <span class="meta">(${a.count} citations)</span>`)
+                .join(" · ")}</div>`
+            : ""
+        }
       </div>`;
     })
     .join("\n");
@@ -319,16 +451,80 @@ export function architecturePage(
   return page(
     `${project} — architecture`,
     `<header><h1>${esc(project)}</h1>
-       <div class="meta">${modules.length} modules derived from paths · ${entryPoints.length} entry points ·
-       ${answers} stored answer${answers === 1 ? "" : "s"}</div>
-       <div class="meta" style="margin-top:6px">Derived from the index alone. No agent ran to produce this.</div>
+       <div class="meta">${modules.length} modules · ${entryPoints.length} entry points ·
+       ${traffic.length} module-to-module traffic cell${traffic.length === 1 ? "" : "s"}
+       ${
+         backward.length
+           ? `· <span class="pill bad">${backward.length} running back up a layer</span>`
+           : `· <span class="pill good">nothing runs back up a layer</span>`
+       }</div>
+       <div class="meta" style="margin-top:6px">Measured from the index alone. No agent ran to produce this.</div>
      </header>
-     <nav><a href="/">Answers</a><a href="/architecture" class="on">Architecture</a></nav>
-     <main><div class="list">${rows}</div></main>`,
+     <nav><a href="/">Answers</a><a href="/architecture" class="on">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <main>
+       ${
+         traffic.length
+           ? `<div class="scroll">${svg}</div>
+              <p class="legend">Layers come from the direction the calls run. A red dashed edge on the
+              right runs back up a layer — those are the ${backward.length} cells worth arguing about.
+              Hover an edge for what crosses it.
+              ${
+                silent.length
+                  ? `${silent.length} of the ${modules.length} modules are not drawn: nothing in the reachable
+                     call graph calls into or out of them. They are listed below.`
+                  : ""
+              }</p>`
+           : `<p class="meta">No call graph stored yet, so there is no traffic to draw. Run <code>veriflow index</code>.</p>`
+       }
+       <h2 style="font-size:16px;margin:26px 0 10px">What each module is</h2>
+       <div class="list">${rows}</div>
+     </main>`,
   );
 }
 
-export function modulesPage(answer: FlowAnswer, row: AnswerRow): string {
+/**
+ * Module edges reference registry ids, never names — that is what keeps an answer readable after a
+ * rename. So the drawing has to look the label up: registry first, then the lane that claims the
+ * module, then the bare id rather than nothing.
+ */
+function moduleNodes(answer: FlowAnswer, modules: ModuleRow[]): Parameters<typeof layoutModules>[0] {
+  const registry = new Map(modules.map((m) => [m.id, m]));
+  // Several participants can live in one module — the checkout route and the cron routes are both
+  // src/app. The box is the module, so it takes the module's name; a lane only gets to name it when
+  // it is the only participant there, and only then can it decide the kind.
+  const lanesOf = new Map<string, Array<(typeof answer.lanes)[number]>>();
+  for (const lane of answer.lanes) {
+    if (!lane.moduleId) continue;
+    const list = lanesOf.get(lane.moduleId);
+    if (list) list.push(lane);
+    else lanesOf.set(lane.moduleId, [lane]);
+  }
+
+  const ids = new Set<string>();
+  for (const edge of answer.moduleEdges) {
+    ids.add(edge.from);
+    ids.add(edge.to);
+  }
+
+  return [...ids].map((id) => {
+    const module = registry.get(id);
+    const lanes = lanesOf.get(id) ?? [];
+    const only = lanes.length === 1 ? lanes[0] : undefined;
+    const paths = module?.paths.join(", ") ?? id;
+    return {
+      id,
+      label: module?.label ?? only?.name ?? id,
+      kind: only?.kind ?? "module",
+      detail: lanes.length > 1 ? `${paths} · ${lanes.length} participants` : paths,
+    };
+  });
+}
+
+export function modulesPage(answer: FlowAnswer, row: AnswerRow, modules: ModuleRow[] = []): string {
+  const layout = layoutModules(moduleNodes(answer, modules), answer.moduleEdges);
+  const svg = renderModulesSvg(layout);
+  const backward = layout.edges.filter((e) => e.backward);
+
   const edges = answer.moduleEdges.length
     ? answer.moduleEdges
         .map(
@@ -355,14 +551,25 @@ export function modulesPage(answer: FlowAnswer, row: AnswerRow): string {
 
   return page(
     `${answer.title} — modules`,
-    `<header><h1>${esc(answer.title)}</h1>
-       <div class="meta">${answer.moduleEdges.length} module edge${answer.moduleEdges.length === 1 ? "" : "s"} ·
-       ${answer.externalSystems.length} external system${answer.externalSystems.length === 1 ? "" : "s"}</div>
+    `<header><h1>Who takes part, and what may cross</h1>
+       <div class="meta">${layout.nodes.length} participant${layout.nodes.length === 1 ? "" : "s"} ·
+       ${answer.moduleEdges.length} edge${answer.moduleEdges.length === 1 ? "" : "s"} with a contract ·
+       ${answer.externalSystems.length} external system${answer.externalSystems.length === 1 ? "" : "s"}
+       ${
+         backward.length
+           ? `· <span class="pill bad">${backward.length} back up a layer</span>`
+           : `· <span class="pill good">nothing calls back up a layer</span>`
+       }</div>
      </header>
      ${navFull(row.id, "modules")}
-     <main style="max-width:900px">
-       <h2 style="font-size:16px;margin:0 0 10px">What crosses each module edge</h2>${edges}
-       <h2 style="font-size:16px;margin:26px 0 10px">Outside the repository</h2>${external}
+     <main>
+       <div class="scroll">${svg}</div>
+       <p class="legend">Layers come from the dependency direction. A red dashed edge on the right runs
+       back up a layer. A dashed edge is inferred, not proven. Hover any edge for the full contract.</p>
+       <div style="max-width:900px">
+         <h2 style="font-size:16px;margin:26px 0 10px">What crosses each module edge</h2>${edges}
+         <h2 style="font-size:16px;margin:26px 0 10px">Outside the repository</h2>${external}
+       </div>
      </main>`,
   );
 }

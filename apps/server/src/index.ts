@@ -9,6 +9,7 @@ import {
   answersPage,
   architecturePage,
   flowPage,
+  moduleOwning,
   modulesPage,
   callGraphPage,
   pathsPage,
@@ -19,6 +20,7 @@ import {
   type Freshness,
   type ModuleRow,
 } from "./views.js";
+import type { TrafficCell } from "@veriflow/contracts";
 
 export interface ServerOptions {
   root: string;
@@ -63,7 +65,28 @@ export function createApp(root: string): Hono {
         label: String(r["label"]),
         path: String(r["path"]),
       })) as EntryPointRow[];
-      return c.html(architecturePage(projectName, modules, entryPoints, store.listAnswers().length));
+      const graph = store.readCallGraph(snapshot.id);
+
+      // Which stored flows run through each module. Answers made against an older snapshot still
+      // resolve here because module ids are path-derived and stable across a re-index (D18).
+      const answers = store.listAnswers().map((a) => {
+        const counts: Record<string, number> = {};
+        for (const citation of store.readAnswerCitations(String(a["id"]))) {
+          const owner = moduleOwning(String(citation["path"]), modules);
+          if (owner) counts[owner.id] = (counts[owner.id] ?? 0) + 1;
+        }
+        return { id: String(a["id"]), title: String(a["title"]), modules: counts };
+      });
+
+      return c.html(
+        architecturePage({
+          project: projectName,
+          modules,
+          entryPoints,
+          traffic: (graph?.traffic ?? []) as TrafficCell[],
+          answers,
+        }),
+      );
     }),
   );
 
@@ -95,7 +118,10 @@ export function createApp(root: string): Hono {
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));
       if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
-      return c.html(modulesPage(found.answer, found.row));
+      // Labels for the drawing come from the registry of the snapshot the answer was made against,
+      // so a module renamed since then still shows the name it had when the claim was made.
+      const modules = store.readModules(found.row.snapshot_id) as unknown as ModuleRow[];
+      return c.html(modulesPage(found.answer, found.row, modules));
     }),
   );
 
@@ -104,7 +130,11 @@ export function createApp(root: string): Hono {
       const found = loadAnswer(store, root, c.req.param("id"));
       if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
       return c.html(
-        flowPage({ ...found, selectedStepId: c.req.query("step") }),
+        flowPage({
+          ...found,
+          selectedStepId: c.req.query("step"),
+          selectedBranchId: c.req.query("branch"),
+        }),
       );
     }),
   );
