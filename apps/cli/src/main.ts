@@ -3,7 +3,7 @@ import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
 import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
@@ -22,12 +22,19 @@ import {
   type Verification,
 } from "@veriflow/answers";
 import { DEFAULT_DEPTH, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from "@veriflow/metrics";
+import {
+  ConflictError,
+  commitExport,
+  dumpStore,
+  prepareAnswerExport,
+  restoreDump,
+} from "@veriflow/export";
 import { startServer } from "@veriflow/server";
 import { classifyQuestion, rankEntryPoints } from "@veriflow/flow-answer";
 import { createInterface } from "node:readline/promises";
 import { captureSnapshot, diffHashes, readGitFacts } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
-import { InitError, ProjectLock, initWorkspace, readConfig } from "@veriflow/workspace";
+import { InitError, ProjectLock, initWorkspace, readConfig, DEFAULT_DOCUMENTATION } from "@veriflow/workspace";
 import type { Snapshot } from "@veriflow/contracts";
 
 const program = new Command();
@@ -41,7 +48,15 @@ interface Ctx {
   close(): void;
 }
 
-function open(pathArg?: string): Ctx {
+interface OpenOptions {
+  /**
+   * Whether to record the project row. A restore brings its own, and writing one first would leave
+   * the database non-empty — which is exactly what a restore refuses to write into.
+   */
+  touchProject?: boolean;
+}
+
+function open(pathArg?: string, options: OpenOptions = {}): Ctx {
   const root = resolve(pathArg ?? process.cwd());
   const git = readGitFacts(root);
   if (!git.isRepository) {
@@ -61,7 +76,9 @@ function open(pathArg?: string): Ctx {
   }
 
   const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
-  store.upsertProject(projectId, root, config?.project.name ?? basename(root));
+  if (options.touchProject !== false) {
+    store.upsertProject(projectId, root, config?.project.name ?? basename(root));
+  }
   const ctx: Ctx = {
     root,
     projectId,
@@ -1039,6 +1056,196 @@ program
     for (const n of diff.vanishedNodes) log(`  ${n.symbol}  ${n.path}`);
     if (diff.vanishedNodesTotal > diff.vanishedNodes.length) {
       log(`  … and ${diff.vanishedNodesTotal - diff.vanishedNodes.length} more`);
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ export */
+
+program
+  .command("export")
+  .argument("[answerId]")
+  .argument("[path]")
+  .option("--doc", "write the answer as a markdown document with a mermaid diagram")
+  .option("--json", "dump the store to a portable file instead")
+  .option("--all", "with --json: include the tables a re-index would rebuild")
+  .option("--no-transcripts", "with --json: leave the agent transcripts out")
+  .option("--out <file>", "with --json: where to write the dump (default: stdout)")
+  .option("--to <path>", "repository-relative target, inside a documentation root")
+  .option("--expect <revision>", "the revision this update replaces")
+  .option("--owner <name>", "frontmatter owner")
+  .option("--yes", "write without asking")
+  .option("--force-stale", "export an answer whose citations no longer all locate")
+  .description("write an approved answer into the repository as markdown, or dump the store")
+  .action(async (
+    answerArg: string | undefined,
+    pathArg: string | undefined,
+    options: {
+      doc?: boolean;
+      json?: boolean;
+      all?: boolean;
+      transcripts?: boolean;
+      out?: string;
+      to?: string;
+      expect?: string;
+      owner?: string;
+      yes?: boolean;
+      forceStale?: boolean;
+    },
+  ) => {
+    // Same disambiguation as `verify` and `metrics`: an answer id is never a workspace directory.
+    let answer = answerArg;
+    let path = pathArg;
+    if (answer && !path && existsSync(join(resolve(answer), ".veriflow", "veriflow.db"))) {
+      path = answer;
+      answer = undefined;
+    }
+
+    const ctx = open(path);
+
+    if (options.json) {
+      let dump;
+      try {
+        dump = dumpStore(ctx.store, ctx.root, {
+          ...(options.all ? { all: true } : {}),
+          transcripts: options.transcripts !== false,
+        });
+      } catch (error) {
+        ctx.close();
+        fail(error instanceof Error ? error.message : String(error));
+      }
+      const text = JSON.stringify(dump, null, 2);
+      if (options.out) {
+        writeFileSync(resolve(options.out), text, "utf8");
+        log(`Wrote ${options.out} — ${(Buffer.byteLength(text) / 1024).toFixed(1)} KB`);
+        for (const [table, count] of Object.entries(dump.counts)) {
+          if (count > 0) log(`  ${String(count).padStart(7)}  ${table}`);
+        }
+        log(``);
+        log(
+          `  transcripts ${dump.includes.transcripts ? "included — the agent's own words, which may quote anything it read" : "excluded"}`,
+        );
+        log(`  index tables ${dump.includes.index ? "included" : "excluded — a re-index rebuilds them"}`);
+        log(`  restore with: veriflow import ${options.out} <empty workspace>`);
+      } else {
+        log(text);
+      }
+      ctx.close();
+      return;
+    }
+
+    if (!options.doc) {
+      ctx.close();
+      fail("say what to export: --doc for a markdown document, --json for a portable dump");
+    }
+    if (!answer) {
+      ctx.close();
+      fail("which answer? - run: veriflow answers");
+    }
+
+    const settings = readConfig(ctx.root)?.documentation ?? DEFAULT_DOCUMENTATION;
+    let prepared;
+    try {
+      prepared = prepareAnswerExport(ctx.store, ctx.root, {
+        answerId: answer,
+        documentation: settings,
+        ...(options.to ? { targetPath: options.to } : {}),
+        ...(options.expect ? { expectedRevision: options.expect, mode: "update" as const } : {}),
+        ...(options.owner ? { frontmatter: { owner: options.owner } } : {}),
+      });
+    } catch (error) {
+      ctx.close();
+      if (error instanceof ConflictError) {
+        fail(
+          `${error.message}\n` +
+            (error.actualRevision ? `  re-export with: --expect ${error.actualRevision}` : ""),
+        );
+      }
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    const { pending, document, stored } = prepared;
+    log(`${stored.row.id.slice(0, 8)}  ${stored.answer.title}`);
+    log(`  target       ${pending.target.relative}  (${pending.mode} — ${prepared.modeReason})`);
+    log(`  document     ${document.text.split("\n").length} lines · ${pending.bytes} bytes · ${document.diagramParticipants} participants`);
+    log(`  freshness    ${stored.freshness.state} — ${thresholdOf(stored.freshness.state)}`);
+    log(``);
+
+    if (pending.unchanged) {
+      pending.abort();
+      log(`Already up to date: the file on disk is byte for byte what this answer generates.`);
+      ctx.close();
+      return;
+    }
+
+    // The diff before anything lands, from the bytes that will actually land — the temporary file
+    // is already written, so this preview cannot disagree with the result.
+    const added = pending.diff.filter((d) => d.kind === "+").length;
+    const removed = pending.diff.filter((d) => d.kind === "-").length;
+    log(`Diff — +${added} / -${removed}`);
+    for (const line of pending.diff.slice(0, 60)) {
+      log(`  ${line.kind}${line.text.slice(0, 118)}`);
+    }
+    if (pending.diff.length > 60) log(`  … ${pending.diff.length - 60} more diff lines`);
+    log(``);
+
+    if (prepared.requiresStaleConfirmation && !options.forceStale) {
+      pending.abort();
+      ctx.close();
+      fail(
+        `this answer is ${stored.freshness.state}: at least one of its citations no longer locates in the code.\n` +
+          `  The document says so in its own text. Publish it anyway with --force-stale, or re-verify first:\n` +
+          `    veriflow verify ${stored.row.id.slice(0, 8)}`,
+      );
+    }
+
+    if (!options.yes) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const reply = (await rl.question(`Write ${pending.target.relative}? [y/N] `)).trim().toLowerCase();
+      rl.close();
+      if (reply !== "y" && reply !== "yes") {
+        pending.abort();
+        log(`Nothing written.`);
+        ctx.close();
+        return;
+      }
+    }
+
+    const result = commitExport(ctx.store, prepared);
+    log(``);
+    log(`Wrote ${result.targetPath} — revision ${result.revision}`);
+    log(`  Nothing was staged, committed or branched. The file is in your working tree; it is yours now.`);
+    log(`  Re-export after changes with: veriflow export ${stored.row.id.slice(0, 8)} --doc`);
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ import */
+
+program
+  .command("import")
+  .argument("<file>")
+  .argument("[path]")
+  .description("restore a portable dump into an empty workspace")
+  .action((file: string, pathArg: string | undefined) => {
+    const ctx = open(pathArg, { touchProject: false });
+    let dump;
+    try {
+      dump = JSON.parse(readFileSync(resolve(file), "utf8"));
+    } catch (error) {
+      ctx.close();
+      fail(`cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      const restored = restoreDump(ctx.store, dump);
+      log(`Restored ${restored.rows} rows across ${restored.tables} tables from ${file}`);
+      const answers = ctx.store.listAnswers();
+      for (const a of answers) log(`  ${String(a["id"]).slice(0, 8)}  ${a["title"]}`);
+      log(``);
+      log(`  Paths inside the dump are relative to the project it came from.`);
+      log(`  Run \`veriflow index\` here before verifying: freshness compares against this working tree.`);
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
     }
     ctx.close();
   });

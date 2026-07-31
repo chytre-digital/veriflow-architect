@@ -112,6 +112,11 @@ features:
     status: ready
     dependsOn: [F005, F006]
     outcome: Approved answers become committed markdown with generated mermaid.
+    notes: >-
+      Writes one file, into a configured documentation root, with no Git command of any kind: not
+      add, not status, not check-ignore. Nothing is overwritten without the caller naming the
+      revision it replaces, the approval diff is computed from the bytes that will land, and the
+      portable dump carries what a re-index cannot rebuild with every absolute path removed.
   F010:
     title: VeriFlow MCP server for design and review
     spec: 10-mcp-server.md

@@ -225,6 +225,8 @@ export interface FlowPageInput {
   snapshot: SnapshotFacts;
   selectedStepId?: string;
   selectedBranchId?: string;
+  /** Where this answer has been published, if anywhere. An answer that does not know cannot say. */
+  exports?: Array<{ targetPath: string; revision: string; exportedAt: string }>;
 }
 
 /**
@@ -294,7 +296,14 @@ export function flowPage(input: FlowPageInput): string {
        <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
        <span class="pill">${answer.openQuestions.length} open</span>
        ${row.status === "superseded" ? `<span class="pill warn">superseded — a newer answer exists</span>` : ""}
-       ${input.snapshot.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}</div>
+       ${input.snapshot.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}
+       ${
+         input.exports?.length
+           ? `<a class="pill" href="/source?path=${encodeURIComponent(input.exports[0]!.targetPath)}&line=1"
+                title="exported ${esc(input.exports[0]!.exportedAt.slice(0, 16).replace("T", " "))} at revision ${esc(input.exports[0]!.revision)}"
+                style="text-decoration:none">published → ${esc(input.exports[0]!.targetPath)}</a>`
+           : ""
+       }</div>
      </header>
      ${nav(row.id, "flow")}
      <main>

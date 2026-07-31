@@ -7,6 +7,23 @@ import { DEFAULT_PROVIDER_ID } from "@veriflow/providers";
 export const CONFIG_FILE = "config.yaml";
 export const VERIFLOW_DIR = ".veriflow";
 
+/**
+ * Where an exported document may be written, and how it is stamped. Optional as a whole: a workspace
+ * created before F009 has no such section, and inherits these defaults rather than failing to load.
+ */
+export const DocumentationSchema = z.object({
+  /** Everything an export may write into. A target outside every root is refused. */
+  roots: z.array(z.string()).default(["docs"]),
+  /** Where a flow document goes by default; the answer's slug becomes the file name. */
+  flowExportPath: z.string().default("docs/architecture/flows"),
+  /** Frontmatter the project's convention requires. Values are literal, except `last-reviewed`. */
+  frontmatter: z.record(z.string()).default({ status: "draft", owner: "TODO" }),
+});
+export type Documentation = z.infer<typeof DocumentationSchema>;
+
+/** What a workspace created before F009 inherits, so an old config still exports. */
+export const DEFAULT_DOCUMENTATION: Documentation = DocumentationSchema.parse({});
+
 export const ConfigSchema = z.object({
   schemaVersion: z.literal(1),
   project: z.object({ id: z.string(), name: z.string() }),
@@ -16,6 +33,7 @@ export const ConfigSchema = z.object({
     autoUpdate: z.boolean(),
   }),
   analysis: z.object({ exclude: z.array(z.string()) }),
+  documentation: DocumentationSchema.default({}),
 });
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -62,6 +80,13 @@ function toYaml(config: Config): string {
     `  exclude:`,
     ...config.analysis.exclude.map((e) => `    - ${e}`),
     ``,
+    `documentation:`,
+    `  roots:`,
+    ...config.documentation.roots.map((r) => `    - ${r}`),
+    `  flowExportPath: ${config.documentation.flowExportPath}`,
+    `  frontmatter:`,
+    ...Object.entries(config.documentation.frontmatter).map(([k, v]) => `    ${k}: ${v}`),
+    ``,
   ].join("\n");
 }
 
@@ -72,19 +97,45 @@ export function parseConfig(text: string): Config {
     const hit = lines.find((l) => l.trim().startsWith(`${key}:`));
     return hit?.slice(hit.indexOf(":") + 1).trim() || undefined;
   };
-  const exclude: string[] = [];
-  let inExclude = false;
-  for (const line of lines) {
-    if (line.trim() === "exclude:") {
-      inExclude = true;
-      continue;
+  /** Items of the first `- ` list under a key. The only list shape this writer produces. */
+  const list = (key: string): string[] => {
+    const out: string[] = [];
+    let inside = false;
+    for (const line of lines) {
+      if (line.trim() === `${key}:`) {
+        inside = true;
+        continue;
+      }
+      if (!inside) continue;
+      const item = /^\s+- (.+)$/.exec(line);
+      if (item) out.push(item[1]!.trim());
+      else if (line.trim() !== "") break;
     }
-    if (inExclude) {
-      const m = /^\s+- (.+)$/.exec(line);
-      if (m) exclude.push(m[1]!.trim());
-      else if (line.trim() !== "") inExclude = false;
+    return out;
+  };
+
+  /** Key/value pairs nested under a key, for the one map the config carries. */
+  const map = (key: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    let indent = -1;
+    for (const line of lines) {
+      if (line.trim() === `${key}:`) {
+        indent = line.length - line.trimStart().length;
+        continue;
+      }
+      if (indent < 0) continue;
+      if (line.trim() === "") continue;
+      const own = line.length - line.trimStart().length;
+      if (own <= indent) break;
+      const pair = /^\s*([A-Za-z0-9_-]+):\s*(.*)$/.exec(line);
+      if (pair && pair[2] !== "") out[pair[1]!] = pair[2]!.trim();
     }
-  }
+    return out;
+  };
+
+  const exclude = list("exclude");
+  const roots = list("roots");
+  const frontmatter = map("frontmatter");
   return ConfigSchema.parse({
     schemaVersion: Number(scalar("schemaVersion") ?? 1),
     project: { id: scalar("id") ?? "", name: scalar("name") ?? "" },
@@ -94,6 +145,11 @@ export function parseConfig(text: string): Config {
       autoUpdate: (scalar("autoUpdate") ?? "true") === "true",
     },
     analysis: { exclude },
+    documentation: {
+      ...(roots.length ? { roots } : {}),
+      ...(scalar("flowExportPath") ? { flowExportPath: scalar("flowExportPath") } : {}),
+      ...(Object.keys(frontmatter).length ? { frontmatter } : {}),
+    },
   });
 }
 
@@ -165,12 +221,13 @@ export function initWorkspace(rootArg: string, options: InitOptions = {}): InitR
   mkdirSync(dir, { recursive: true });
 
   const id = basename(root).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const config: Config = {
+  const config: Config = ConfigSchema.parse({
     schemaVersion: 1,
     project: { id, name: options.name ?? basename(root) },
     index: { provider: DEFAULT_PROVIDER_ID, autoUpdate: true },
     analysis: { exclude: ["node_modules", ".next", "dist", "build", "coverage"] },
-  };
+    documentation: {},
+  });
   writeFileSync(configPath, toYaml(config), "utf8");
 
   const gitignorePath = join(dir, ".gitignore");

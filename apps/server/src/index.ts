@@ -141,6 +141,11 @@ export function createApp(root: string): Hono {
           ...found,
           selectedStepId: c.req.query("step"),
           selectedBranchId: c.req.query("branch"),
+          exports: store.listExports(found.row.id).map((e) => ({
+            targetPath: String(e["target_path"]),
+            revision: String(e["revision"]),
+            exportedAt: String(e["exported_at"]),
+          })),
         }),
       );
     }),

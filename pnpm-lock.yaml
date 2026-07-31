@@ -51,6 +51,9 @@ importers:
       '@veriflow/diagram':
         specifier: workspace:*
         version: link:../../packages/diagram
+      '@veriflow/export':
+        specifier: workspace:*
+        version: link:../../packages/export
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../../packages/flow-answer
@@ -147,6 +150,18 @@ importers:
         specifier: workspace:*
         version: link:../flow-answer
 
+  packages/export:
+    dependencies:
+      '@veriflow/answers':
+        specifier: workspace:*
+        version: link:../answers
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../flow-answer
+      '@veriflow/store':
+        specifier: workspace:*
+        version: link:../store
+
   packages/flow-answer:
     dependencies:
       '@veriflow/contracts':
@@ -167,6 +182,9 @@ importers:
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../flow-answer
+      '@veriflow/metrics':
+        specifier: workspace:*
+        version: link:../metrics
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../snapshot

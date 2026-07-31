@@ -214,6 +214,18 @@ CREATE TABLE IF NOT EXISTS verification_results (
   PRIMARY KEY (verification_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS exports (
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  target_path TEXT NOT NULL,
+  revision TEXT NOT NULL,
+  exported_at TEXT NOT NULL,
+  bytes INTEGER NOT NULL,
+  mode TEXT NOT NULL,
+  freshness TEXT NOT NULL,
+  PRIMARY KEY (answer_id, target_path, exported_at)
+);
+CREATE INDEX IF NOT EXISTS exports_by_answer ON exports(answer_id, exported_at DESC);
+
 CREATE TABLE IF NOT EXISTS flow_metrics (
   answer_id TEXT NOT NULL REFERENCES answers(id),
   fingerprint TEXT NOT NULL,
@@ -871,6 +883,106 @@ export class Store {
          FROM verification_results WHERE verification_id = ? ORDER BY seq`,
       )
       .all(verificationId) as Array<Record<string, unknown>>;
+  }
+
+  /* ------------------------------------------------------------- exports (F009) */
+
+  /**
+   * Where an answer was published, and at which revision. Kept as history rather than a current
+   * value: a document that was replaced by hand is a thing worth being able to see.
+   */
+  recordExport(e: {
+    answerId: string;
+    targetPath: string;
+    revision: string;
+    exportedAt: string;
+    bytes: number;
+    mode: string;
+    freshness: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO exports
+         (answer_id, target_path, revision, exported_at, bytes, mode, freshness)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(e.answerId, e.targetPath, e.revision, e.exportedAt, e.bytes, e.mode, e.freshness);
+  }
+
+  latestExportFor(answerId: string, targetPath: string): Record<string, unknown> | undefined {
+    return this.db
+      .prepare(
+        `SELECT * FROM exports WHERE answer_id = ? AND target_path = ?
+         ORDER BY exported_at DESC LIMIT 1`,
+      )
+      .get(answerId, targetPath) as Record<string, unknown> | undefined;
+  }
+
+  listExports(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare("SELECT * FROM exports WHERE answer_id = ? ORDER BY exported_at DESC")
+      .all(answerId) as Array<Record<string, unknown>>;
+  }
+
+  readQuestion(id: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM questions WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  /* --------------------------------------------------------- dump and restore */
+
+  schemaVersion(): number {
+    return SCHEMA_VERSION;
+  }
+
+  /** Every row of one table, verbatim. The dump is the store's own shape, not a second contract. */
+  dumpTable(name: string): Array<Record<string, unknown>> {
+    this.assertKnownTable(name);
+    return this.db.prepare(`SELECT * FROM ${name}`).all() as Array<Record<string, unknown>>;
+  }
+
+  restoreTable(name: string, rows: ReadonlyArray<Record<string, unknown>>): void {
+    this.assertKnownTable(name);
+    if (rows.length === 0) return;
+    const columns = Object.keys(rows[0]!);
+    const stmt = this.db.prepare(
+      `INSERT INTO ${name} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+    );
+    this.db.exec("BEGIN");
+    try {
+      for (const row of rows) {
+        stmt.run(...columns.map((c) => (row[c] === undefined ? null : (row[c] as never))));
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  /** Empty means nothing a restore could collide with — the schema's own tables do not count. */
+  isEmpty(): boolean {
+    for (const name of this.tableNames()) {
+      const row = this.db.prepare(`SELECT 1 FROM ${name} LIMIT 1`).get() as unknown;
+      if (row) return false;
+    }
+    return true;
+  }
+
+  private tableNames(): string[] {
+    return (
+      this.db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .all() as Array<{ name: string }>
+    )
+      .map((r) => r.name)
+      .filter((n) => n !== "meta");
+  }
+
+  /** The table name reaches SQL as an identifier, so it is checked against the schema, never trusted. */
+  private assertKnownTable(name: string): void {
+    if (!this.tableNames().includes(name)) throw new Error(`no such table: ${name}`);
   }
 
   /* ------------------------------------------------------------ metrics (F008) */
