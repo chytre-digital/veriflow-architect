@@ -162,6 +162,20 @@ CREATE TABLE IF NOT EXISTS answer_citations (
   PRIMARY KEY (answer_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS answer_corrections (
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  id TEXT NOT NULL,
+  target_kind TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  original TEXT NOT NULL,
+  corrected TEXT NOT NULL,
+  author TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (answer_id, id)
+);
+
 CREATE TABLE IF NOT EXISTS call_nodes (
   snapshot_id TEXT NOT NULL,
   id TEXT NOT NULL,
@@ -608,6 +622,100 @@ export class Store {
       .all(answerId) as Array<Record<string, unknown>>;
   }
 
+  /**
+   * A person marking that they have read an answer. Nothing else may set this: an answer is
+   * unreviewed until a human says otherwise, and every surface serves that label unchanged.
+   */
+  setReviewState(answerId: string, state: "unreviewed" | "reviewed"): void {
+    this.db.prepare("UPDATE answers SET review_state = ? WHERE id = ?").run(state, answerId);
+  }
+
+  /**
+   * A human correction to a submitted answer. The answer itself is never rewritten: the original
+   * value is part of the record, so the corrected text can be served with the agent's own words one
+   * step away rather than lost (D13).
+   */
+  insertCorrection(correction: {
+    id: string;
+    answerId: string;
+    targetKind: string;
+    targetId: string;
+    field: string;
+    original: string;
+    corrected: string;
+    author: string;
+    note?: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO answer_corrections
+         (answer_id, id, target_kind, target_id, field, original, corrected, author, note, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        correction.answerId,
+        correction.id,
+        correction.targetKind,
+        correction.targetId,
+        correction.field,
+        correction.original,
+        correction.corrected,
+        correction.author,
+        correction.note ?? null,
+        new Date().toISOString(),
+      );
+  }
+
+  readCorrections(answerId: string): Array<Record<string, unknown>> {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, answer_id, target_kind, target_id, field, original, corrected, author, note, created_at
+           FROM answer_corrections WHERE answer_id = ? ORDER BY created_at`,
+        )
+        .all(answerId) as Array<Record<string, unknown>>
+    ).map((r) => ({
+      id: r["id"],
+      answerId: r["answer_id"],
+      targetKind: r["target_kind"],
+      targetId: r["target_id"],
+      field: r["field"],
+      original: r["original"],
+      corrected: r["corrected"],
+      author: r["author"],
+      note: r["note"] ?? undefined,
+      createdAt: r["created_at"],
+    }));
+  }
+
+  /**
+   * Title, cited path, or anything in the stored body — an agent asking "which flows touch this
+   * file" and one asking "which flows mention refunds" are the same query from the store's side.
+   */
+  searchAnswers(query: string): Array<Record<string, unknown>> {
+    const like = `%${query}%`;
+    return this.db
+      .prepare(
+        `SELECT DISTINCT a.id, a.title, a.snapshot_id, a.review_state, a.verified, a.unverified,
+                a.open_questions, a.created_at
+         FROM answers a LEFT JOIN answer_citations c ON c.answer_id = a.id
+         WHERE a.title LIKE ? OR c.path LIKE ? OR a.body_json LIKE ?
+         ORDER BY a.created_at DESC LIMIT 50`,
+      )
+      .all(like, like, like) as Array<Record<string, unknown>>;
+  }
+
+  /** Which stored answers cite a given file, with how many citations land in it. */
+  answersCitingPath(path: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT a.id, a.title, a.review_state, a.open_questions, COUNT(*) AS citations
+         FROM answer_citations c JOIN answers a ON a.id = c.answer_id
+         WHERE c.path = ? GROUP BY a.id ORDER BY citations DESC`,
+      )
+      .all(path) as Array<Record<string, unknown>>;
+  }
+
   readSnapshot(id: string): Record<string, unknown> | undefined {
     return this.db.prepare("SELECT * FROM snapshots WHERE id = ?").get(id) as
       | Record<string, unknown>
@@ -699,6 +807,62 @@ export class Store {
       .all(snapshotId, symbolId) as Array<Record<string, unknown>>;
   }
 
+  /**
+   * Every symbol with exactly this name. Two files can define `handler`, and a lookup that picks
+   * one of them silently is how an agent ends up reasoning about the wrong function.
+   */
+  symbolsByName(snapshotId: string, name: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT id, name, kind, path, line_start, line_end FROM symbols
+         WHERE snapshot_id = ? AND name = ? ORDER BY path, line_start`,
+      )
+      .all(snapshotId, name) as Array<Record<string, unknown>>;
+  }
+
+  /** Call-graph nodes whose symbol carries this name — the same ambiguity, on the graph side. */
+  callNodesBySymbol(snapshotId: string, symbol: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT id, symbol, path, line, module_id, kind FROM call_nodes
+         WHERE snapshot_id = ? AND symbol = ? ORDER BY path, line`,
+      )
+      .all(snapshotId, symbol) as Array<Record<string, unknown>>;
+  }
+
+  callNodesByIds(snapshotId: string, ids: readonly string[]): Array<Record<string, unknown>> {
+    if (ids.length === 0) return [];
+    const holes = ids.map(() => "?").join(",");
+    return this.db
+      .prepare(
+        `SELECT id, symbol, path, line, module_id, kind FROM call_nodes
+         WHERE snapshot_id = ? AND id IN (${holes}) ORDER BY id`,
+      )
+      .all(snapshotId, ...ids) as Array<Record<string, unknown>>;
+  }
+
+  /** One breadth-first level of the call graph. Reachability walks these rather than loading it all. */
+  callEdgesFrom(snapshotId: string, ids: readonly string[]): Array<Record<string, unknown>> {
+    if (ids.length === 0) return [];
+    const holes = ids.map(() => "?").join(",");
+    return this.db
+      .prepare(
+        `SELECT from_node, to_node, kind, inferred, rule, sites FROM call_edges
+         WHERE snapshot_id = ? AND from_node IN (${holes})`,
+      )
+      .all(snapshotId, ...ids) as Array<Record<string, unknown>>;
+  }
+
+  entryPointsMatching(snapshotId: string, needle: string): Array<Record<string, unknown>> {
+    const like = `%${needle}%`;
+    return this.db
+      .prepare(
+        `SELECT id, symbol_id, kind, label, path, line FROM entry_points
+         WHERE snapshot_id = ? AND (id LIKE ? OR label LIKE ?) ORDER BY label`,
+      )
+      .all(snapshotId, like, like) as Array<Record<string, unknown>>;
+  }
+
   /* --------------------------------------------------- call graph (F003 + F006) */
 
   saveCallGraph(
@@ -752,6 +916,16 @@ export class Store {
       traffic: JSON.parse(meta.traffic_json),
       buckets: JSON.parse(meta.buckets_json),
     };
+  }
+
+  /** Every stored edge of the drawn graph, inference flag included — it is part of the claim. */
+  readCallEdges(snapshotId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT from_node, to_node, kind, inferred, rule, sites FROM call_edges
+         WHERE snapshot_id = ? ORDER BY from_node, to_node`,
+      )
+      .all(snapshotId) as Array<Record<string, unknown>>;
   }
 
   callNeighbours(snapshotId: string, nodeId: string): {

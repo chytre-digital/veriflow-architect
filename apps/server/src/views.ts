@@ -10,35 +10,11 @@ import {
 } from "@veriflow/diagram";
 import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
+import type { AnswerRow, CitationRow, Freshness, SnapshotFacts } from "@veriflow/answers";
 
-export interface CitationRow {
-  subject_kind: string;
-  subject_id: string;
-  path: string;
-  line: number;
-  symbol: string | null;
-  state: string;
-  reason: string | null;
-}
-
-export interface AnswerRow {
-  id: string;
-  title: string;
-  verified: number;
-  unverified: number;
-  open_questions: number;
-  review_state: string;
-  created_at: string;
-  snapshot_id: string;
-}
-
-export interface Freshness {
-  capturedAt: string;
-  dirtyAtCapture: boolean;
-  citedFiles: number;
-  changedCitedFiles: number;
-  commit?: string;
-}
+// The browser and the MCP server read the same measurements from the same place, so they cannot
+// report different numbers about the same answer.
+export type { AnswerRow, CitationRow, Freshness, SnapshotFacts };
 
 const CSS = `
 :root { color-scheme: light dark; --bg:#fbfbfa; --fg:#1a1a19; --dim:#6b6b68; --line:#e2e2de;
@@ -181,10 +157,13 @@ function ratioPill(verified: number, unverified: number): string {
 }
 
 export function freshnessPill(f: Freshness): string {
-  if (f.changedCitedFiles === 0) {
+  if (f.citedFilesChanged === 0) {
     return `<span class="pill good">fresh — none of its ${f.citedFiles} cited files changed</span>`;
   }
-  return `<span class="pill warn">${f.changedCitedFiles} of ${f.citedFiles} cited files changed since capture</span>`;
+  const cls = f.state === "broken" ? "bad" : "warn";
+  return `<span class="pill ${cls}">${f.citedFilesChanged} of ${f.citedFiles} cited files changed since capture${
+    f.citedFilesMissing > 0 ? ` · ${f.citedFilesMissing} gone` : ""
+  }</span>`;
 }
 
 export function answersPage(rows: AnswerRow[], project: string): string {
@@ -213,6 +192,7 @@ export interface FlowPageInput {
   row: AnswerRow;
   citations: CitationRow[];
   freshness: Freshness;
+  snapshot: SnapshotFacts;
   selectedStepId?: string;
   selectedBranchId?: string;
 }
@@ -282,7 +262,7 @@ export function flowPage(input: FlowPageInput): string {
     `<header><h1>${esc(answer.title)}</h1>
        <div class="meta">${ratioPill(row.verified, row.unverified)} ${freshnessPill(freshness)}
        <span class="pill">${answer.openQuestions.length} open</span>
-       ${freshness.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}</div>
+       ${input.snapshot.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}</div>
      </header>
      ${nav(row.id, "flow")}
      <main>

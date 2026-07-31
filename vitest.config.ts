@@ -22,6 +22,7 @@ export default defineConfig({
       "@veriflow/providers": p("./packages/providers/src/index.ts"),
       "@veriflow/agent-session": p("./packages/agent-session/src/index.ts"),
       "@veriflow/flow-answer": p("./packages/flow-answer/src/index.ts"),
+      "@veriflow/answers": p("./packages/answers/src/index.ts"),
       "@veriflow/mcp-server": p("./packages/mcp-server/src/index.ts"),
       "@veriflow/diagram": p("./packages/diagram/src/index.ts"),
       "@veriflow/server": p("./apps/server/src/index.ts"),

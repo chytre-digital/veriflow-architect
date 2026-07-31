@@ -520,22 +520,45 @@ entities `404`. Exporting is the only endpoint that writes into the repository.
 consumption surface, and it is distinct from the submission tools used inside a run.
 
 ```text
-list_flow_answers()
-get_flow_answer(id)
+list_flow_answers(filter?, reviewState?, cursor?)
+get_flow_answer(answerId)
+get_flow_steps(answerId, phaseId?, cursor?)
 get_flow_paths(answerId)
 get_flow_modules(answerId)
 get_external_systems(answerId)
-get_call_graph(snapshotId, entryPoint?)
-get_callers(symbol) / get_callees(symbol)
-get_metrics(answerId)
-get_coverage_gaps(answerId)
+get_open_questions(answerId)
 get_freshness(answerId)
-search_answers(query)
+search_answers(query, cursor?)
+get_architecture()
+get_call_graph(entryPoint?, cursor?)
+get_callers(symbol, symbolId?) / get_callees(symbol, symbolId?)
+get_reachability(symbol, symbolId?, depth?)
 ```
 
-Every response states its snapshot, commit, and freshness, so an agent can tell whether it is
-reasoning about current code. No MCP tool writes canonical state, edits source, runs a command, or
-mutates Git.
+`get_metrics` and `get_coverage_gaps` are absent until F008 builds them, rather than present and
+empty, so an agent never plans around a capability that is not there.
+
+Every response is a `ToolResponseEnvelope`: snapshot, freshness, review state, then data. A test
+calls every registered tool and fails if any of the three is missing, so no tool can opt out. No MCP
+tool writes canonical state, edits source, runs a command, or mutates Git, and the server opens no
+network listener.
+
+Unreviewed drafts are served rather than withheld, which is exactly why the label is not optional.
+`review.state` is `unreviewed` until a human says otherwise, `reviewed` when one has, and
+`machine-derived` for the module registry and the call graph — nobody authors those, so there is
+nothing for a person to have checked.
+
+Responses are bounded by bytes, not by item count: two hundred call edges and two hundred steps are
+not the same amount of reading. A page shrinks until it fits and carries a cursor. A whole answer is
+one unit and is not sharded — over budget it sheds citations, then step reasoning, and
+`truncated.omitted` says what went and which tool serves it instead.
+
+The read server needs no code-intelligence provider, because it serves recorded data rather than
+re-deriving it. Freshness lives in `packages/answers` and nowhere else, so the browser and the MCP
+server cannot report different numbers about the same answer.
+
+The measured cost against `main-panel`: 14 tools, whole answer 46 KB, architecture 20 KB, a call
+graph page 35 KB of 1021 edges, every read under 20 ms once the store is open.
 
 ## CLI commands
 
@@ -629,6 +652,7 @@ packages/
 ├── metrics/              # deterministic code metrics
 ├── agent-session/        # client adapters, streaming, ask_user, transcripts
 ├── flow-answer/          # contract, validation, citation verification, mermaid
+├── answers/              # reads over stored answers: freshness, corrections, the envelope
 └── mcp-server/
 ```
 

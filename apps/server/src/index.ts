@@ -1,9 +1,7 @@
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { FlowAnswerSchema } from "@veriflow/flow-answer";
+import { loadStoredAnswer, type StoredAnswer } from "@veriflow/answers";
 import { Store } from "@veriflow/store";
 import {
   answersPage,
@@ -15,9 +13,7 @@ import {
   pathsPage,
   page,
   type AnswerRow,
-  type CitationRow,
   type EntryPointRow,
-  type Freshness,
   type ModuleRow,
 } from "./views.js";
 import type { TrafficCell } from "@veriflow/contracts";
@@ -158,7 +154,9 @@ export function createApp(root: string): Hono {
       return c.json({
         contractVersion: 1,
         answer: found.answer,
+        snapshot: found.snapshot,
         freshness: found.freshness,
+        corrections: found.corrections,
         citations: found.citations,
       });
     }),
@@ -167,50 +165,12 @@ export function createApp(root: string): Hono {
   return app;
 }
 
-function loadAnswer(
-  store: Store,
-  root: string,
-  id: string,
-):
-  | { answer: ReturnType<typeof FlowAnswerSchema.parse>; row: AnswerRow; citations: CitationRow[]; freshness: Freshness }
-  | undefined {
-  const raw = store.readAnswer(id) ?? store.findAnswerByPrefix(id);
-  if (!raw) return undefined;
-  const answer = FlowAnswerSchema.parse(JSON.parse(raw["body_json"] as string));
-  const row = raw as unknown as AnswerRow;
-  const citations = store.readAnswerCitations(row.id) as unknown as CitationRow[];
-  return { answer, row, citations, freshness: freshnessOf(store, root, row, citations) };
-}
-
 /**
- * Freshness is measured on the files this answer cites, not on commits. A week of work elsewhere in
- * the repository does not make an answer about checkout stale, and an uncommitted edit to a cited
- * file does not hide.
+ * Freshness, corrections and the parsed body all come from the shared application service. The
+ * browser is a view of the same reads the MCP server serves, not a second implementation of them.
  */
-function freshnessOf(store: Store, root: string, row: AnswerRow, citations: CitationRow[]): Freshness {
-  const snapshot = store.readSnapshot(row.snapshot_id);
-  const recorded = new Map(store.readFileHashes(row.snapshot_id).map((h) => [h.path, h.sha256]));
-  const cited = [...new Set(citations.map((c) => c.path))];
-
-  let changed = 0;
-  for (const path of cited) {
-    const before = recorded.get(path);
-    const file = join(root, path);
-    if (!existsSync(file)) {
-      changed += 1;
-      continue;
-    }
-    const now = createHash("sha256").update(readFileSync(file)).digest("hex");
-    if (before !== now) changed += 1;
-  }
-
-  return {
-    capturedAt: String(snapshot?.["created_at"] ?? row.created_at),
-    dirtyAtCapture: Boolean(snapshot?.["dirty"]),
-    citedFiles: cited.length,
-    changedCitedFiles: changed,
-    commit: snapshot?.["commit_sha"] ? String(snapshot["commit_sha"]).slice(0, 12) : undefined,
-  };
+function loadAnswer(store: Store, root: string, id: string): StoredAnswer | undefined {
+  return loadStoredAnswer(store, root, id);
 }
 
 export async function startServer(options: ServerOptions): Promise<{ url: string; close(): void }> {

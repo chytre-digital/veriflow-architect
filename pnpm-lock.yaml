@@ -78,6 +78,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@veriflow/answers':
+        specifier: workspace:*
+        version: link:../../packages/answers
       '@veriflow/diagram':
         specifier: workspace:*
         version: link:../../packages/diagram
@@ -96,6 +99,21 @@ importers:
       '@veriflow/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/answers:
+    dependencies:
+      '@veriflow/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../flow-answer
+      '@veriflow/snapshot':
+        specifier: workspace:*
+        version: link:../snapshot
+      '@veriflow/store':
+        specifier: workspace:*
+        version: link:../store
 
   packages/callgraph:
     dependencies:
@@ -128,6 +146,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@3.25.76)
+      '@veriflow/answers':
+        specifier: workspace:*
+        version: link:../answers
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../flow-answer

@@ -8,7 +8,7 @@ import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } f
 import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
 import { AgentSession, ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
-import { serveRun } from "@veriflow/mcp-server";
+import { serveRead, serveRun } from "@veriflow/mcp-server";
 import { startServer } from "@veriflow/server";
 import { classifyQuestion, rankEntryPoints } from "@veriflow/flow-answer";
 import { createInterface } from "node:readline/promises";
@@ -437,6 +437,22 @@ program
       questionId: options.question,
       snapshotId: options.snapshot,
     });
+  });
+
+/* ------------------------------------------------------------------ mcp */
+
+program
+  .command("mcp")
+  .argument("[path]")
+  .description("serve stored answers to a coding agent over MCP on stdio (read-only)")
+  .action(async (pathArg: string | undefined) => {
+    const root = resolve(pathArg ?? process.cwd());
+    if (!existsSync(join(root, ".veriflow", "veriflow.db"))) {
+      fail(`no VeriFlow workspace at ${root} - run: veriflow init`);
+    }
+    // No lock, no banner, no provider: this process speaks MCP on stdio, so any stray stdout would
+    // corrupt the protocol, and it serves stored data rather than re-deriving anything.
+    await serveRead({ root });
   });
 
 /* ------------------------------------------------------------------ ask */
