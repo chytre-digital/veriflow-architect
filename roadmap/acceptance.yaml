@@ -199,6 +199,7 @@ features:
       - "The call graph's three views render from stored coordinates; entry-point filtering dims rather than reflows; the call mesh is off by default."
       - "Reopening any screen after a restart recomputes nothing — asserted by an absence of provider and layout calls."
       - "Geometry assertions pass: no stray edge crossings, no overlapping boxes, every branch forks from a real step."
+      - "CORRECTED after a browser check on `main-panel` — the module and architecture drawings satisfied `no overlapping boxes` while thirty-five pairs of edge labels printed on top of each other and lines ran through boxes they never touched. The layout is now an orthogonal router: horizontal runs take corridors assigned by interval partitioning over the run *and its label*, verticals that cross a row take a gutter between columns, backward edges take one return channel each, and rows are ordered by a barycentre sweep. Asserted as data — no two label boxes overlap, no label sits on a module box, no segment crosses a box it does not touch, every route is orthogonal — and confirmed in Chromium over real `getBBox()` measurements at zero collisions on four pages."
       - "Both themes render every screen; server-side rendering of the shell produces the question, the participants, the phase bands, and the freshness banner."
       - "No screen writes to the repository or the model."
     tests:
@@ -212,6 +213,7 @@ features:
       - "entry-point filter produces a dimmed subset without layout change;"
       - "node budget degradation path;"
       - "geometry assertions over the stored layout;"
+      - "module drawing collision assertions on a main-panel-shaped graph: label vs label, label vs box, segment vs box, orthogonality, canvas bounds, one channel per crossing backward edge, determinism;"
       - "no-recompute assertion on open;"
       - "theme snapshots;"
       - "untrusted transcript rendering."

@@ -190,8 +190,13 @@ describe("modules layout", () => {
   it("routes every backward edge through a channel no module box reaches", () => {
     const rightmost = Math.max(...layout.nodes.map((n) => n.x + n.width));
     expect(layout.channelX).toBeGreaterThan(rightmost);
+    for (const channel of layout.channels) expect(channel).toBeGreaterThanOrEqual(layout.channelX);
     for (const edge of layout.edges.filter((e) => e.backward)) {
-      expect(edge.d).toContain(`H${layout.channelX}`);
+      // The return run is the vertical one, and it has to be in a channel — not merely somewhere to
+      // the right, which a wide label could also satisfy.
+      const rise = edge.segments.filter((s) => Math.abs(s.x1 - s.x2) < 0.5 && Math.abs(s.y1 - s.y2) > 1);
+      const inChannel = rise.filter((s) => layout.channels.some((c) => Math.abs(c - s.x1) < 0.5));
+      expect(inChannel.length, `${edge.from}->${edge.to} never reaches a return channel`).toBeGreaterThan(0);
     }
   });
 
@@ -211,7 +216,16 @@ describe("modules layout", () => {
       const from = layout.nodes.find((n) => n.id === edge.from)!;
       const to = layout.nodes.find((n) => n.id === edge.to)!;
       expect(to.layer).toBeGreaterThan(from.layer);
-      expect(edge.d.startsWith(`M${from.x + from.width / 2},${from.y + from.height}`)).toBe(true);
+      // Ports are spread along the box edge now, so the claim is which edge of which box the line
+      // meets, not which pixel of it.
+      const first = edge.segments[0]!;
+      expect(first.y1).toBeCloseTo(from.y + from.height, 5);
+      expect(first.x1).toBeGreaterThanOrEqual(from.x);
+      expect(first.x1).toBeLessThanOrEqual(from.x + from.width);
+      const last = edge.segments[edge.segments.length - 1]!;
+      expect(last.y2).toBeCloseTo(to.y, 5);
+      expect(last.x2).toBeGreaterThanOrEqual(to.x);
+      expect(last.x2).toBeLessThanOrEqual(to.x + to.width);
     }
   });
 
@@ -244,5 +258,160 @@ describe("modules layout", () => {
     );
     expect(cyclic.nodes.map((n) => n.layer)).toEqual([0, 1, 2]);
     expect(cyclic.edges.filter((e) => e.backward)).toHaveLength(1);
+  });
+});
+
+/**
+ * The drawing was accurate and unreadable: every edge crossing one layer boundary put its label on
+ * the same line, so on `main-panel` thirty-five pairs of labels printed on top of each other and
+ * lines ran straight through the boxes they were passing. Accuracy that cannot be read is not a
+ * feature, and "looks fine to me" is not a check — so these are the assertions, over the layout's
+ * own segments and label boxes rather than over a picture.
+ */
+describe("modules layout — nothing lands on anything else", () => {
+  /** Modelled on main-panel: a wide fan-out, edges that skip a layer, self calls, long contracts. */
+  const heavy = (): Parameters<typeof layoutModules>[1] => [
+    { from: "app", to: "application", contract: "46 calls · via resolveInstructorSlug, checkoutSessionKind, exchangeOAuthCode", kind: "calls" },
+    { from: "app", to: "payments", contract: "22 calls · via createCheckoutSession, settleBooking", kind: "calls" },
+    { from: "app", to: "server", contract: "31 calls · via exchangeOAuthCode", kind: "calls" },
+    { from: "app", to: "domain", contract: "149 calls · via getSupabaseAdmin, conflictingBookings, rawBookingTables", kind: "calls" },
+    { from: "app", to: "billing", contract: "105 calls · via getSupabaseAdmin, rawBookingTables", kind: "calls" },
+    { from: "application", to: "domain", contract: "20 calls · via endsAt, getEntitlements, normalizeForSearch", kind: "calls" },
+    { from: "payments", to: "domain", contract: "109 calls · via jsonError, jsonOk, internalError", kind: "calls" },
+    { from: "payments", to: "billing", contract: "16 calls · via asCheckoutSession, verifyWebhook", kind: "calls" },
+    { from: "server", to: "billing", contract: "50 calls · via error, isParseError, parseEnv", kind: "calls" },
+    { from: "domain", to: "infrastructure", contract: "56 calls · via normalizeForSearch, formatInstant", kind: "calls" },
+    { from: "domain", to: "stripe", contract: "24 calls · via getSupabaseAdmin, error, session", kind: "calls" },
+    { from: "billing", to: "infrastructure", contract: "7 calls · via buildCurrentPriceMap, priceFor", kind: "calls" },
+    { from: "infrastructure", to: "shared", contract: "4 calls · via formatInstant, isInstagramCompatible", kind: "calls" },
+    { from: "app", to: "shared", contract: "9 calls · via clamp, invariant", kind: "calls" },
+    { from: "payments", to: "payments", contract: "post-commit outbox: settlement emits its own follow-up", kind: "calls" },
+    { from: "shared", to: "presentation", contract: "7 calls · via date", kind: "calls", backward: true },
+    { from: "stripe", to: "server", contract: "2 calls · via getCallerContext", kind: "calls", backward: true },
+    { from: "infrastructure", to: "app", contract: "40 calls · via date, buildUser", kind: "calls", backward: true },
+  ];
+
+  const nodes = [
+    { id: "app", label: "App", kind: "module", detail: "src/app" },
+    { id: "presentation", label: "Presentation", kind: "module", detail: "src/presentation" },
+    { id: "application", label: "Application", kind: "module", detail: "src/application" },
+    { id: "payments", label: "Payments", kind: "module", detail: "src/modules/payments" },
+    { id: "server", label: "Server", kind: "module", detail: "src/server" },
+    { id: "domain", label: "Domain", kind: "module", detail: "src/domain" },
+    { id: "billing", label: "Billing", kind: "module", detail: "src/modules/billing" },
+    { id: "infrastructure", label: "Infrastructure", kind: "module", detail: "src/infrastructure" },
+    { id: "stripe", label: "Stripe Gateway", kind: "gateway", detail: "src/modules/stripe-gateway" },
+    { id: "shared", label: "Shared", kind: "module", detail: "src/shared" },
+  ];
+
+  const layout = layoutModules(nodes, heavy());
+
+  const overlap = (
+    a: { x: number; y: number; width: number; height: number },
+    b: { x: number; y: number; width: number; height: number },
+  ): boolean =>
+    Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 0.5 &&
+    Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 0.5;
+
+  it("puts no edge label on top of another one", () => {
+    const collisions: string[] = [];
+    for (let i = 0; i < layout.edges.length; i += 1) {
+      for (let j = i + 1; j < layout.edges.length; j += 1) {
+        const a = layout.edges[i]!;
+        const b = layout.edges[j]!;
+        if (overlap(a.labelBox, b.labelBox)) collisions.push(`"${a.label}" ⨯ "${b.label}"`);
+      }
+    }
+    expect(collisions, `${collisions.length} label pairs overlap`).toEqual([]);
+  });
+
+  it("puts no edge label on top of a module box", () => {
+    const collisions: string[] = [];
+    for (const edge of layout.edges) {
+      for (const node of layout.nodes) {
+        if (overlap(edge.labelBox, node)) collisions.push(`"${edge.label}" over ${node.id}`);
+      }
+    }
+    expect(collisions, `${collisions.length} labels sit on a box`).toEqual([]);
+  });
+
+  it("never runs a line through a module box it does not touch", () => {
+    const crossings: string[] = [];
+    for (const edge of layout.edges) {
+      for (const node of layout.nodes) {
+        for (const s of edge.segments) {
+          // The last few pixels at each end are the arrow meeting its own box, which is the point.
+          const ownEnd =
+            (node.id === edge.from || node.id === edge.to) &&
+            Math.abs(s.x1 - s.x2) < 0.5 &&
+            Math.min(s.y1, s.y2) >= node.y - 0.5 &&
+            Math.max(s.y1, s.y2) <= node.y + node.height + 0.5;
+          if (ownEnd) continue;
+          const box = { x: node.x, y: node.y, width: node.width, height: node.height };
+          const seg = {
+            x: Math.min(s.x1, s.x2),
+            y: Math.min(s.y1, s.y2),
+            width: Math.abs(s.x2 - s.x1),
+            height: Math.abs(s.y2 - s.y1),
+          };
+          if (overlap(seg, box)) crossings.push(`${edge.from}→${edge.to} through ${node.id}`);
+        }
+      }
+    }
+    expect(crossings, `${crossings.length} segments cross a box`).toEqual([]);
+  });
+
+  it("keeps every route orthogonal, so a reader can follow a corner", () => {
+    for (const edge of layout.edges) {
+      for (const s of edge.segments) {
+        const straight = Math.abs(s.x1 - s.x2) < 0.5 || Math.abs(s.y1 - s.y2) < 0.5;
+        expect(straight, `${edge.from}→${edge.to} has a diagonal`).toBe(true);
+      }
+    }
+  });
+
+  it("keeps every label and every line inside the canvas it declares", () => {
+    for (const edge of layout.edges) {
+      expect(edge.labelBox.x).toBeGreaterThanOrEqual(0);
+      expect(edge.labelBox.x + edge.labelBox.width).toBeLessThanOrEqual(layout.width);
+      for (const s of edge.segments) {
+        expect(Math.max(s.x1, s.x2)).toBeLessThanOrEqual(layout.width);
+        expect(Math.max(s.y1, s.y2)).toBeLessThanOrEqual(layout.height);
+        expect(Math.min(s.x1, s.x2)).toBeGreaterThanOrEqual(0);
+      }
+    }
+    for (const node of layout.nodes) {
+      expect(node.x + node.width).toBeLessThanOrEqual(layout.width);
+      expect(node.y + node.height).toBeLessThanOrEqual(layout.height);
+    }
+  });
+
+  it("gives two backward edges that pass each other their own channel", () => {
+    const backward = layout.edges.filter((e) => e.backward);
+    expect(backward.length).toBeGreaterThan(1);
+    expect(layout.channels.length).toBeGreaterThan(1);
+    const rightmost = Math.max(...layout.nodes.map((n) => n.x + n.width));
+    for (const channel of layout.channels) expect(channel).toBeGreaterThan(rightmost);
+  });
+
+  it("stays deterministic once the routing has this much to decide", () => {
+    expect(JSON.stringify(layoutModules(nodes, heavy()))).toBe(JSON.stringify(layoutModules(nodes, heavy())));
+  });
+
+  it("cuts a contract to the width there is, not to a character count", () => {
+    const long = layout.edges.find((e) => e.contract.startsWith("149 calls"))!;
+    expect(long.label.endsWith("…")).toBe(true);
+    expect(long.labelBox.width).toBeLessThanOrEqual(310);
+    // The whole contract is still reachable — the title carries it.
+    expect(renderModulesSvg(layout)).toContain("149 calls · via getSupabaseAdmin, conflictingBookings, rawBookingTables");
+  });
+
+  it("survives a single node with nothing to draw around it", () => {
+    const alone = layoutModules([{ id: "solo", label: "Solo", detail: "src" }], [
+      { from: "solo", to: "solo", contract: "calls itself", kind: "call" },
+    ]);
+    expect(alone.nodes).toHaveLength(1);
+    expect(alone.edges[0]!.self).toBe(true);
+    expect(alone.height).toBeGreaterThan(alone.nodes[0]!.y + alone.nodes[0]!.height);
   });
 });

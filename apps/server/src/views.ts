@@ -150,7 +150,11 @@ svg.modmap { display:block; }
 .mm-detail { font-size:10px; fill:var(--dim); font-family:ui-monospace,monospace; }
 .mm-line { stroke:var(--fg); stroke-width:1.3; }
 .mm-head { fill:var(--fg); }
-.mm-label { font-size:10px; fill:var(--dim); }
+/* The halo is what keeps a label readable where its corridor crosses a line running the other way.
+   Corridor allocation stops labels colliding with each other; it cannot stop a vertical run passing
+   underneath one, and paint-order costs nothing. */
+.mm-label { font-size:10px; fill:var(--dim); paint-order:stroke; stroke:var(--card);
+  stroke-width:3.5px; stroke-linejoin:round; }
 .mm-edge.is-inferred .mm-line { stroke-dasharray:5 4; }
 .mm-edge.is-backward .mm-line { stroke:var(--bad); stroke-dasharray:6 4; }
 .mm-edge.is-backward .mm-label { fill:var(--bad); }
