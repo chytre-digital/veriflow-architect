@@ -1,0 +1,13 @@
+{
+  "name": "@veriflow/ask",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@veriflow/agent-session": "workspace:*",
+    "@veriflow/contracts": "workspace:*",
+    "@veriflow/flow-answer": "workspace:*",
+    "@veriflow/store": "workspace:*"
+  }
+}

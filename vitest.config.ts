@@ -21,6 +21,7 @@ export default defineConfig({
       "@veriflow/workspace": p("./packages/workspace/src/index.ts"),
       "@veriflow/providers": p("./packages/providers/src/index.ts"),
       "@veriflow/agent-session": p("./packages/agent-session/src/index.ts"),
+      "@veriflow/ask": p("./packages/ask/src/index.ts"),
       "@veriflow/flow-answer": p("./packages/flow-answer/src/index.ts"),
       "@veriflow/answers": p("./packages/answers/src/index.ts"),
       "@veriflow/metrics": p("./packages/metrics/src/index.ts"),

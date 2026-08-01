@@ -213,11 +213,12 @@ export function answersPage(rows: AnswerRow[], project: string): string {
     &nbsp;${esc(r.created_at.slice(0, 16).replace("T", " "))}</div></a>`,
         )
         .join("\n")
-    : `<p class="meta">No answers yet. Run <code>veriflow ask "…"</code>.</p>`;
+    : `<p class="meta">No answers yet. <a href="/ask">Ask the first question</a>.</p>`;
 
   return page(
     "Answers",
     `<header><h1>${esc(project)}</h1><div class="meta">Stored flow answers</div></header>
+     <nav><a href="/" class="on">Answers</a><a href="/ask">Ask</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
      <main><div class="list">${body}</div></main>`,
   );
 }
@@ -491,7 +492,7 @@ export function architecturePage(input: ArchitectureInput): string {
        }</div>
        <div class="meta" style="margin-top:6px">Measured from the index alone. No agent ran to produce this.</div>
      </header>
-     <nav><a href="/">Answers</a><a href="/architecture" class="on">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/architecture" class="on">Architecture</a><a href="/callgraph">Call graph</a></nav>
      <main>
        ${
          traffic.length
@@ -1117,7 +1118,7 @@ export function callGraphPage(input: CallGraphPageInput): string {
        ${input.traffic.length} module traffic cells ·
        ${input.traffic.filter((t) => t.backward).length} running back up a layer</div>
      </header>
-     <nav><a href="/">Answers</a><a href="/architecture">Architecture</a><a href="/callgraph" class="on">Call graph</a></nav>
+     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/architecture">Architecture</a><a href="/callgraph" class="on">Call graph</a></nav>
      <main>
        <div class="split">
          <div class="scroll">${svg}</div>
@@ -1155,4 +1156,306 @@ function hierarchy(rows: Array<Record<string, unknown>>): string {
       <div class="why">${esc(String(r["path"]))}:${String(r["line"])} · ${String(r["sites"])} site(s)</div></div>`,
     )
     .join("");
+}
+
+/* ------------------------------------------------------- ask and the run console (F006) */
+
+const ASK_CSS = `
+form.ask { max-width:760px; display:grid; gap:12px; }
+form.ask textarea { width:100%; min-height:74px; padding:11px 13px; border:1px solid var(--line);
+  border-radius:10px; background:var(--card); color:var(--fg); font:inherit; resize:vertical; }
+button { font:inherit; padding:8px 16px; border-radius:99px; border:1px solid var(--accent);
+  background:var(--accent); color:var(--bg); cursor:pointer; }
+button.quiet { background:transparent; color:var(--dim); border-color:var(--line); }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.note { max-width:760px; background:var(--card); border:1px solid var(--line); border-left:3px solid var(--warn);
+  border-radius:8px; padding:12px 14px; margin:0 0 16px; }
+.note.bad { border-left-color:var(--bad); }
+.manifest { max-width:760px; font:12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--dim);
+  background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+.manifest b { color:var(--fg); font-weight:500; }
+.cand { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; max-width:760px; align-items:baseline; }
+.cand .sc { font:12px ui-monospace,monospace; color:var(--dim); text-align:right; }
+.cand .lead { color:var(--accent); font-weight:600; }
+#console { max-width:1000px; background:var(--card); border:1px solid var(--line); border-radius:10px;
+  padding:12px 14px; font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-x:auto; }
+#console .e { padding:2px 0; white-space:pre-wrap; word-break:break-word; }
+#console .ch { color:var(--dim); user-select:none; }
+#console .e.tool { color:var(--accent); }
+#console .e.err { color:var(--bad); }
+#console .e.status { color:var(--dim); }
+.ask-user { max-width:760px; background:var(--card); border:1px solid var(--warn); border-radius:10px;
+  padding:14px 16px; margin:16px 0; }
+.ask-user input[name=value] { width:100%; padding:8px 11px; border:1px solid var(--line); border-radius:8px;
+  background:var(--bg); color:var(--fg); font:inherit; margin:8px 0; }
+`;
+
+function askShell(project: string, title: string, body: string): string {
+  return page(
+    title,
+    `<style>${ASK_CSS}</style>
+     <header><h1>${esc(project)}</h1><div class="meta">${esc(title)}</div></header>
+     <nav><a href="/">Answers</a><a href="/ask" class="on">Ask</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <main>${body}</main>`,
+  );
+}
+
+export interface AskPageInput {
+  project: string;
+  /** What was typed, when a plan is being previewed. */
+  question?: string;
+  plan?: {
+    classification: { kind: "flow" | "location"; reason: string; suggestion?: string };
+    candidates: Array<{ id: string; label: string; path: string; kind: string; score: number; chosen: boolean }>;
+    margin: number;
+    threshold: number;
+    chosenLabel?: string;
+    snapshotId: string;
+    snapshotDirty: boolean;
+  };
+  /** The client the run would use — probed, not assumed. */
+  client?: { id: string; version: string; transport: string; permissionMode?: string; root: string };
+  /** A refusal: nothing indexed, no client, a run already going. */
+  error?: string;
+  /** A run this browser can rejoin instead of starting a second one. */
+  liveRunId?: string;
+  liveQuestion?: string;
+}
+
+/**
+ * Ask, in the order the decisions actually happen: whether this is the right shape of question,
+ * which entry point answers it and by how much, exactly what is about to run — and only then, start.
+ *
+ * None of that is a preflight formality. A run costs minutes of agent time, so every fact that could
+ * change the reader's mind is on screen while changing it is still free.
+ */
+export function askPage(input: AskPageInput): string {
+  const live = input.liveRunId
+    ? `<div class="note"><b>A run is already going</b> — ${esc(input.liveQuestion ?? "")}
+       <div class="meta" style="margin-top:6px"><a href="/runs/${esc(input.liveRunId)}">Open its console</a>,
+       or cancel it there before asking something else.</div></div>`
+    : "";
+
+  const error = input.error ? `<div class="note bad">${esc(input.error)}</div>` : "";
+
+  const form = `<form class="ask" method="get" action="/ask">
+      <textarea name="q" placeholder="Jak funguje rezervace a zaplacení lekce?" autofocus>${esc(input.question ?? "")}</textarea>
+      <div class="row"><button type="submit">Plan the run</button>
+        <span class="meta">Nothing runs yet — the next screen shows what would.</span></div>
+    </form>`;
+
+  if (!input.plan) return askShell(input.project, "Ask", `${live}${error}${form}`);
+
+  const plan = input.plan;
+  const location =
+    plan.classification.kind === "location"
+      ? `<div class="note"><b>This looks like a location question, not a flow question.</b>
+         <div class="meta" style="margin-top:6px">${esc(plan.classification.reason)}${
+           plan.classification.suggestion ? ` — ${esc(plan.classification.suggestion)}` : ""
+         }</div>
+         <div class="meta" style="margin-top:6px">A flow answer would be the wrong shape here. You can ask anyway.</div></div>`
+      : "";
+
+  // A clear winner is preselected, so starting is one click and nobody picks anything. An ambiguous
+  // ranking presents the same list as an actual choice, with deciding-by-agent still on the table —
+  // being told "it is too close to call" and given no way to settle it is not a decision, it is a
+  // notification.
+  const candidates = plan.candidates.length
+    ? `<div class="cand">${plan.candidates
+        .map(
+          (c, i) => `<div class="sc">${c.score.toFixed(1)}</div>
+            <div class="${c.chosen ? "lead" : ""}">
+              <label><input type="radio" name="entry" value="${esc(c.id)}"${
+                c.chosen ? " checked" : ""
+              }> ${esc(c.label)}</label>
+              <span class="meta">${esc(c.kind)} · ${esc(c.path)}${i === 0 && !plan.chosenLabel ? " · highest scoring" : ""}</span>
+            </div>`,
+        )
+        .join("")}
+        <div class="sc"></div>
+        <div><label><input type="radio" name="entry" value=""${plan.chosenLabel ? "" : " checked"}>
+          Let the agent choose, and say why in the transcript</label></div>
+      </div>`
+    : `<p class="meta">No entry point scored above the floor — nothing in the ranking matched a word of
+       the question. The agent picks one and says why.</p>`;
+
+  const decision = plan.chosenLabel
+    ? `<p class="meta" style="margin:10px 0 0">Starting with <b>${esc(plan.chosenLabel)}</b> — it leads by
+       ${(plan.margin * 100).toFixed(0)}%, over the ${(plan.threshold * 100).toFixed(0)}% auto-start margin.</p>`
+    : `<p class="meta" style="margin:10px 0 0">The ranking is too close to call
+       (${(plan.margin * 100).toFixed(0)}% lead, ${(plan.threshold * 100).toFixed(0)}% needed), so it is
+       yours to settle.</p>`;
+
+  const client = input.client;
+  const manifest = `<div class="manifest">
+      <div><b>agent</b> ${esc(client ? `${client.id} ${client.version} — ${client.transport}` : "unavailable")}</div>
+      <div><b>permission mode</b> ${esc(client?.permissionMode ?? "client default")}</div>
+      <div><b>working directory</b> ${esc(client?.root ?? "")}</div>
+      <div><b>snapshot</b> ${esc(plan.snapshotId.slice(0, 8))}${plan.snapshotDirty ? " (dirty tree)" : ""}</div>
+      <div><b>tools</b> veriflow MCP, read-only — no refactor tool reaches the agent</div>
+    </div>`;
+
+  return askShell(
+    input.project,
+    "Ask",
+    `${live}${error}${form}${location}
+     <form method="post" action="/ask">
+       <input type="hidden" name="q" value="${esc(input.question ?? "")}">
+       <h2 style="font-size:15px;margin:24px 0 8px">Entry points ranked</h2>${candidates}${decision}
+       <h2 style="font-size:15px;margin:24px 0 8px">What will run</h2>${manifest}
+       <div class="row" style="margin-top:18px">
+         <button type="submit"${input.liveRunId ? " disabled" : ""}>${
+           plan.classification.kind === "location" ? "Ask anyway" : "Start the run"
+         }</button>
+         <a href="/ask" class="meta">edit the question</a>
+       </div>
+     </form>`,
+  );
+}
+
+export interface RunPageInput {
+  project: string;
+  runId: string;
+  question: string;
+  events: Array<{ seq: number; ts: string; channel: string; payload: unknown }>;
+  pending: Array<{ id: string; question: string; options?: string[] }>;
+  state: "running" | "settled";
+  outcome?: string;
+  error?: string;
+  answers: Array<{ id: string; title: string; verified: number; unverified: number; openQuestions: number }>;
+}
+
+/**
+ * The run console: what the agent has said, what it is waiting on, and how to stop it.
+ *
+ * Everything here comes from the store, which is why a console opened halfway through — or reopened
+ * after a reload, or after the browser was closed entirely — shows the whole run instead of the part
+ * that happened while somebody was watching. The live stream resumes after the last event already on
+ * the page, so replaying and following are one code path rather than two that can disagree.
+ */
+export function runPage(input: RunPageInput): string {
+  const lastSeq = input.events.length ? input.events[input.events.length - 1]!.seq : 0;
+  const transcript = input.events.map(transcriptLine).join("");
+
+  const pending = input.pending
+    .map(
+      (q) => `<div class="ask-user">
+        <b>The agent is waiting on you</b>
+        <div style="margin-top:6px">${esc(q.question)}</div>
+        ${q.options?.length ? `<div class="meta" style="margin-top:4px">options: ${esc(q.options.join(" | "))}</div>` : ""}
+        <form method="post" action="/runs/${esc(input.runId)}/answer">
+          <input type="hidden" name="questionId" value="${esc(q.id)}">
+          <input name="value" autofocus placeholder="your answer" required>
+          <button type="submit">Answer and resume</button>
+        </form>
+      </div>`,
+    )
+    .join("");
+
+  const answers = input.answers.length
+    ? `<div class="list" style="margin-top:18px">${input.answers
+        .map(
+          (a) => `<a class="card" href="/answers/${esc(a.id)}"><h2>${esc(a.title)}</h2>
+          <div class="meta">${a.verified}/${a.verified + a.unverified} citations verified ·
+          ${a.openQuestions} open question${a.openQuestions === 1 ? "" : "s"}</div></a>`,
+        )
+        .join("")}</div>`
+    : input.state === "settled"
+      ? `<p class="meta" style="margin-top:18px">No answer was submitted. The transcript above is still stored —
+         replay it with <code>veriflow transcript ${esc(input.runId.slice(0, 8))}</code>.</p>`
+      : "";
+
+  const statusPill =
+    input.state === "running"
+      ? `<span class="pill warn">running</span>`
+      : `<span class="pill ${input.outcome === "submitted" ? "good" : "bad"}">${esc(input.outcome ?? "finished")}</span>`;
+
+  const controls =
+    input.state === "running"
+      ? `<form method="post" action="/runs/${esc(input.runId)}/cancel" style="display:inline">
+           <button class="quiet" type="submit">Cancel the run</button></form>`
+      : `<a class="meta" href="/ask">Ask another question</a>`;
+
+  return askShell(
+    input.project,
+    "Run",
+    `<div class="row" style="margin-bottom:14px">${statusPill}
+       <span class="meta">${esc(input.question)}</span>
+       <span style="flex:1"></span>${controls}</div>
+     ${input.error ? `<div class="note bad">${esc(input.error)}</div>` : ""}
+     <div id="pending">${pending}</div>
+     <div id="console">${transcript}</div>
+     <div id="answers">${answers}</div>
+     <script>${runScript(input.runId, lastSeq)}</script>`,
+  );
+}
+
+/**
+ * Agent output is untrusted text — it is whatever the model said, and the model was reading the
+ * repository. It is escaped on the server and inserted as a text node on the client, never as markup.
+ */
+export function transcriptLine(event: { seq: number; channel: string; payload: unknown }): string {
+  const line = transcriptText(event);
+  return `<div class="e ${line.cls}" data-seq="${event.seq}"><span class="ch">${esc(event.channel)}</span> ${esc(line.text)}</div>`;
+}
+
+/** The same formatting the live stream sends, so a followed line and a replayed line read alike. */
+export function transcriptText(event: { channel: string; payload: unknown }): { text: string; cls: string } {
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  switch (event.channel) {
+    case "assistant":
+      return { text: typeof payload["text"] === "string" ? payload["text"] : JSON.stringify(payload), cls: "" };
+    case "tool-call":
+      return { text: `→ ${String(payload["name"] ?? "tool")}`, cls: "tool" };
+    case "tool-result":
+      return { text: `← ${String(payload["name"] ?? "result")}`, cls: "tool" };
+    case "stderr":
+      return { text: `! ${String(payload["text"] ?? "")}`, cls: "err" };
+    case "prompt":
+      return { text: `? ${String(payload["question"] ?? "")}`, cls: "status" };
+    case "answer":
+      return { text: `you: ${String(payload["value"] ?? "")}`, cls: "status" };
+    case "status":
+      return { text: statusText(payload), cls: "status" };
+    default:
+      return { text: JSON.stringify(payload), cls: "" };
+  }
+}
+
+function statusText(payload: Record<string, unknown>): string {
+  if (payload["state"] === "started") {
+    return `started — ${String(payload["client"] ?? "")} ${String(payload["version"] ?? "")}, ${String(
+      payload["permissionMode"] ?? "client default",
+    )}`;
+  }
+  if (payload["state"] === "ended") return `ended — ${String(payload["status"] ?? "")}`;
+  return JSON.stringify(payload);
+}
+
+/**
+ * Follows the transcript the page was rendered from, resuming after the last event already on it, so
+ * a reload is indistinguishable from a late open and a dropped connection costs the reader nothing.
+ */
+function runScript(runId: string, lastSeq: number): string {
+  return `
+(function(){
+  var box = document.getElementById('console');
+  var src = new EventSource('/api/runs/${runId}/events?since=${lastSeq}');
+  src.addEventListener('transcript', function(m){
+    var e = JSON.parse(m.data);
+    var div = document.createElement('div');
+    div.className = 'e ' + (e.cls || '');
+    var ch = document.createElement('span');
+    ch.className = 'ch';
+    ch.textContent = e.channel;
+    div.appendChild(ch);
+    div.appendChild(document.createTextNode(' ' + e.text));
+    box.appendChild(div);
+    window.scrollTo(0, document.body.scrollHeight);
+  });
+  src.addEventListener('pending', function(m){
+    if (JSON.parse(m.data).changed) { src.close(); location.reload(); }
+  });
+  src.addEventListener('settled', function(){ src.close(); location.reload(); });
+})();`;
 }

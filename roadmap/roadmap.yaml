@@ -6,6 +6,14 @@
 
 schemaVersion: 1
 
+# Feature status vocabulary:
+#   ready   — the spec is implementable; nothing is built yet.
+#   shipped — implemented, with its acceptance criteria met except where `gaps` says otherwise.
+#
+# `shipped` never means finished. A feature with a `gaps` list is shipped and partial, and the list
+# is the whole of what is missing — the D19 rule applies to this file too: partial is fine, silently
+# partial is not.
+
 project:
   name: VeriFlow
   goal: "Generate an application's architecture and make review possible against it."
@@ -39,7 +47,7 @@ features:
     title: Workspace, local database, and snapshot state
     spec: 01-workspace-and-snapshots.md
     iteration: M1-answer
-    status: ready
+    status: shipped
     dependsOn: []
     outcome: >-
       init/doctor/status; the tree state recorded by file hash without copying or mutating anything.
@@ -47,14 +55,14 @@ features:
     title: Code intelligence provider protocol and code-review-graph adapter
     spec: 02-code-intelligence-provider.md
     iteration: M1-answer
-    status: ready
+    status: shipped
     dependsOn: [F001]
     outcome: The project is indexed and queryable through one replaceable adapter.
   F003:
     title: Reachability, module registry, and function-level call graph
     spec: 03-reachability-and-call-graph.md
     iteration: M1-answer
-    status: ready
+    status: shipped
     dependsOn: [F002]
     outcome: >-
       The application's module registry, plus the functions a flow reaches and the traffic between
@@ -63,7 +71,7 @@ features:
     title: Streamed agent session with the user's own client
     spec: 04-agent-session.md
     iteration: M1-answer
-    status: ready
+    status: shipped
     dependsOn: [F001, F002]
     outcome: >-
       The user's agent runs visibly, can be answered mid-run, and its transcript is stored.
@@ -71,23 +79,41 @@ features:
     title: Flow answer contract, question intake, and citation verification
     spec: 05-flow-answer-contract.md
     iteration: M1-answer
-    status: ready
+    status: shipped
     dependsOn: [F003, F004]
     outcome: A cited flow answer is validated, labelled per claim, and stored.
   F006:
     title: Local UI over stored answers
     spec: 06-answer-ui.md
     iteration: M1-answer
-    status: ready
+    status: shipped
     dependsOn: [F005]
     outcome: >-
       The generated architecture of the project, plus ask, flow, paths, modules, external systems
       and call graph on real data.
+    notes: >-
+      Ask shipped after the rest of the screen set, and its absence had been invisible: every other
+      criterion was met, so the feature read as finished while the one thing that makes it an
+      application rather than a viewer was missing. Asking from the browser now starts the same F004
+      session `veriflow ask` starts — one plan, one prompt, one transcript in one store — and the
+      console reads that transcript from the database rather than from a buffer, so replaying and
+      following are the same code path and a run started in the terminal is watchable in the browser.
+    gaps:
+      - >-
+        Corrections have their schema, their provenance and their store methods, but no editing
+        surface in the browser: a step cannot be corrected in place, and closing a demoted step's
+        open question by hand has no UI path.
+      - >-
+        Threads are stored — an answer knows its parent — but the answers list is flat, so a
+        follow-up appears as a sibling rather than under what it followed up on.
+      - >-
+        Evidence opens in VeriFlow's own read-only source view rather than in the user's editor.
+        This is a deliberate reversal, asserted in the F008 tests, not an omission.
   F007:
     title: Freshness, drift, and re-verification
     spec: 07-freshness-and-drift.md
     iteration: M2-review
-    status: ready
+    status: shipped
     dependsOn: [F005, F006]
     outcome: Changed cited files and per-citation drift, re-verified without re-answering.
     notes: >-
@@ -97,7 +123,7 @@ features:
     title: Flow metrics — debt, structure, coupling, coverage proxy
     spec: 08-flow-metrics.md
     iteration: M3-depth
-    status: ready
+    status: shipped
     dependsOn: [F005, F006]
     outcome: Debt, structure, coupling and a labelled coverage proxy for the flow's files.
     notes: >-
@@ -109,7 +135,7 @@ features:
     title: Document export and portable backup
     spec: 09-document-export.md
     iteration: M3-depth
-    status: ready
+    status: shipped
     dependsOn: [F005, F006]
     outcome: Approved answers become committed markdown with generated mermaid.
     notes: >-
@@ -121,7 +147,7 @@ features:
     title: VeriFlow MCP server for design and review
     spec: 10-mcp-server.md
     iteration: M2-review
-    status: ready
+    status: shipped
     dependsOn: [F005, F006]
     outcome: Any agent designs and reviews against stored, freshness-stamped results.
 

@@ -5,12 +5,15 @@
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
+    "@veriflow/agent-session": "workspace:*",
     "@veriflow/answers": "workspace:*",
+    "@veriflow/ask": "workspace:*",
     "@veriflow/diagram": "workspace:*",
     "@veriflow/flow-answer": "workspace:*",
     "@veriflow/metrics": "workspace:*",
     "@veriflow/snapshot": "workspace:*",
     "@veriflow/store": "workspace:*",
+    "@veriflow/workspace": "workspace:*",
     "hono": "^4.6.14"
   }
 }

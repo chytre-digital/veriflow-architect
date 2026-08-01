@@ -121,7 +121,10 @@ export class AgentSession {
           );
         }
       }
-      await Promise.allSettled(pending);
+      // A question nobody answered cannot be delivered once the run is over — the agent is already
+      // gone, and `answer` would be shouting at a closed stream. Waiting for the person here parked
+      // the session for good, which is precisely what cancelling a parked run was meant to escape.
+      await Promise.race([Promise.allSettled(pending), handle.result]);
       let outcome = await handle.result;
 
       const submittedAnswerId = persistence?.submittedAnswerId?.(runId);

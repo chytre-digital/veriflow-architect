@@ -24,6 +24,7 @@
       "@veriflow/workspace": ["packages/workspace/src/index.ts"],
       "@veriflow/providers": ["packages/providers/src/index.ts"],
       "@veriflow/agent-session": ["packages/agent-session/src/index.ts"],
+      "@veriflow/ask": ["packages/ask/src/index.ts"],
       "@veriflow/flow-answer": ["packages/flow-answer/src/index.ts"],
       "@veriflow/answers": ["packages/answers/src/index.ts"],
       "@veriflow/metrics": ["packages/metrics/src/index.ts"],

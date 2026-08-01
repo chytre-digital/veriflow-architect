@@ -42,6 +42,9 @@ importers:
       '@veriflow/answers':
         specifier: workspace:*
         version: link:../../packages/answers
+      '@veriflow/ask':
+        specifier: workspace:*
+        version: link:../../packages/ask
       '@veriflow/callgraph':
         specifier: workspace:*
         version: link:../../packages/callgraph
@@ -87,9 +90,15 @@ importers:
 
   apps/server:
     dependencies:
+      '@veriflow/agent-session':
+        specifier: workspace:*
+        version: link:../../packages/agent-session
       '@veriflow/answers':
         specifier: workspace:*
         version: link:../../packages/answers
+      '@veriflow/ask':
+        specifier: workspace:*
+        version: link:../../packages/ask
       '@veriflow/diagram':
         specifier: workspace:*
         version: link:../../packages/diagram
@@ -105,6 +114,9 @@ importers:
       '@veriflow/store':
         specifier: workspace:*
         version: link:../../packages/store
+      '@veriflow/workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       hono:
         specifier: ^4.6.14
         version: 4.12.32
@@ -129,6 +141,21 @@ importers:
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../snapshot
+      '@veriflow/store':
+        specifier: workspace:*
+        version: link:../store
+
+  packages/ask:
+    dependencies:
+      '@veriflow/agent-session':
+        specifier: workspace:*
+        version: link:../agent-session
+      '@veriflow/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@veriflow/flow-answer':
+        specifier: workspace:*
+        version: link:../flow-answer
       '@veriflow/store':
         specifier: workspace:*
         version: link:../store

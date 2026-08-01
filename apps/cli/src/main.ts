@@ -7,7 +7,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
 import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
-import { AgentSession, ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
+import { ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
+import { answersFromRun, applySupersede, createAskRun, planAsk, type AskPlan } from "@veriflow/ask";
 import { serveRead, serveRun } from "@veriflow/mcp-server";
 import {
   DRIFT_WINDOW,
@@ -30,7 +31,6 @@ import {
   restoreDump,
 } from "@veriflow/export";
 import { startServer } from "@veriflow/server";
-import { classifyQuestion, rankEntryPoints } from "@veriflow/flow-answer";
 import { createInterface } from "node:readline/promises";
 import { captureSnapshot, diffHashes, readGitFacts } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
@@ -524,47 +524,34 @@ program
       superseded = previous.row.id;
     }
 
-    const classification = classifyQuestion(question);
-    if (classification.kind === "location" && !options.force) {
+    // The same plan the browser shows on its ask screen: one classification, one ranking, one
+    // prompt. Two implementations would make asking from the terminal and asking from the UI two
+    // different products that happen to share a database.
+    let plan: AskPlan;
+    try {
+      plan = planAsk(ctx.store, ctx.projectId, question, { entry: options.entry });
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    if (plan.classification.kind === "location" && !options.force) {
       log(`This looks like a location question, not a flow question.`);
-      log(`  why: ${classification.reason}`);
-      if (classification.suggestion) log(`  ${classification.suggestion}`);
+      log(`  why: ${plan.classification.reason}`);
+      if (plan.classification.suggestion) log(`  ${plan.classification.suggestion}`);
       log(``);
       log(`  A flow answer would be the wrong shape here. Override with --force.`);
       ctx.close();
       return;
     }
 
-    const snapshot = ctx.store.latestSnapshot(ctx.projectId);
-    if (!snapshot) {
-      ctx.close();
-      fail("no snapshot yet - run: veriflow index");
-    }
-
-    const stored = ctx.store.readEntryPoints(snapshot.id).map((row) => ({
-      id: String(row["id"]),
-      symbolId: String(row["symbol_id"]),
-      kind: String(row["kind"]) as never,
-      label: String(row["label"]),
-      path: String(row["path"]),
-      line: Number(row["line"]),
-    }));
-    const ranking = rankEntryPoints(question, stored);
-    let chosen = ranking.autoSelected?.entryPoint;
-    if (options.entry) {
-      chosen = stored.find((e) => e.label.toLowerCase().includes(options.entry!.toLowerCase()));
-      if (!chosen) {
-        ctx.close();
-        fail(`no entry point matches ${options.entry}`);
-      }
-    }
-
+    const { ranking, snapshot } = plan;
     log(`Entry points ranked (auto-start margin ${ranking.threshold}, actual ${ranking.margin.toFixed(2)}):`);
     for (const candidate of ranking.candidates.slice(0, 5)) {
-      const mark = candidate.entryPoint === chosen ? "->" : "  ";
+      const mark = candidate.entryPoint.id === plan.chosen?.id ? "->" : "  ";
       log(`  ${mark} ${candidate.score.toFixed(1)}  ${candidate.entryPoint.label}`);
     }
-    if (!chosen) log(`  ranking is ambiguous - the agent picks, and says so in the transcript`);
+    if (!plan.chosen) log(`  ranking is ambiguous - the agent picks, and says so in the transcript`);
 
     const client =
       options.client === "codex"
@@ -581,64 +568,19 @@ program
       );
     }
 
-    const questionId = randomUUID();
-    const runId = randomUUID();
-    ctx.store.createQuestion(questionId, ctx.projectId, question);
-
     log(``);
     log(`${capabilities.id} ${capabilities.version} - ${capabilities.transport}`);
     log(`permission mode: ${capabilities.readOnlyMode ?? "client default"}  -  cwd: ${ctx.root}`);
     log(`snapshot ${snapshot.id.slice(0, 8)}${snapshot.dirty ? " (dirty tree)" : ""}`);
     log(``);
 
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answered = new Set<string>();
-    const poller = setInterval(() => {
-      for (const pending of ctx.store.pendingQuestions(runId)) {
-        if (answered.has(pending.id)) continue;
-        answered.add(pending.id);
-        void (async () => {
-          log(``);
-          log(`? ${pending.question}`);
-          if (pending.options?.length) log(`  options: ${pending.options.join(" | ")}`);
-          const value = await rl.question("> ");
-          ctx.store.answerQuestion(runId, pending.id, value);
-        })();
-      }
-    }, 300);
-
-    const session = new AgentSession({
+    const { runId, session } = createAskRun({
+      root: ctx.root,
+      store: ctx.store,
+      projectId: ctx.projectId,
+      plan,
       client,
-      cwd: ctx.root,
-      prompt: buildPrompt(question, chosen?.label),
-      questionId,
-      snapshotId: snapshot.id,
-      runId,
       timeoutMs: Number(options.timeout),
-      mcpServers: {
-        veriflow: {
-          command: process.execPath,
-          // Where VeriFlow itself lives, not where the analysed project is. The server resolves its
-          // own workspace packages from here; started in the target repository it exits immediately
-          // and the agent silently sees no VeriFlow tools at all. Claude Code happened to inherit a
-          // working directory that hid this; Codex does not.
-          cwd: resolve(fileURLToPath(import.meta.url), "..", "..", "..", ".."),
-          args: [
-            "--no-warnings=ExperimentalWarning",
-            "--import",
-            "tsx",
-            fileURLToPath(import.meta.url),
-            "mcp-run",
-            ctx.root,
-            "--run",
-            runId,
-            "--question",
-            questionId,
-            "--snapshot",
-            snapshot.id,
-          ],
-        },
-      },
       sink: {
         onEvent(event) {
           const payload = event.payload as Record<string, unknown>;
@@ -657,16 +599,23 @@ program
           }
         },
       },
-      persistence: {
-        startRun: (run) => ctx.store.startRun(run),
-        appendEvents: (id, events) => ctx.store.appendRunEvents(id, events),
-        finishRun: (id, outcome) => ctx.store.finishRun(id, outcome),
-        // Without this the session cannot see a submission made in the MCP server's process, and a
-        // run that produced a good answer is recorded as having produced none. The hook existed;
-        // nothing passed it, so every stored run said completed-without-answer.
-        submittedAnswerId: (id) => ctx.store.answerIdForRun(id),
-      },
     });
+
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const answered = new Set<string>();
+    const poller = setInterval(() => {
+      for (const pending of ctx.store.pendingQuestions(runId)) {
+        if (answered.has(pending.id)) continue;
+        answered.add(pending.id);
+        void (async () => {
+          log(``);
+          log(`? ${pending.question}`);
+          if (pending.options?.length) log(`  options: ${pending.options.join(" | ")}`);
+          const value = await rl.question("> ");
+          ctx.store.answerQuestion(runId, pending.id, value);
+        })();
+      }
+    }, 300);
 
     process.once("SIGINT", () => {
       void session.cancel("interrupted");
@@ -680,44 +629,23 @@ program
     log(`Run ${result.runId.slice(0, 8)} - ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
     log(`  ${result.events.length} events stored; replay with: veriflow transcript ${result.runId}`);
 
-    const answers = ctx.store.listAnswers().filter((a) => a["run_id"] === result.runId);
+    const answers = answersFromRun(ctx.store, result.runId);
     for (const answer of answers) {
-      const total = Number(answer["verified"]) + Number(answer["unverified"]);
-      log(`  answer ${String(answer["id"]).slice(0, 8)} - ${answer["title"]}`);
-      log(`    ${answer["verified"]}/${total} citations verified - ${answer["open_questions"]} open question(s)`);
+      log(`  answer ${answer.id.slice(0, 8)} - ${answer.title}`);
+      log(
+        `    ${answer.verified}/${answer.verified + answer.unverified} citations verified - ` +
+          `${answer.openQuestions} open question(s)`,
+      );
     }
     if (answers.length === 0) log(`  No answer was submitted.`);
 
-    // Only once an answer actually exists: a failed re-answer must not leave the old one superseded
-    // by nothing.
-    if (superseded && answers[0]) {
-      ctx.store.supersedeAnswer(superseded, String(answers[0]["id"]));
-      log(`  ${superseded.slice(0, 8)} is now superseded; both stay readable, diff with:`);
-      log(`    veriflow diff ${superseded.slice(0, 8)} ${String(answers[0]["id"]).slice(0, 8)}`);
+    const supersede = applySupersede(ctx.store, superseded, answers);
+    if (supersede) {
+      log(`  ${supersede.supersededId.slice(0, 8)} is now superseded; both stay readable, diff with:`);
+      log(`    veriflow diff ${supersede.supersededId.slice(0, 8)} ${supersede.newAnswerId.slice(0, 8)}`);
     }
     ctx.close();
   });
-
-function buildPrompt(question: string, entryPointLabel?: string): string {
-  return [
-    `You are answering one question about this repository for VeriFlow.`,
-    ``,
-    `Question: ${question}`,
-    entryPointLabel ? `Suggested entry point: ${entryPointLabel}` : `Entry point: choose one and say why.`,
-    ``,
-    `Use the veriflow MCP tools. get_architecture and get_entry_points orient you; search_symbols,`,
-    `get_callers and get_callees follow the code; read_evidence confirms a line before you cite it.`,
-    ``,
-    `Then call submit_flow_answer with: lanes (the participants), phases, ordered steps citing`,
-    `file:line, branches for every alternative outcome each stating the invariant it protects,`,
-    `moduleEdges saying what crosses them, externalSystems with where the boundary is enforced and`,
-    `what happens when they fail, and openQuestions for anything the repository cannot answer.`,
-    ``,
-    `Rules: cite what you claim. If evidence is missing, use record_open_question rather than`,
-    `narrating a guess. If only a person can decide, use ask_user and wait. Citations are labelled,`,
-    `not gated - an honest unverified claim is better than a removed one.`,
-  ].join("\n");
-}
 
 program
   .command("transcript")
@@ -1256,18 +1184,32 @@ program
   .command("open")
   .argument("[path]")
   .option("--port <n>", "loopback port", "4747")
-  .description("read stored answers in the browser")
-  .action(async (pathArg: string | undefined, options: { port: string }) => {
-    const root = resolve(pathArg ?? process.cwd());
-    if (!existsSync(join(root, ".veriflow", "veriflow.db"))) {
-      fail(`no VeriFlow workspace at ${root} - run: veriflow init`);
-    }
-    const { url } = await startServer({ root, port: Number(options.port) });
-    log(`VeriFlow reading ${root}`);
-    log(`  ${url}`);
-    log(``);
-    log(`Reads only. Nothing here recomputes an answer or touches the repository.`);
-  });
+  .option("--client <id>", "agent client used by a run started from the browser", "claude-code")
+  .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--timeout <ms>", "run timeout in milliseconds", "900000")
+  .description("read stored answers in the browser, and ask new questions there")
+  .action(
+    async (
+      pathArg: string | undefined,
+      options: { port: string; client: string; clientCommand?: string; timeout: string },
+    ) => {
+      const root = resolve(pathArg ?? process.cwd());
+      if (!existsSync(join(root, ".veriflow", "veriflow.db"))) {
+        fail(`no VeriFlow workspace at ${root} - run: veriflow init`);
+      }
+      const { url } = await startServer({
+        root,
+        port: Number(options.port),
+        client: { id: options.client, command: options.clientCommand },
+        timeoutMs: Number(options.timeout),
+      });
+      log(`VeriFlow reading ${root}`);
+      log(`  ${url}`);
+      log(``);
+      log(`Reading an answer recomputes nothing and touches no file in the repository.`);
+      log(`Asking a question there starts the same run as: veriflow ask "..." (${options.client})`);
+    },
+  );
 
 /* ------------------------------------------------------------------ entrypoints */
 
