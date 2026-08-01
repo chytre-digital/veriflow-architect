@@ -298,7 +298,38 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  /**
+   * The project itself, not what has been asked about it.
+   *
+   * This path is spelled out in the technical architecture's HTTP contract, next to `/api/snapshots`
+   * and `/api/questions`, and it means the workspace: who this project is and what state it is in.
+   * F011's aggregate briefly took the name and had to give it back — squatting a documented path
+   * with a different meaning is worse than not implementing it, because a client that reads the
+   * contract gets a well-formed answer to a question it did not ask.
+   */
   app.get("/api/project", (c) =>
+    withStore((store) => {
+      const snapshot = store.latestSnapshotAny();
+      const facts = snapshot ? store.readSnapshot(snapshot.id) : undefined;
+      return c.json({
+        contractVersion: 1,
+        project: { id: projectId, name: projectName, root },
+        snapshot: facts
+          ? {
+              id: String(facts["id"]),
+              commit: facts["commit_sha"] ?? null,
+              branch: facts["branch"] ?? null,
+              dirty: Boolean(facts["dirty"]),
+              fileCount: Number(facts["file_count"]),
+              createdAt: String(facts["created_at"]),
+            }
+          : null,
+        answers: store.listAnswers().length,
+      });
+    }),
+  );
+
+  app.get("/api/project/overview", (c) =>
     withStore((store) => {
       const view = projectView(store);
       if (!view) return c.json({ error: "nothing indexed yet" }, 404);
@@ -412,6 +443,31 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     const runId = c.req.param("id");
     await runs.cancel(runId);
     return c.redirect(`/runs/${runId}`, 303);
+  });
+
+  /**
+   * The same two actions as JSON, under the names the technical architecture's HTTP contract gives
+   * them. The `/runs/:id/*` routes above exist because an HTML form needs a redirect, not a status
+   * code; these exist because a client reading the contract should find what it was promised.
+   * Both go through the registry, so neither is a second implementation of answering or cancelling.
+   */
+  app.post("/api/runs/:id/answer", async (c) => {
+    const runId = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const questionId = String(body["questionId"] ?? "");
+    const answer = String(body["answer"] ?? "");
+    if (!questionId || !answer) return c.json({ error: "questionId and answer are required" }, 422);
+    if (!runs.answer(runId, questionId, answer)) {
+      return c.json({ error: "no question is waiting under that id on this run" }, 404);
+    }
+    return c.json({ contractVersion: 1, runId, questionId, answered: true });
+  });
+
+  app.post("/api/runs/:id/cancel", async (c) => {
+    const runId = c.req.param("id");
+    const cancelled = await runs.cancel(c.req.param("id"));
+    if (!cancelled) return c.json({ error: "no run is going under that id in this process" }, 404);
+    return c.json({ contractVersion: 1, runId, cancelling: true });
   });
 
   /**

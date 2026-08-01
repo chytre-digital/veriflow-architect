@@ -354,6 +354,43 @@ describe("stopping and starting", () => {
     await whenSettled(app, first);
   });
 
+  it("answers and cancels over the JSON contract too, through the same registry", async () => {
+    const { root } = project();
+    const app = appWith(root, [
+      { channel: "prompt", payload: { id: "q-json", question: "Which one?" }, waitForAnswerTo: "q-json" },
+      { channel: "assistant", payload: { text: "resumed by the API" } },
+    ]);
+
+    const runId = await start(app, "Jak funguje rezervace lekce?");
+    await poll(async () => {
+      const view = (await (await app.request(`/api/runs/${runId}`)).json()) as { pending: unknown[] };
+      return view.pending.length ? view : undefined;
+    }, "the agent to park");
+
+    // 422 rather than a silent no-op: the contract says validation failures say so.
+    const incomplete = await app.request(`/api/runs/${runId}/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ questionId: "q-json" }),
+    });
+    expect(incomplete.status).toBe(422);
+
+    const answered = await app.request(`/api/runs/${runId}/answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ questionId: "q-json", answer: "the second one" }),
+    });
+    expect(answered.status).toBe(200);
+
+    const settled = await whenSettled(app, runId);
+    const texts = settled.events.map((e) => e.payload?.text ?? e.payload?.value);
+    expect(texts).toContain("resumed by the API");
+    expect(texts).toContain("the second one");
+
+    // Nothing is running any more, so cancelling says so rather than pretending it did something.
+    expect((await app.request(`/api/runs/${runId}/cancel`, { method: "POST" })).status).toBe(404);
+  });
+
   it("refuses to start at all when the agent client is not on this machine", async () => {
     const { root } = project();
     const app = createApp(root, {

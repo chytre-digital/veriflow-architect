@@ -320,6 +320,24 @@ describe("in the browser", () => {
     expect(source).toContain("what changing this lands in");
   });
 
+  it("keeps /api/project meaning the project, and serves the aggregate under its own name", async () => {
+    const { root, store } = seed();
+    store.close();
+    const app = createApp(root);
+
+    // The technical architecture's HTTP contract spells out /api/project next to /api/snapshots: it
+    // means the workspace, not what has been asked about it. A documented path answering a
+    // different question is worse than an absent one.
+    const project = (await (await app.request("/api/project")).json()) as Record<string, unknown>;
+    expect((project["project"] as Record<string, unknown>)["root"]).toBe(root);
+    expect((project["snapshot"] as Record<string, unknown>)["id"]).toBe("s2");
+    expect(project["answers"]).toBe(3);
+    expect(project["modules"]).toBeUndefined();
+
+    const overview = (await (await app.request("/api/project/overview")).json()) as Record<string, unknown>;
+    expect((overview["counts"] as Record<string, number>)["unreached"]).toBe(1);
+  });
+
   it("404s the project view when nothing is indexed rather than rendering an empty one", async () => {
     const root = mkdtempSync(join(tmpdir(), "veriflow-project-empty-"));
     made.push(root);

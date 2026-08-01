@@ -514,6 +514,22 @@ GET  /api/metrics/:answerId
 The server binds to `127.0.0.1`. Validation failures use `422`, stale revisions `409`, missing
 entities `404`. Exporting is the only endpoint that writes into the repository.
 
+**What of this is served today.** The contract above is the design; this is the state, because a
+contract nobody checks against the running server is a wish.
+
+| endpoint | state |
+|---|---|
+| `GET /api/project`, `/api/runs/:id`, `/api/runs/:id/events`, `/api/answers`, `/api/answers/:id` | served |
+| `POST /api/runs/:id/answer`, `/api/runs/:id/cancel` | served; the browser uses `POST /runs/:id/*` instead, because a form needs a redirect rather than a status code. Both go through one registry |
+| `GET /api/project/overview`, `/api/impact` | served, added by F011 and not in the design above |
+| `GET /api/snapshots`, `POST /api/snapshots`, `GET`/`POST /api/questions` | not served. Indexing and asking happen through the CLI and through `POST /ask`, which the browser drives |
+| `GET /api/answers/:id/freshness`, `POST /api/answers/:id/verify`, `POST /api/answers/:id/export`, `GET /api/callgraph/:snapshotId`, `GET /api/metrics/:answerId` | not served as JSON. The data exists and is reachable — as HTML at `/answers/:id/freshness` and `/answers/:id/metrics`, over MCP, and through the CLI — but a JSON client has no route to it |
+
+`/api/project` is the project itself: id, name, root, latest snapshot, answer count. F011's aggregate
+lives at `/api/project/overview`, having briefly and wrongly taken the shorter name — a documented
+path answering a different question is worse than an absent one, because the client gets a
+well-formed answer to something it did not ask.
+
 ## MCP server
 
 `veriflow mcp` exposes stored results so any agent can design and review against them. This is the
