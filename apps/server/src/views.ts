@@ -72,7 +72,8 @@ svg.flow { display:block; min-width:100%; }
 .lane-name { font-size:11px; fill:var(--fg); }
 .arrow { stroke:var(--fg); stroke-width:1.4; }
 .head { fill:var(--fg); }
-.step-label { font-size:11.5px; fill:var(--fg); }
+.step-label { font-size:11.5px; fill:var(--fg); paint-order:stroke; stroke:var(--card); stroke-width:3px;
+  stroke-linejoin:round; }
 .step { cursor:pointer; }
 .step:hover .arrow { stroke:var(--accent); }
 .step.is-selected .arrow { stroke:var(--accent); stroke-width:2.4; }
@@ -271,9 +272,14 @@ export function flowPage(input: FlowPageInput): string {
   const allSteps: Step[] = [...answer.steps, ...answer.branches.flatMap((b) => b.steps)];
   const selected = allSteps.find((s) => s.id === input.selectedStepId);
 
+  // The diagram names its columns after the participants; the panel describing a step off that
+  // diagram cannot go back to naming them by id.
+  const laneName = new Map(answer.lanes.map((l) => [l.id, l.name]));
+  const participant = (id: string): string => laneName.get(id) ?? id;
+
   const panel = selected
     ? `<h3>${esc(selected.label)}</h3>
-       <div class="meta">${esc(selected.from)} → ${esc(selected.to)} · ${esc(selected.kind)}</div>
+       <div class="meta">${esc(participant(selected.from))} → ${esc(participant(selected.to))} · ${esc(selected.kind)}</div>
        ${selected.reasoning ? `<p>${esc(selected.reasoning)}</p>` : ""}
        ${
          selected.citations.length
@@ -508,12 +514,23 @@ export function architecturePage(input: ArchitectureInput): string {
 }
 
 /**
- * Module edges reference registry ids, never names — that is what keeps an answer readable after a
- * rename. So the drawing has to look the label up: registry first, then the lane that claims the
- * module, then the bare id rather than nothing.
+ * What an endpoint of a module edge turns out to be.
+ *
+ * Two kinds of id arrive here and the drawing has to tell them apart, because a box that says
+ * "MODULE dbgw / dbgw" is a box that answers nothing:
+ *
+ *   - a **registry module id** (`src-app`), which the snapshot discovered and can name and locate;
+ *   - a **lane id** (`dbgw`), which is a participant the answer declared — the Supabase RPC gateway,
+ *     a database table, an external system. Some of those are backed by a module and some are not,
+ *     and a table is not a folder however confidently the picture calls it one.
+ *
+ * Resolving the second through the first is what puts the participant's real name on the box and its
+ * real kind on the badge; falling through to the bare id happens only when the answer named an
+ * endpoint that is neither, and then the id is at least the key into the edge list below.
  */
 function moduleNodes(answer: FlowAnswer, modules: ModuleRow[]): Parameters<typeof layoutModules>[0] {
   const registry = new Map(modules.map((m) => [m.id, m]));
+  const laneById = new Map(answer.lanes.map((l) => [l.id, l]));
   // Several participants can live in one module — the checkout route and the cron routes are both
   // src/app. The box is the module, so it takes the module's name; a lane only gets to name it when
   // it is the only participant there, and only then can it decide the kind.
@@ -533,28 +550,60 @@ function moduleNodes(answer: FlowAnswer, modules: ModuleRow[]): Parameters<typeo
 
   return [...ids].map((id) => {
     const module = registry.get(id);
-    const lanes = lanesOf.get(id) ?? [];
-    const only = lanes.length === 1 ? lanes[0] : undefined;
-    const paths = module?.paths.join(", ") ?? id;
-    return {
-      id,
-      label: module?.label ?? only?.name ?? id,
-      kind: only?.kind ?? "module",
-      detail: lanes.length > 1 ? `${paths} · ${lanes.length} participants` : paths,
-    };
+    if (module) {
+      const lanes = lanesOf.get(id) ?? [];
+      const only = lanes.length === 1 ? lanes[0] : undefined;
+      const paths = module.paths.join(", ");
+      return {
+        id,
+        label: module.label,
+        kind: only?.kind ?? "module",
+        detail: lanes.length > 1 ? `${paths} · ${lanes.length} participants` : paths,
+      };
+    }
+
+    const lane = laneById.get(id);
+    if (lane) {
+      const owning = lane.moduleId ? registry.get(lane.moduleId) : undefined;
+      return {
+        id,
+        label: lane.name,
+        kind: lane.kind,
+        // A participant with no module behind it — a table, an external system — has no path to
+        // show, so it shows the id the edge list underneath refers to it by.
+        detail: owning ? owning.paths.join(", ") : (lane.moduleId ?? id),
+      };
+    }
+
+    return { id, label: id, kind: "module", detail: id };
   });
 }
 
 export function modulesPage(answer: FlowAnswer, row: AnswerRow, modules: ModuleRow[] = []): string {
-  const layout = layoutModules(moduleNodes(answer, modules), answer.moduleEdges);
+  const nodes = moduleNodes(answer, modules);
+  const layout = layoutModules(nodes, answer.moduleEdges);
   const svg = renderModulesSvg(layout);
   const backward = layout.edges.filter((e) => e.backward);
+
+  // The picture resolved these ids to participants; the list beside it has to say the same thing, or
+  // the reader is left asking what `dbgw` is with the answer sitting in a box two inches above.
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const nameOf = (id: string): string => byId.get(id)?.label ?? id;
+  // The id is what every other surface — the edge list, the MCP payload, the export — calls it by, so
+  // it stays visible next to the name rather than being replaced by it.
+  const originOf = (id: string): string => {
+    const node = byId.get(id);
+    if (!node) return id;
+    const kind = node.kind ?? "module";
+    return node.detail && node.detail !== id ? `${id} · ${kind} · ${node.detail}` : `${id} · ${kind}`;
+  };
 
   const edges = answer.moduleEdges.length
     ? answer.moduleEdges
         .map(
           (e) => `<div class="branch ${e.inferred ? "compensated" : ""}">
-        <h3>${esc(e.from)} → ${esc(e.to)}</h3>
+        <h3>${esc(nameOf(e.from))} → ${esc(nameOf(e.to))}</h3>
+        <div class="meta">${esc(originOf(e.from))} → ${esc(originOf(e.to))}</div>
         <div class="inv"><b>Carries:</b> ${esc(e.contract)}</div>
         <div class="meta">${esc(e.kind)}${e.inferred ? ` · <span class="pill warn">inferred${e.rule ? `: ${esc(e.rule)}` : ""}</span>` : ""} · ${e.citations.length} citation${e.citations.length === 1 ? "" : "s"}</div>
       </div>`,

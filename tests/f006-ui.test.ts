@@ -211,6 +211,9 @@ describe("the local server", () => {
     expect(html).toContain("src/route.ts:2");
     expect(html).toContain("verified");
     expect(html).toContain("POST /checkout");
+    // The panel names the participants the columns are named after, not the ids underneath them.
+    expect(html).toContain("Customer → Checkout route");
+    expect(html).not.toContain("customer → api");
   });
 
   it("lists every alternative outcome with the invariant it protects", async () => {
@@ -386,6 +389,58 @@ describe("architecture and modules screens", () => {
     expect(html).toContain("inferred");
     expect(html).toContain("src/modules/stripe-gateway/stripe.ts");
     expect(html).toContain("hold is released");
+  });
+
+  /**
+   * Real answers name their module edges after the participants they declared — `dbgw`, `wallet_db`
+   * — not after registry ids. Every one of those boxes read "MODULE dbgw / dbgw", which told the
+   * reader neither what it was nor where it lived, and called a database table a module while it was
+   * at it.
+   */
+  it("names a box after the participant when the edge used a lane id, and says what kind it is", async () => {
+    const root = indexedProject();
+    const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    store.insertAnswer({
+      id: "a-3",
+      questionId: "q",
+      runId: "r",
+      snapshotId: "s1",
+      title: "Booking",
+      verified: 0,
+      unverified: 0,
+      openQuestions: 0,
+      body: answer({
+        lanes: [
+          { id: "customer", name: "Customer", kind: "actor" },
+          { id: "api", name: "Checkout route", kind: "module", moduleId: "src-app" },
+          { id: "dbgw", name: "Supabase RPC gateway", kind: "gateway", moduleId: "src-modules-payments" },
+          { id: "wallet_db", name: "wallets + wallet_transactions", kind: "store" },
+          { id: "stripe", name: "Stripe", kind: "external" },
+        ],
+        moduleEdges: [
+          { from: "api", to: "dbgw", contract: "one RPC carries the charge", kind: "call", inferred: false, citations: [] },
+          { from: "dbgw", to: "wallet_db", contract: "balance moves under a row lock", kind: "write", inferred: false, citations: [] },
+        ],
+      }),
+      citations: [],
+    });
+    store.close();
+
+    const html = await (await createApp(root).request("/answers/a-3/modules")).text();
+    // The participant's own name, and the module it lives in — not the id twice over.
+    expect(html).toContain("Supabase RPC gateway");
+    expect(html).toContain("src/modules/payments");
+    expect(html).toContain("GATEWAY");
+    // A table is a store. Calling it a module was the drawing lying about what it had found.
+    expect(html).toContain("wallets + wallet_transactions");
+    expect(html).toContain("STORE");
+    expect(html).not.toMatch(/mm-name[^>]*>dbgw</);
+
+    // The edge list beside the picture says what the picture says, with the id kept for traceability.
+    expect(html).toContain("Supabase RPC gateway → wallets + wallet_transactions");
+    expect(html).toContain("dbgw · gateway · src/modules/payments");
+    expect(html).toContain("wallet_db · store");
+    expect(html).not.toContain("<h3>dbgw → wallet_db</h3>");
   });
 });
 

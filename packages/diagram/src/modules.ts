@@ -22,6 +22,8 @@
  * than a regex over a path string.
  */
 
+import { blockWidth, fitText, wrapText } from "./text.js";
+
 export interface ModuleNodeInput {
   id: string;
   label: string;
@@ -55,6 +57,10 @@ export interface ModuleNodeBox {
   y: number;
   width: number;
   height: number;
+  /** The name over as many lines as it takes. The box was made tall enough for exactly these. */
+  nameLines: string[];
+  /** The paths under it, likewise. Empty when the participant is not a folder. */
+  detailLines: string[];
 }
 
 export interface Segment {
@@ -83,9 +89,12 @@ export interface ModuleEdgeShape {
   d: string;
   /** The same route as `d`, as straight pieces — so a test can ask what it crosses. */
   segments: Segment[];
-  /** The contract, already cut to what fits. The renderer draws this, it does not re-truncate. */
+  /** What is actually drawn, in reading order. The renderer lays these out, it does not re-wrap. */
+  lines: string[];
+  /** The drawn text as one string. Equal to the contract unless it needed an ellipsis to fit. */
   label: string;
   labelX: number;
+  /** Baseline of the first line. Later lines step down by the label's line height. */
   labelY: number;
   labelAnchor: "start" | "middle";
   /** The space the label occupies. Corridor assignment reserved exactly this. */
@@ -109,19 +118,24 @@ const NODE_W = 216;
 const NODE_H = 64;
 /** Wide enough to be a gutter a vertical run can live in, not just whitespace. */
 const H_GAP = 44;
-const BAND_PAD = 12;
+const BAND_PAD = 14;
 const BAND_MIN = 46;
-const CORRIDOR_H = 21;
-/** Where the line sits inside its corridor slot, leaving room above it for the label. */
-const CORRIDOR_LINE = 15;
-const LABEL_LIFT = 5;
+/** A corridor with no label at all: just the line and the air around it. */
+const CORRIDOR_MIN_H = 22;
+/** Space under a corridor's line before the next corridor's text may start. */
+const CORRIDOR_PAD = 9;
+/** Baseline to baseline within one label. */
 const LABEL_H = 13;
+/** Last baseline up off the line it names. */
+const LABEL_LIFT = 6;
 const CHANNEL_GAP = 44;
 const CHANNEL_STEP = 30;
 const GUTTER_LANE = 8;
 /** Clear space demanded between two things sharing a corridor. */
-const ITEM_GAP = 16;
+const ITEM_GAP = 20;
 const MAX_LABEL_W = 300;
+/** A contract worth reading is worth reading in full; past three lines it is a paragraph, not a label. */
+const MAX_LABEL_LINES = 3;
 const CORNER = 6;
 
 const LABEL_SIZE = 10;
@@ -130,44 +144,40 @@ const NODE_DETAIL_SIZE = 10;
 const NODE_KIND_SIZE = 8.5;
 const NODE_TEXT_W = NODE_W - 24;
 
+/* Where each line inside a box sits, measured from the top of the box. A box with one name line and
+   one detail line comes to exactly NODE_H, which is what it was before any of this wrapped. */
+const NODE_KIND_BASE = 17;
+/** Kind baseline down to the first name baseline. */
+const NODE_NAME_GAP = 19;
+const NODE_NAME_LINE = 16;
+/** Last name baseline down to the first detail baseline. */
+const NODE_DETAIL_GAP = 16;
+const NODE_DETAIL_LINE = 12;
+const NODE_BOTTOM_PAD = 12;
+const MAX_NODE_NAME_LINES = 2;
+const MAX_NODE_DETAIL_LINES = 2;
+
 /* -------------------------------------------------------------------------- */
-/* Text width                                                                  */
+/* Box metrics                                                                 */
 /* -------------------------------------------------------------------------- */
 
-const NARROW = `iljtfrI.,:;'"!|()[]{}/\\ `;
-const WIDE = "mwMWQGO@%&#";
-
-/**
- * How wide a string will be drawn, without a browser to ask.
- *
- * Deliberately a slight over-estimate: the corridor allocator spends this number as reserved space,
- * and reserving a little too much costs a few pixels while reserving too little costs a collision —
- * which is the entire thing this file exists to prevent.
- */
-export function textWidth(text: string, fontSize: number, options: { mono?: boolean; bold?: boolean } = {}): number {
-  if (options.mono) return text.length * fontSize * 0.605;
-  let em = 0;
-  for (const ch of text) {
-    if (NARROW.includes(ch)) em += 0.33;
-    else if (WIDE.includes(ch)) em += 0.88;
-    else if (ch >= "A" && ch <= "Z") em += 0.7;
-    else if (ch >= "0" && ch <= "9") em += 0.57;
-    else em += 0.55;
-  }
-  return em * fontSize * (options.bold ? 1.06 : 1);
+/** Baseline of the nth name line (0-based), from the top of the box. */
+function nameBaseline(line: number): number {
+  return NODE_KIND_BASE + NODE_NAME_GAP + line * NODE_NAME_LINE;
 }
 
-/** Cut to what fits the space there actually is, rather than to a character count that guesses. */
-export function fitText(
-  text: string,
-  fontSize: number,
-  maxWidth: number,
-  options: { mono?: boolean; bold?: boolean } = {},
-): string {
-  if (textWidth(text, fontSize, options) <= maxWidth) return text;
-  let cut = text;
-  while (cut.length > 1 && textWidth(`${cut}…`, fontSize, options) > maxWidth) cut = cut.slice(0, -1);
-  return `${cut.trimEnd()}…`;
+/** Baseline of the nth detail line, which hangs off the last name line. */
+function detailBaseline(nameLines: number, line: number): number {
+  return nameBaseline(Math.max(1, nameLines) - 1) + NODE_DETAIL_GAP + line * NODE_DETAIL_LINE;
+}
+
+/** Tall enough for the text that is actually in it, and never shorter than a plain box. */
+function nodeHeight(nameLines: number, detailLines: number): number {
+  const last =
+    detailLines > 0
+      ? detailBaseline(nameLines, detailLines - 1)
+      : nameBaseline(Math.max(1, nameLines) - 1);
+  return Math.max(NODE_H, last + NODE_BOTTOM_PAD);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -220,8 +230,9 @@ interface Plan {
   entryX: number;
   runs: PlanRun[];
   labelRun: number;
-  label: string;
+  lines: string[];
   labelW: number;
+  labelH: number;
 }
 
 export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInput[]): ModulesLayout {
@@ -352,21 +363,38 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
     const offset = Math.floor((columns - row.length) / 2);
     for (const [i, id] of row.entries()) {
       const source = declared.get(id);
+      const label = source?.label ?? id;
+      const detail = source?.detail ?? id;
+      // A participant's name is the one thing on the box a reader has to be able to read, so the box
+      // is sized to the name rather than the name to the box.
+      const nameLines = wrapText(label, NODE_NAME_SIZE, NODE_TEXT_W, MAX_NODE_NAME_LINES, { bold: true });
+      const detailLines = wrapText(detail, NODE_DETAIL_SIZE, NODE_TEXT_W, MAX_NODE_DETAIL_LINES, { mono: true });
       const box: ModuleNodeBox = {
         id,
-        label: source?.label ?? id,
+        label,
         kind: source?.kind ?? "module",
-        detail: source?.detail ?? id,
+        detail,
         layer,
         x: MARGIN + (offset + i) * step,
         y: 0, // assigned once the bands are measured
         width: NODE_W,
-        height: NODE_H,
+        height: nodeHeight(nameLines.length, detailLines.length),
+        nameLines,
+        detailLines,
       };
       boxes.set(id, box);
       nodes.push(box);
     }
   }
+
+  // One height per row, so a row still reads as a row and every corridor below it starts in the same
+  // place — a row of boxes with ragged bottoms would put each edge's exit at a different depth.
+  const rowHeight = new Map<number, number>();
+  for (const node of nodes) {
+    rowHeight.set(node.layer, Math.max(rowHeight.get(node.layer) ?? NODE_H, node.height));
+  }
+  for (const node of nodes) node.height = rowHeight.get(node.layer) ?? NODE_H;
+  const heightOf = (layer: number): number => rowHeight.get(layer) ?? NODE_H;
 
   // A gutter on each side of every column, so a vertical run always has somewhere legal to be.
   const gutters: number[] = [];
@@ -381,8 +409,9 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
     b: ModuleNodeBox;
     self: boolean;
     backward: boolean;
-    label: string;
+    lines: string[];
     labelW: number;
+    labelH: number;
   }
 
   const drafts: Draft[] = [];
@@ -392,8 +421,20 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
     if (!a || !b) continue;
     const self = edge.from === edge.to;
     const backward = !self && (edge.backward === true || b.layer <= a.layer);
-    const label = fitText(edge.contract, LABEL_SIZE, MAX_LABEL_W);
-    drafts.push({ index, edge, a, b, self, backward, label, labelW: textWidth(label, LABEL_SIZE) });
+    // Wrapped, not cut. A contract truncated at one line reads as a different contract, and these
+    // are the sentences a reviewer checks the drawing against.
+    const lines = wrapText(edge.contract, LABEL_SIZE, MAX_LABEL_W, MAX_LABEL_LINES);
+    drafts.push({
+      index,
+      edge,
+      a,
+      b,
+      self,
+      backward,
+      lines,
+      labelW: blockWidth(lines, LABEL_SIZE),
+      labelH: Math.max(1, lines.length) * LABEL_H,
+    });
   }
 
   // Return channels: one per overlapping span, so two violations never share a line.
@@ -535,8 +576,9 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
       entryX: tx,
       runs,
       labelRun,
-      label: d.label,
+      lines: d.lines,
       labelW: d.labelW,
+      labelH: d.labelH,
     });
   }
 
@@ -569,34 +611,50 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
     }
   }
 
-  const corridorCount = new Map<number, number>();
+  // A corridor is as tall as the tallest label in it. Fixed-height corridors were the second half of
+  // the collision problem: a two-line label in a one-line slot has to go somewhere, and where it went
+  // was on top of the corridor above.
+  const corridorHeights = new Map<number, number[]>();
   for (const [band, items] of byBand) {
     const tracks = assignTracks(items, ITEM_GAP);
     for (const [i, item] of items.entries()) item.run.corridor = tracks[i] ?? 0;
-    corridorCount.set(band, Math.max(0, ...tracks) + 1);
+    const heights = new Array<number>(Math.max(0, ...tracks) + 1).fill(CORRIDOR_MIN_H);
+    for (const [i, item] of items.entries()) {
+      const track = tracks[i] ?? 0;
+      const needed = item.run === item.plan.runs[item.plan.labelRun]
+        ? item.plan.labelH + LABEL_LIFT + CORRIDOR_PAD
+        : CORRIDOR_MIN_H;
+      heights[track] = Math.max(heights[track] ?? CORRIDOR_MIN_H, needed);
+    }
+    corridorHeights.set(band, heights);
   }
 
   /* ---- vertical space, now that we know how much is needed ----------------- */
 
   const bandHeight = (band: number): number => {
-    const count = corridorCount.get(band) ?? 0;
-    if (count === 0) return band < 0 ? 0 : BAND_MIN;
-    return Math.max(BAND_MIN, BAND_PAD * 2 + count * CORRIDOR_H);
+    const heights = corridorHeights.get(band) ?? [];
+    if (heights.length === 0) return band < 0 ? 0 : BAND_MIN;
+    return Math.max(BAND_MIN, BAND_PAD * 2 + heights.reduce((sum, h) => sum + h, 0));
   };
 
   const rowY = new Map<number, number>();
   let cursor = MARGIN + bandHeight(-1);
   for (const layer of layerList) {
     rowY.set(layer, cursor);
-    cursor += NODE_H + bandHeight(layer);
+    cursor += heightOf(layer) + bandHeight(layer);
   }
   for (const node of nodes) node.y = rowY.get(node.layer) ?? MARGIN;
 
   /** Top of the gap below row `band`; band -1 is the gap above the first row. */
   const bandTop = (band: number): number =>
-    band < 0 ? MARGIN : (rowY.get(band) ?? MARGIN) + NODE_H;
-  const corridorY = (run: PlanRun): number =>
-    bandTop(run.band) + BAND_PAD + run.corridor * CORRIDOR_H + CORRIDOR_LINE;
+    band < 0 ? MARGIN : (rowY.get(band) ?? MARGIN) + heightOf(band);
+  /** The line sits at the foot of its own slot, with that slot's text stacked above it. */
+  const corridorY = (run: PlanRun): number => {
+    const heights = corridorHeights.get(run.band) ?? [];
+    let offset = 0;
+    for (let i = 0; i < run.corridor; i += 1) offset += heights[i] ?? CORRIDOR_MIN_H;
+    return bandTop(run.band) + BAND_PAD + offset + (heights[run.corridor] ?? CORRIDOR_MIN_H) - CORRIDOR_PAD;
+  };
 
   /* ---- draw ---------------------------------------------------------------- */
 
@@ -617,7 +675,10 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
     const clean = dedupe(points);
     const labelRun = plan.runs[plan.labelRun]!;
     const centre = labelCentre.get(labelRun) ?? (labelRun.x0 + labelRun.x1) / 2;
-    const labelY = corridorY(labelRun) - LABEL_LIFT;
+    // The block sits on the line: the *last* baseline is one lift above it, so the first is however
+    // many lines further up.
+    const lastBaseline = corridorY(labelRun) - LABEL_LIFT;
+    const labelY = lastBaseline - (Math.max(1, plan.lines.length) - 1) * LABEL_H;
     const input = edgesIn[plan.index]!;
 
     edges.push({
@@ -630,7 +691,8 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
       self: plan.self,
       d: orthPath(clean, CORNER),
       segments: toSegments(clean),
-      label: plan.label,
+      lines: plan.lines,
+      label: plan.lines.join(" "),
       labelX: centre,
       labelY,
       labelAnchor: "middle",
@@ -638,7 +700,7 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
         x: centre - plan.labelW / 2,
         y: labelY - LABEL_H + 3,
         width: plan.labelW,
-        height: LABEL_H,
+        height: plan.labelH,
       },
     });
   }
@@ -652,7 +714,7 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
 
   return {
     width: Math.ceil(rightmost + MARGIN),
-    height: Math.ceil((rowY.get(lastLayer) ?? MARGIN) + NODE_H + MARGIN),
+    height: Math.ceil((rowY.get(lastLayer) ?? MARGIN) + heightOf(lastLayer) + MARGIN),
     nodes,
     edges,
     channelX: channels[0] ?? channelBase,
@@ -762,28 +824,33 @@ export function renderModulesSvg(layout: ModulesLayout): string {
   }
 
   for (const node of layout.nodes) {
+    const x = node.x + 12;
     parts.push(
       `<g class="mm-node kind-${esc(node.kind)}">`,
       `<rect class="mm-box" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="8"/>`,
-      `<text class="mm-kind" x="${node.x + 12}" y="${node.y + 17}">${esc(
+      `<text class="mm-kind" x="${x}" y="${node.y + NODE_KIND_BASE}">${esc(
         fitText(node.kind.toUpperCase(), NODE_KIND_SIZE, NODE_TEXT_W),
       )}</text>`,
-      `<text class="mm-name" x="${node.x + 12}" y="${node.y + 36}">${esc(
-        fitText(node.label, NODE_NAME_SIZE, NODE_TEXT_W, { bold: true }),
-      )}</text>`,
-      `<text class="mm-detail" x="${node.x + 12}" y="${node.y + 52}">${esc(
-        fitText(node.detail, NODE_DETAIL_SIZE, NODE_TEXT_W, { mono: true }),
-      )}</text>`,
-      `<title>${esc(`${node.label}\n${node.detail}`)}</title>`,
-      `</g>`,
     );
+    for (const [i, line] of node.nameLines.entries()) {
+      parts.push(`<text class="mm-name" x="${x}" y="${node.y + nameBaseline(i)}">${esc(line)}</text>`);
+    }
+    for (const [i, line] of node.detailLines.entries()) {
+      parts.push(
+        `<text class="mm-detail" x="${x}" y="${node.y + detailBaseline(node.nameLines.length, i)}">${esc(line)}</text>`,
+      );
+    }
+    parts.push(`<title>${esc(`${node.label}\n${node.detail}`)}</title>`, `</g>`);
   }
 
   for (const edge of layout.edges) {
+    const spans = edge.lines
+      .map((line, i) => `<tspan x="${edge.labelX}"${i === 0 ? "" : ` dy="${LABEL_H}"`}>${esc(line)}</tspan>`)
+      .join("");
     parts.push(
       `<g class="${classOf(edge)}"><text class="mm-label" x="${edge.labelX}" y="${edge.labelY}" text-anchor="${
         edge.labelAnchor
-      }">${esc(edge.label)}</text>`,
+      }">${spans}</text>`,
       `<title>${esc(`${edge.from} → ${edge.to}\n${edge.contract}`)}</title></g>`,
     );
   }

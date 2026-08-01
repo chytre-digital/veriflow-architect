@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { layoutFlow, layoutModules, layoutPaths, renderFlowSvg, renderModulesSvg, renderPathsSvg } from "@veriflow/diagram";
+import {
+  layoutFlow,
+  layoutModules,
+  layoutPaths,
+  renderFlowSvg,
+  renderModulesSvg,
+  renderPathsSvg,
+  textWidth,
+  wrapText,
+} from "@veriflow/diagram";
 import { FlowAnswerSchema, type FlowAnswer } from "@veriflow/flow-answer";
+
+/** The renderers escape what they draw, so a test comparing against the SVG has to escape too. */
+const esc = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
  * The mockup could split one flow into variants and drew paths and modules as pictures. These are the
@@ -115,6 +128,129 @@ describe("flow variants", () => {
   });
 });
 
+/**
+ * A step label is a sentence, and it was drawn as one unbroken line centred on the arrow — so on a
+ * real answer the left half of the first label was outside the viewBox and clipped, and the rest sat
+ * on the phase title above it. Rows are measured now, so these are the assertions: nothing outside
+ * the canvas, nothing on top of anything else.
+ */
+describe("flow labels — measured, wrapped, and inside the picture", () => {
+  const sentence = (n: number): string =>
+    `Instruktor klikne „zaplatit z kreditu" u existujícího unpaid bookingu ${n}. ` +
+    "UI tlačítko ukáže jen při kladné efektivní ceně, balance >= price a bez payment-hold markeru.";
+
+  const wordy = (): FlowAnswer =>
+    answer({
+      steps: [
+        { id: "s1", phaseId: "p1", from: "customer", to: "api", kind: "sync", label: sentence(1), reasoning: "", citations: [] },
+        { id: "s2", phaseId: "p1", from: "api", to: "api", kind: "self", label: sentence(2), reasoning: "", citations: [] },
+        { id: "s3", phaseId: "p2", from: "api", to: "db", kind: "sync", label: "krátký krok", reasoning: "", citations: [] },
+        { id: "s4", phaseId: "p3", from: "stripe", to: "customer", kind: "async", label: sentence(4), reasoning: "", citations: [] },
+      ],
+      branches: [],
+    });
+
+  const layout = layoutFlow(wordy());
+  const boxes = layout.arrows.map((a) => a.labelBox);
+
+  it("wraps a sentence over lines instead of drawing one line that leaves the canvas", () => {
+    const long = layout.arrows.find((a) => a.stepId === "s1")!;
+    expect(long.lines.length).toBeGreaterThan(1);
+    expect(long.lines.length).toBeLessThanOrEqual(3);
+    for (const line of long.lines) expect(textWidth(line, 11.5)).toBeLessThanOrEqual(420);
+    expect(layout.arrows.find((a) => a.stepId === "s3")!.lines).toEqual(["krátký krok"]);
+  });
+
+  it("keeps every label inside the canvas it declares — the clipping bug", () => {
+    for (const box of boxes) {
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(layout.width);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(layout.height);
+    }
+  });
+
+  it("puts no label on top of another one", () => {
+    for (let i = 1; i < boxes.length; i += 1) {
+      const above = boxes[i - 1]!;
+      expect(boxes[i]!.y).toBeGreaterThanOrEqual(above.y + above.height);
+    }
+  });
+
+  it("clears the arrow it names, and the arrow above it", () => {
+    for (const arrow of layout.arrows) {
+      expect(arrow.labelBox.y + arrow.labelBox.height).toBeLessThan(arrow.y);
+      for (const other of layout.arrows) {
+        if (other === arrow || other.y >= arrow.y) continue;
+        const bottomOfOther = other.y + (other.self ? 22 : 0);
+        expect(arrow.labelBox.y).toBeGreaterThanOrEqual(bottomOfOther);
+      }
+    }
+  });
+
+  it("starts the first label below the phase title rather than through it", () => {
+    for (const band of layout.phases) {
+      const inBand = layout.arrows.filter((a) => a.y >= band.y && a.y <= band.y + band.height);
+      for (const arrow of inBand) expect(arrow.labelBox.y).toBeGreaterThanOrEqual(band.y + 20);
+    }
+  });
+
+  it("gives a two-line label more room than a one-line label", () => {
+    const one = layoutFlow(
+      answer({
+        steps: [{ id: "s1", phaseId: "p1", from: "customer", to: "api", kind: "sync", label: "short", reasoning: "", citations: [] }],
+        branches: [],
+      }),
+    );
+    const two = layoutFlow(
+      answer({
+        steps: [{ id: "s1", phaseId: "p1", from: "customer", to: "api", kind: "sync", label: sentence(1), reasoning: "", citations: [] }],
+        branches: [],
+      }),
+    );
+    expect(two.arrows[0]!.y).toBeGreaterThan(one.arrows[0]!.y);
+    expect(two.height).toBeGreaterThan(one.height);
+  });
+
+  it("draws every wrapped line, and keeps the whole sentence on the element", () => {
+    const svg = renderFlowSvg(layout);
+    const long = layout.arrows.find((a) => a.stepId === "s1")!;
+    for (const line of long.lines) expect(svg).toContain(esc(line));
+    expect(svg).toContain(esc(long.label));
+    expect((svg.match(/<tspan/g) ?? []).length).toBeGreaterThanOrEqual(
+      layout.arrows.reduce((sum, a) => sum + a.lines.length, 0),
+    );
+  });
+
+  it("stays deterministic once the labels decide the geometry", () => {
+    expect(JSON.stringify(layoutFlow(wordy()))).toBe(JSON.stringify(layoutFlow(wordy())));
+  });
+});
+
+describe("the text engine the layouts measure with", () => {
+  it("wraps to the width given, not to a character count", () => {
+    const lines = wrapText("MMMMM MMMMM MMMMM iiiii iiiii iiiii", 10, 60, 5);
+    for (const line of lines) expect(textWidth(line, 10)).toBeLessThanOrEqual(60);
+    expect(lines.join(" ")).toBe("MMMMM MMMMM MMMMM iiiii iiiii iiiii");
+  });
+
+  it("only ellipsises once it has run out of lines to wrap onto", () => {
+    const two = wrapText("one two three four five six seven eight nine ten", 10, 40, 2);
+    expect(two).toHaveLength(2);
+    expect(two[1]!.endsWith("…")).toBe(true);
+    const many = wrapText("one two three four five six seven eight nine ten", 10, 40, 12);
+    expect(many.some((l) => l.endsWith("…"))).toBe(false);
+  });
+
+  it("counts a wide string as wider than a narrow one of the same length", () => {
+    expect(textWidth("MMMM", 10)).toBeGreaterThan(textWidth("iiii", 10));
+  });
+
+  it("returns nothing for text that is nothing", () => {
+    expect(wrapText("   ", 10, 100)).toEqual([]);
+  });
+});
+
 describe("paths layout", () => {
   const layout = layoutPaths(answer());
 
@@ -144,6 +280,68 @@ describe("paths layout", () => {
     for (const card of layout.cards) {
       expect(card.x + card.width).toBeLessThanOrEqual(layout.width);
       expect(card.y + card.height).toBeLessThanOrEqual(layout.height);
+    }
+  });
+
+  /** Same bug as the flow labels: a real phase title is a sentence, and 26 characters of it is not. */
+  it("grows a card and a phase box around the text instead of cutting the text", () => {
+    const wordy = answer({
+      phases: [
+        { id: "p1", title: "Volba v UI u existujícího bookingu a kontrola efektivní ceny", ordinal: 0 },
+        { id: "p2", title: "Mint a session", ordinal: 1 },
+        { id: "p3", title: "Settle", ordinal: 2 },
+      ],
+      branches: [
+        {
+          id: "b-long",
+          forkStepId: "s1",
+          tone: "refused",
+          title: "Seat taken while the customer was still deciding, and the hold had already expired",
+          invariant:
+            "no money moves before a seat is held, and a hold that expires releases the seat back to the pool",
+          steps: [
+            {
+              id: "b-long-1",
+              phaseId: "p1",
+              from: "api",
+              to: "customer",
+              kind: "error",
+              label: "409 OCCURRENCE_FULL — the occurrence filled while the checkout page was open",
+              reasoning: "",
+              citations: [],
+            },
+          ],
+        },
+        {
+          id: "b-short",
+          forkStepId: "s1",
+          tone: "alternate",
+          title: "Short",
+          invariant: "short",
+          steps: [],
+        },
+      ],
+    });
+    const drawn = layoutPaths(wordy);
+    const long = drawn.cards.find((c) => c.branchId === "b-long")!;
+    const short = drawn.cards.find((c) => c.branchId === "b-short")!;
+
+    expect(long.titleLines.length + long.outcomeLines.length + long.invariantLines.length).toBeGreaterThan(3);
+    expect(long.height).toBeGreaterThan(short.height);
+    expect(drawn.spine[0]!.titleLines.length).toBeGreaterThan(1);
+    expect(drawn.spine[0]!.titleLines.join(" ")).toContain("efektivní ceny");
+
+    // Growing the boxes must not put them through each other, or through the canvas edge.
+    const sorted = [...drawn.cards].sort((a, b) => a.y - b.y);
+    for (let i = 1; i < sorted.length; i += 1) {
+      expect(sorted[i]!.y).toBeGreaterThanOrEqual(sorted[i - 1]!.y + sorted[i - 1]!.height);
+    }
+    for (const card of drawn.cards) expect(card.y + card.height).toBeLessThanOrEqual(drawn.height);
+    for (const node of drawn.spine) expect(node.y + node.height).toBeLessThanOrEqual(drawn.height);
+
+    const svg = renderPathsSvg(drawn);
+    for (const line of [...long.titleLines, ...long.outcomeLines, ...long.invariantLines]) {
+      expect(svg).toContain(esc(line));
     }
   });
 
@@ -398,12 +596,45 @@ describe("modules layout — nothing lands on anything else", () => {
     expect(JSON.stringify(layoutModules(nodes, heavy()))).toBe(JSON.stringify(layoutModules(nodes, heavy())));
   });
 
-  it("cuts a contract to the width there is, not to a character count", () => {
+  it("wraps a long contract to the width there is, rather than cutting it off", () => {
     const long = layout.edges.find((e) => e.contract.startsWith("149 calls"))!;
-    expect(long.label.endsWith("…")).toBe(true);
+    expect(long.lines.length).toBeGreaterThan(1);
+    expect(long.label).toBe(long.contract);
+    expect(long.label.endsWith("…")).toBe(false);
+    for (const line of long.lines) expect(textWidth(line, 10)).toBeLessThanOrEqual(300);
     expect(long.labelBox.width).toBeLessThanOrEqual(310);
-    // The whole contract is still reachable — the title carries it.
-    expect(renderModulesSvg(layout)).toContain("149 calls · via getSupabaseAdmin, conflictingBookings, rawBookingTables");
+    expect(long.labelBox.height).toBe(long.lines.length * 13);
+    // Every line is drawn, not just the first.
+    const svg = renderModulesSvg(layout);
+    for (const line of long.lines) expect(svg).toContain(esc(line));
+  });
+
+  it("breaks a token that has no break in it, and keeps the whole string on the title", () => {
+    const wall = "x".repeat(400);
+    const one = layoutModules(
+      [
+        { id: "a", label: "A", detail: "src/a" },
+        { id: "b", label: "B", detail: "src/b" },
+      ],
+      [{ from: "a", to: "b", contract: wall, kind: "calls" }],
+    );
+    const edge = one.edges[0]!;
+    expect(edge.lines.length).toBeGreaterThan(1);
+    for (const line of edge.lines) expect(textWidth(line, 10)).toBeLessThanOrEqual(300);
+    expect(edge.labelBox.x).toBeGreaterThanOrEqual(0);
+    expect(edge.labelBox.x + edge.labelBox.width).toBeLessThanOrEqual(one.width);
+    expect(renderModulesSvg(one)).toContain(wall);
+  });
+
+  it("gives a wrapped label the vertical room it needs, so it never sits on the line above", () => {
+    for (const edge of layout.edges) {
+      const others = layout.edges.filter((e) => e !== edge);
+      for (const other of others) {
+        expect(overlap(edge.labelBox, other.labelBox), `"${edge.label}" ⨯ "${other.label}"`).toBe(false);
+      }
+      expect(edge.labelBox.y).toBeGreaterThanOrEqual(0);
+      expect(edge.labelBox.y + edge.labelBox.height).toBeLessThanOrEqual(layout.height);
+    }
   });
 
   it("survives a single node with nothing to draw around it", () => {
