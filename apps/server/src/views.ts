@@ -10,7 +10,7 @@ import {
 } from "@veriflow/diagram";
 import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
-import { THRESHOLDS, thresholdOf } from "@veriflow/answers";
+import { THRESHOLDS, moduleOwning, thresholdOf } from "@veriflow/answers";
 import type { AnswerRow, CitationRow, Freshness, SnapshotFacts, Verification } from "@veriflow/answers";
 import {
   COVERAGE_RULE,
@@ -218,7 +218,7 @@ export function answersPage(rows: AnswerRow[], project: string): string {
   return page(
     "Answers",
     `<header><h1>${esc(project)}</h1><div class="meta">Stored flow answers</div></header>
-     <nav><a href="/" class="on">Answers</a><a href="/ask">Ask</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <nav><a href="/" class="on">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
      <main><div class="list">${body}</div></main>`,
   );
 }
@@ -389,11 +389,10 @@ export interface EntryPointRow {
 }
 
 /** The module a repository-relative path belongs to: the longest declared prefix wins. */
-export function moduleOwning(path: string, modules: ModuleRow[]): ModuleRow | undefined {
-  return modules
-    .filter((m) => m.paths.some((p) => path === p || path.startsWith(p + "/")))
-    .sort((a, b) => Math.max(...b.paths.map((p) => p.length)) - Math.max(...a.paths.map((p) => p.length)))[0];
-}
+// Which module owns a path is one rule, and it now lives with the project view that depends on it
+// most. Re-exported rather than reimplemented: the browser and the aggregate must attribute a
+// citation to the same module, or one screen's "nothing explains this" is another's "explained".
+export { moduleOwning };
 
 export interface ArchitectureInput {
   project: string;
@@ -492,7 +491,7 @@ export function architecturePage(input: ArchitectureInput): string {
        }</div>
        <div class="meta" style="margin-top:6px">Measured from the index alone. No agent ran to produce this.</div>
      </header>
-     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/architecture" class="on">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture" class="on">Architecture</a><a href="/callgraph">Call graph</a></nav>
      <main>
        ${
          traffic.length
@@ -1057,7 +1056,8 @@ export function sourcePage(input: SourcePageInput): string {
     .join("");
   return page(
     input.path,
-    `<header><h1>${esc(input.path)}</h1><div class="meta">line ${input.line} · read-only</div></header>
+    `<header><h1>${esc(input.path)}</h1><div class="meta">line ${input.line} · read-only ·
+       <a href="/impact?path=${encodeURIComponent(input.path)}">what changing this lands in</a></div></header>
      <main><table class="src">${body}</table>
      <script>document.getElementById("L${input.line}")?.scrollIntoView({block:"center"})</script></main>`,
   );
@@ -1118,7 +1118,7 @@ export function callGraphPage(input: CallGraphPageInput): string {
        ${input.traffic.length} module traffic cells ·
        ${input.traffic.filter((t) => t.backward).length} running back up a layer</div>
      </header>
-     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/architecture">Architecture</a><a href="/callgraph" class="on">Call graph</a></nav>
+     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph" class="on">Call graph</a></nav>
      <main>
        <div class="split">
          <div class="scroll">${svg}</div>
@@ -1158,6 +1158,215 @@ function hierarchy(rows: Array<Record<string, unknown>>): string {
     .join("");
 }
 
+/* ------------------------------------------------- the project as its answers (F011) */
+
+const PROJECT_CSS = `
+.tally { display:flex; gap:20px; flex-wrap:wrap; margin:0 0 20px; }
+.tally div { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; min-width:120px; }
+.tally b { display:block; font-size:22px; font-weight:600; letter-spacing:-.02em; }
+.tally span { color:var(--dim); font-size:12.5px; }
+.reach { max-width:1000px; display:grid; gap:8px; }
+.reach .m { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:11px 14px; }
+.reach .m.shared { border-left:3px solid var(--accent); }
+.reach .m.unreached { border-left:3px solid var(--warn); }
+.reach .m h3 { margin:0 0 3px; font-size:14.5px; font-weight:600; }
+.reach .flows { font-size:12.5px; color:var(--dim); margin-top:5px; }
+.reach .flows a { color:var(--fg); }
+`;
+
+export interface ProjectPageInput {
+  project: string;
+  view: {
+    snapshotId: string;
+    counts: {
+      modules: number;
+      shared: number;
+      cited: number;
+      unreached: number;
+      answers: number;
+      supersededAnswers: number;
+    };
+    modules: Array<{
+      id: string;
+      label: string;
+      paths: string[];
+      files: number;
+      reach: "shared" | "cited" | "unreached";
+      answers: Array<{ id: string; title: string; citations: number }>;
+    }>;
+    externals: Array<{
+      name: string;
+      boundaries: Array<{ answerId: string; answerTitle: string; boundaryPath: string; failureBehavior: string }>;
+    }>;
+    openQuestions: Array<{ answerId: string; answerTitle: string; question: string; blocking: boolean }>;
+  };
+}
+
+/**
+ * The project read as the union of its answers.
+ *
+ * The most useful thing on this screen is the part nobody answered. A list of what is explained
+ * flatters the work already done; the count of modules no flow has ever reached is the one number
+ * that says where to ask next, so it is a headline rather than a footnote.
+ */
+export function projectPage(input: ProjectPageInput): string {
+  const { counts, modules } = input.view;
+  const shared = modules.filter((m) => m.reach === "shared");
+  // Biggest unexplained surface first. Checked against a real project, this list came back led by
+  // `.cursor`, `public` and `eslint-rules` while a 27-file payments-adjacent module sat seventh —
+  // the one row worth acting on, ordered behind six nobody would ever write a flow about. Nothing is
+  // filtered out, because a rule for "not real code" would be a guess this file has no business
+  // making; the order carries the signal instead, and the caveat says what else is in the list.
+  const unreached = [...modules].filter((m) => m.reach === "unreached").sort((a, b) => b.files - a.files);
+
+  const moduleCard = (m: ProjectPageInput["view"]["modules"][number]) => `<div class="m ${m.reach}">
+      <h3>${esc(m.label)}</h3>
+      <div class="meta">${esc(m.paths.join(", "))} · ${m.files} file${m.files === 1 ? "" : "s"}</div>
+      ${
+        m.answers.length
+          ? `<div class="flows">${m.answers
+              .map((a) => `<a href="/answers/${esc(a.id)}">${esc(a.title)}</a> <span>(${a.citations})</span>`)
+              .join(" · ")}</div>`
+          : `<div class="flows">No stored answer cites a file in this module.</div>`
+      }
+    </div>`;
+
+  const externals = input.view.externals.length
+    ? `<div class="list">${input.view.externals
+        .map(
+          (e) => `<div class="card"><h2>${esc(e.name)}</h2>
+        ${e.boundaries
+          .map(
+            (b) => `<div class="ev"><a href="/answers/${esc(b.answerId)}">${esc(b.answerTitle)}</a>
+             <div class="why">boundary at ${esc(b.boundaryPath)} — ${esc(b.failureBehavior)}</div></div>`,
+          )
+          .join("")}</div>`,
+        )
+        .join("")}</div>`
+    : `<p class="meta">No answer names a system outside the repository.</p>`;
+
+  const questions = input.view.openQuestions.length
+    ? `<div class="list">${input.view.openQuestions
+        .map(
+          (q) => `<div class="card"><div>${q.blocking ? `<span class="pill bad">blocking</span> ` : ""}${esc(q.question)}</div>
+          <div class="meta" style="margin-top:5px">from <a href="/answers/${esc(q.answerId)}">${esc(q.answerTitle)}</a></div></div>`,
+        )
+        .join("")}</div>`
+    : `<p class="meta">No answer left an open question.</p>`;
+
+  return page(
+    "Project",
+    `<style>${PROJECT_CSS}</style>
+     <header><h1>${esc(input.project)}</h1>
+       <div class="meta">What ${counts.answers} answer${counts.answers === 1 ? "" : "s"} add up to,
+         over the ${counts.modules} modules of snapshot ${esc(input.view.snapshotId.slice(0, 8))}${
+           counts.supersededAnswers
+             ? ` · ${counts.supersededAnswers} superseded answer${counts.supersededAnswers === 1 ? "" : "s"} excluded`
+             : ""
+         }</div>
+     </header>
+     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project" class="on">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <main>
+       <div class="tally">
+         <div><b>${counts.unreached}</b><span>${counts.unreached === 1 ? "module" : "modules"} no answer reaches</span></div>
+         <div><b>${counts.shared}</b><span>${counts.shared === 1 ? "module" : "modules"} more than one flow runs through</span></div>
+         <div><b>${counts.cited}</b><span>${counts.cited === 1 ? "module" : "modules"} exactly one flow cites</span></div>
+         <div><b>${counts.answers}</b><span>${counts.answers === 1 ? "answer" : "answers"} standing</span></div>
+       </div>
+       <p class="meta" style="max-width:760px;margin:0 0 22px">A module counts as reached when a live
+       answer cites a file inside it. That is a citation count, not a judgement that the module is
+       understood — and a superseded answer never counts, because nobody stands behind it.</p>
+
+       <h2 style="font-size:16px;margin:0 0 10px">Where flows meet</h2>
+       ${
+         shared.length
+           ? `<p class="meta" style="margin:0 0 10px">A change in one of these lands in more than one flow.</p>
+              <div class="reach">${shared.map(moduleCard).join("")}</div>`
+           : `<p class="meta">No module is cited by two different answers yet — the flows do not overlap,
+              or there are not enough of them to overlap.</p>`
+       }
+
+       <h2 style="font-size:16px;margin:26px 0 10px">What no answer explains</h2>
+       ${
+         unreached.length
+           ? `<p class="meta" style="max-width:760px;margin:0 0 10px">Largest first. The registry is
+              derived from paths, so test, tooling and configuration directories are modules too and
+              appear here — none of them is hidden, because deciding which directories are "not real
+              code" would be a guess rather than a measurement.</p>
+              <div class="reach">${unreached.map(moduleCard).join("")}</div>`
+           : `<p class="meta">Every module in the registry is cited by at least one answer.</p>`
+       }
+
+       <h2 style="font-size:16px;margin:26px 0 10px">Outside the repository</h2>${externals}
+
+       <h2 style="font-size:16px;margin:26px 0 10px">Open questions across every flow</h2>${questions}
+     </main>`,
+  );
+}
+
+export interface ImpactPageInput {
+  project: string;
+  impact: {
+    path: string;
+    module?: { id: string; label: string };
+    answers: Array<{
+      id: string;
+      title: string;
+      citations: number;
+      reviewState: string;
+      status: string;
+      lines: number[];
+    }>;
+    alsoInModule: Array<{ path: string; answers: number }>;
+  };
+}
+
+/**
+ * One file, and the flows that would notice if it changed.
+ *
+ * A superseded answer is shown here rather than hidden, marked as superseded: when you are about to
+ * change a file, an answer that used to describe it is a reason to look, not noise to filter.
+ */
+export function impactPage(input: ImpactPageInput): string {
+  const { impact } = input;
+  const rows = impact.answers.length
+    ? `<div class="list">${impact.answers
+        .map(
+          (a) => `<a class="card" href="/answers/${esc(a.id)}"><h2>${esc(a.title)}</h2>
+        <div class="meta">${a.citations} citation${a.citations === 1 ? "" : "s"} in this file
+          ${a.lines.length ? `· line${a.lines.length === 1 ? "" : "s"} ${a.lines.join(", ")}` : ""}
+          · <span class="pill">${esc(a.reviewState)}</span>
+          ${a.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}</div></a>`,
+        )
+        .join("")}</div>`
+    : `<p class="meta">No stored answer cites this file. That is not a claim that nothing depends on
+       it — only that nothing anyone has asked about does.</p>`;
+
+  const neighbours = impact.alsoInModule.length
+    ? `<h2 style="font-size:16px;margin:26px 0 10px">Also cited in ${esc(impact.module?.label ?? "this module")}</h2>
+       <table class="grid"><tbody>${impact.alsoInModule
+         .map(
+           (f) => `<tr><td><a href="/impact?path=${encodeURIComponent(f.path)}">${esc(f.path)}</a></td>
+             <td style="text-align:right">${f.answers} citation${f.answers === 1 ? "" : "s"}</td></tr>`,
+         )
+         .join("")}</tbody></table>`
+    : "";
+
+  return page(
+    "Impact",
+    `<header><h1>${esc(impact.path)}</h1>
+       <div class="meta">${
+         impact.module ? `in ${esc(impact.module.label)}` : "in no module of the current registry"
+       } · <a href="/source?path=${encodeURIComponent(impact.path)}&line=1">read it</a></div>
+     </header>
+     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <main>
+       <h2 style="font-size:16px;margin:0 0 10px">Flows that would notice a change here</h2>${rows}
+       ${neighbours}
+     </main>`,
+  );
+}
+
 /* ------------------------------------------------------- ask and the run console (F006) */
 
 const ASK_CSS = `
@@ -1195,7 +1404,7 @@ function askShell(project: string, title: string, body: string): string {
     title,
     `<style>${ASK_CSS}</style>
      <header><h1>${esc(project)}</h1><div class="meta">${esc(title)}</div></header>
-     <nav><a href="/">Answers</a><a href="/ask" class="on">Ask</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
+     <nav><a href="/">Answers</a><a href="/ask" class="on">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
      <main>${body}</main>`,
   );
 }

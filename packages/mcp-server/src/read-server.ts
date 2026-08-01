@@ -7,9 +7,11 @@ import {
   answerEnvelope,
   fileStates,
   fitWholeAnswer,
+  impactOf,
   loadStoredAnswer,
   metricsForStoredAnswer,
   paginate,
+  projectView,
   paginateWithin,
   projectEnvelope,
   thresholdOf,
@@ -180,6 +182,44 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         ),
       );
     },
+  );
+
+  server.registerTool(
+    "get_project_overview",
+    {
+      title: "What every answer adds up to",
+      description:
+        "The project read as the union of its stored answers: which modules more than one flow runs " +
+        "through, which modules no answer reaches at all, the external systems named across flows, " +
+        "and every open question in one place. Superseded answers are excluded and counted, so a " +
+        "module cannot look unexplained because a row was quietly dropped. `reach` is a citation " +
+        "count, never a judgement that a module is understood. Ask this before designing a change: " +
+        "it says which flows a module belongs to, and where nothing has been asked yet.",
+      inputSchema: {},
+    },
+    async () =>
+      projectOr((snapshotId) => {
+        const view = projectView(store);
+        // projectOr already refused a project with no snapshot, so a missing view here is impossible
+        // rather than merely unlikely — but returning empty beats asserting.
+        void snapshotId;
+        return { data: view ?? { modules: [], counts: {}, externals: [], openQuestions: [], answers: [] } };
+      }),
+  );
+
+  server.registerTool(
+    "get_impact",
+    {
+      title: "Which flows a change to this file lands in",
+      description:
+        "Every stored answer that cites this file, with the lines it cites and its review state — " +
+        "the review question 'what does this change affect' answered from what has been verified " +
+        "rather than from a guess. Superseded answers are included and labelled: when a file is " +
+        "about to change, an answer that used to describe it is a reason to look. An empty list " +
+        "means nothing anyone has asked about depends on it, not that nothing does.",
+      inputSchema: { path: z.string().describe("Repository-relative path, as it appears in citations") },
+    },
+    async ({ path }) => projectOr(() => ({ data: impactOf(store, path) })),
   );
 
   server.registerTool(

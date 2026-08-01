@@ -232,6 +232,8 @@ function callsFor(answerId: string): Record<string, Record<string, unknown>> {
     get_callers: { symbol: "refundBooking" },
     get_callees: { symbol: "refundBooking" },
     get_reachability: { symbol: "POST" },
+    get_project_overview: {},
+    get_impact: { path: "src/app/api/bookings/refund/route.ts" },
   };
 }
 

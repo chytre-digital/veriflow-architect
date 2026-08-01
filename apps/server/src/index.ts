@@ -4,8 +4,10 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import {
+  impactOf,
   loadStoredAnswer,
   metricsForStoredAnswer,
+  projectView,
   verifyStoredAnswer,
   type StoredAnswer,
 } from "@veriflow/answers";
@@ -24,6 +26,8 @@ import {
   answersPage,
   architecturePage,
   askPage,
+  impactPage,
+  projectPage,
   flowPage,
   freshnessPage,
   metricsPage,
@@ -268,6 +272,45 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
           source: found.source,
         }),
       );
+    }),
+  );
+
+  /* ------------------------------------- the project as its answers (F011) */
+
+  app.get("/project", (c) =>
+    withStore((store) => {
+      const view = projectView(store);
+      if (!view) {
+        return c.html(
+          page("Project", "<main><p>Nothing indexed yet. Run <code>veriflow index</code>.</p></main>"),
+          404,
+        );
+      }
+      return c.html(projectPage({ project: projectName, view }));
+    }),
+  );
+
+  app.get("/impact", (c) =>
+    withStore((store) => {
+      const path = c.req.query("path") ?? "";
+      if (!path) return c.html(page("Impact", "<main><p>Name a file to see what it lands in.</p></main>"), 400);
+      return c.html(impactPage({ project: projectName, impact: impactOf(store, path) }));
+    }),
+  );
+
+  app.get("/api/project", (c) =>
+    withStore((store) => {
+      const view = projectView(store);
+      if (!view) return c.json({ error: "nothing indexed yet" }, 404);
+      return c.json({ contractVersion: 1, ...view });
+    }),
+  );
+
+  app.get("/api/impact", (c) =>
+    withStore((store) => {
+      const path = c.req.query("path") ?? "";
+      if (!path) return c.json({ error: "path is required" }, 400);
+      return c.json({ contractVersion: 1, ...impactOf(store, path) });
     }),
   );
 

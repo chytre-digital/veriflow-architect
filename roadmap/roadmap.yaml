@@ -41,6 +41,13 @@ iterations:
     done: >-
       Metrics cover the flow's files with contradictions visible rather than averaged, and an
       approved answer exists as committed markdown with a rendering mermaid diagram.
+  - id: M4-many
+    name: More than one answer
+    features: [F011]
+    done: >-
+      With several answers stored, the project screen names the modules no answer reaches, the
+      shared modules name the flows that meet in them, and an agent asking what a change to one
+      file affects is answered from stored citations rather than from a re-read of the code.
 
 features:
   F001:
@@ -150,6 +157,22 @@ features:
     status: shipped
     dependsOn: [F005, F006]
     outcome: Any agent designs and reviews against stored, freshness-stamped results.
+  F011:
+    title: The project as the union of its answers
+    spec: 11-project-view.md
+    iteration: M4-many
+    status: shipped
+    dependsOn: [F005, F006, F010]
+    outcome: >-
+      Shared modules, the modules no answer reaches, and what a change to one file lands in — in the
+      browser and on the MCP read surface.
+    notes: >-
+      The first feature whose subject is the set of answers rather than one of them, which is what
+      made the honesty rules load-bearing: a superseded answer is excluded from coverage and the
+      exclusion counted, so "nothing explains this" can never come from a quietly dropped row; the
+      same answer is shown in impact and labelled, because a file about to change deserves the
+      answer that used to describe it. Reach is a citation count and says so where it is displayed —
+      citing a file in a module is not explaining the module.
 
 blocking:
   - question: Q2
