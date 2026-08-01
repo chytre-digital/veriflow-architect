@@ -95,8 +95,13 @@ you came for.
 
 ### Design — before changing a symbol
 
-1. `search_answers` with the file path you are about to edit → which flows run through it, and how
-   many citations of each land there.
+0. `get_project_overview` → which modules the answers already cover, which ones **no answer reaches
+   at all**, and where flows meet. Start here when you do not yet know which flow you are in. A
+   module marked `unreached` is not a module nothing depends on; it is a module nobody has asked
+   about, so nothing stored can vouch for a change there.
+1. `get_impact` with the file path you are about to edit → which flows cite it, **which lines each
+   one depends on**, and whether any of them has been superseded. `search_answers` still works and
+   searches titles and bodies too, but for a path this is the sharper question.
 2. `get_flow_paths` on each hit → every alternative outcome and **the invariant it protects**. This
    is the list your change must not break.
 3. `get_flow_modules` → the module contract the symbol sits behind, by stable id. An edge marked
@@ -111,7 +116,10 @@ record of intent, but the code they describe has moved — re-verify the citatio
 
 ### Review — for a change set
 
-1. For each changed file, `search_answers` with its path → the affected flows.
+1. For each changed file, `get_impact` with its path → the affected flows and the exact lines each
+   depends on. Compare those lines against your diff: a change that misses every cited line is a
+   different conversation from one that lands on top of them. An empty result means nobody has asked
+   about this file, **not** that nothing depends on it — say which of the two you are reporting.
 2. `get_flow_answer` → freshness for each. A `drifted` answer is the interesting case: the change is
    in territory a stored answer describes.
 3. `get_freshness` on those → which citations moved and where to, and which no longer locate at all.
@@ -139,6 +147,8 @@ record of intent, but the code they describe has moved — re-verify the citatio
 | `get_metrics` | Debt, structure, coupling and function-level findings for the flow's own files, one section at a time. Every number carries the tool it mirrors and the rule behind it. |
 | `get_coverage_gaps` | Alternative outcomes no test names — a proxy over identifiers, labelled as one. |
 | `search_answers` | Title, body, or cited path. |
+| `get_project_overview` | What every answer adds up to: modules more than one flow runs through, modules no answer reaches, externals across flows, every open question in one place. Superseded answers are excluded and counted. |
+| `get_impact` | Every answer citing one file, the lines each depends on, its review state, and whether it was superseded — plus the other cited files in the same module. |
 | `get_architecture` | Module registry, entry points, measured traffic, flows per module. |
 | `get_call_graph` | The stored graph, or one entry point's closure. |
 | `get_callers` / `get_callees` | Neighbours of a symbol, with call-site lines. |
@@ -192,6 +202,13 @@ Both clients distinguished the whole-snapshot `drifted` on a listing envelope fr
 conclusion. Claude Code drew the line the label exists to draw: *"treat the citations as reliable, the
 interpretation of the invariant not — freshness is fresh, so the `file:line` references match the code
 as it is now, but 'this guard protects this invariant' is the agent's conclusion."*
+
+**This measurement predates `get_project_overview` and `get_impact`.** Both are exercised in CI by a
+real MCP client over an in-memory transport, and both are checked against the dogfood project's own
+database — but neither has been put in front of Claude Code or Codex, so the table above says nothing
+about them. The review numbers in particular would be expected to change, since `get_impact` replaces
+the `search_answers`-then-open-each-answer opening of that workflow. Until this table has a row for
+them, treat their agent-facing wording as untested rather than proven.
 
 On the review question both clients named the failure paths crossing each changed file and the
 invariant each protects. Claude Code went further and found a contract *between* the two changed
