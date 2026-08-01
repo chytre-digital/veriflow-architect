@@ -42,6 +42,9 @@ Iteration 2 — review against it
 Iteration 3 — depth
   F008 flow metrics
   F009 document export
+
+Iteration 4 — more than one answer
+  F011 the project as the union of its answers
 ```
 
 The order follows the two things the MVP exists to do: **generate an application's architecture**, then
@@ -65,6 +68,7 @@ F008 and F009 depend on F005/F006 only, and can be reordered freely.
 | [F008](08-flow-metrics.md) | Flow metrics | Debt, structure, coupling, and a labelled coverage proxy for the flow's files. |
 | [F009](09-document-export.md) | Document export | Approved answers become committed markdown with generated mermaid. |
 | [F010](10-mcp-server.md) | VeriFlow MCP server | Any agent designs and reviews against stored, freshness-stamped answers. |
+| [F011](11-project-view.md) | The project as the union of its answers | Shared modules, the modules no answer reaches, and what a change to one file lands in — in the browser and over MCP. |
 
 ## Exit gate per iteration
 
@@ -80,6 +84,10 @@ an answer whose cited files changed reports its drift correctly.
 
 **Iteration 3** is complete when metrics cover the flow's files with contradictions visible rather than
 averaged, and an approved answer exists as a committed markdown document with a rendering mermaid diagram.
+
+**Iteration 4** is complete when, with several answers stored, the project screen names the modules no
+answer reaches, the shared modules name the flows that meet in them, and an agent asking what a change
+to one file affects is answered from stored citations rather than from a re-read of the code.
 
 Automated tests run without a model, an account, or a network. Windows is the primary platform;
 F001–F003 and F005 portable tests also run on one Unix-like runner.
@@ -110,10 +118,14 @@ long-term exploration, is now in scope.
 ## Next candidates, not yet implementation-ready
 
 1. a first-party indexer behind the F002 protocol, removing the external dependency;
-2. many answers per project: shared modules, cross-flow impact, a project view assembled from answers;
+2. ~~many answers per project~~ — **shipped as [F011](11-project-view.md)**;
 3. declared intent and expected-vs-actual, reviving the superseded catalog specs;
 4. real coverage from a test run, replacing the F008 proxy;
-5. change impact against a base ref at review time, and answer diffing across snapshots.
+5. change impact against a base ref at review time, and answer diffing across snapshots — F011
+   answers this per *file*; mapping a changed hunk in a diff onto the flows it lands in is the part
+   still missing;
+6. corrections and threads in the browser: both are stored and reachable over MCP, neither is
+   reachable by clicking. This is F006's own scope, recorded in its `gaps`.
 
 Open decisions that can still alter F001–F010 are in [open-questions.md](open-questions.md). The one that
 blocks F002 is Q2 — which provider surface carries the call graph, and how good its TypeScript resolution
