@@ -1316,6 +1316,7 @@ export interface ImpactPageInput {
       reviewState: string;
       status: string;
       lines: number[];
+      lineState: "fresh" | "drifted" | "stale";
     }>;
     alsoInModule: Array<{ path: string; answers: number }>;
   };
@@ -1336,6 +1337,13 @@ export function impactPage(input: ImpactPageInput): string {
         <div class="meta">${a.citations} citation${a.citations === 1 ? "" : "s"} in this file
           ${a.lines.length ? `· line${a.lines.length === 1 ? "" : "s"} ${a.lines.join(", ")}` : ""}
           · <span class="pill">${esc(a.reviewState)}</span>
+          ${
+            a.lineState === "fresh"
+              ? `<span class="pill good">lines current</span>`
+              : a.lineState === "drifted"
+                ? `<span class="pill warn">file changed — these are where the lines were</span>`
+                : `<span class="pill bad">file is gone</span>`
+          }
           ${a.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}</div></a>`,
         )
         .join("")}</div>`

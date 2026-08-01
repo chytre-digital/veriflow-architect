@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -233,8 +234,8 @@ describe("what the answers add up to", () => {
 
 describe("what a change to one file lands in", () => {
   it("names every flow citing the file, with the lines each depends on", () => {
-    const { store } = seed();
-    const impact = impactOf(store, "src/checkout/route.ts");
+    const { root, store } = seed();
+    const impact = impactOf(store, root, "src/checkout/route.ts");
     store.close();
 
     expect(impact.module).toMatchObject({ id: "checkout" });
@@ -244,8 +245,8 @@ describe("what a change to one file lands in", () => {
   });
 
   it("shows a superseded answer here and labels it, rather than hiding it from someone about to edit", () => {
-    const { store } = seed();
-    const impact = impactOf(store, "src/admin/panel.ts");
+    const { root, store } = seed();
+    const impact = impactOf(store, root, "src/admin/panel.ts");
     store.close();
 
     expect(impact.answers).toHaveLength(1);
@@ -253,17 +254,51 @@ describe("what a change to one file lands in", () => {
   });
 
   it("says nothing cites a file rather than implying nothing depends on it", () => {
-    const { store } = seed();
-    const impact = impactOf(store, "src/admin/untouched.ts");
+    const { root, store } = seed();
+    const impact = impactOf(store, root, "src/admin/untouched.ts");
     store.close();
 
     expect(impact.answers).toHaveLength(0);
     expect(impact.module).toMatchObject({ id: "admin" });
   });
 
+  it("says whether the lines it hands back still hold, so nobody has to ask a second tool", () => {
+    const { root, store } = seed();
+
+    // Nothing on disk matches what the snapshot recorded, so every cited file reads as gone. The
+    // point is that the state travels with the lines rather than being a separate question — a real
+    // Codex run spent thirteen of its seventeen calls asking that question once per answer.
+    const gone = impactOf(store, root, "src/checkout/route.ts");
+    expect(gone.answers.every((a) => a.lineState === "stale")).toBe(true);
+
+    // A file that exists and matches its recorded hash reads fresh.
+    writeFileSync(join(root, "present.ts"), "export const x = 1;\n");
+    const hash = createHash("sha256").update(readFileSync(join(root, "present.ts"))).digest("hex");
+    store.insertFileHashes("s2", [{ path: "present.ts", sha256: hash, size: 20 }]);
+    store.insertAnswer({
+      id: "a-present",
+      questionId: "q4",
+      runId: "r4",
+      snapshotId: "s2",
+      title: "Cites a file that has not moved",
+      verified: 1,
+      unverified: 0,
+      openQuestions: 0,
+      body: body({ title: "Cites a file that has not moved" }),
+      citations: [
+        { subjectKind: "step", subjectId: "st1", path: "present.ts", line: 1, symbol: "x", state: "verified" },
+      ],
+    });
+
+    const fresh = impactOf(store, root, "present.ts");
+    store.close();
+    expect(fresh.answers).toHaveLength(1);
+    expect(fresh.answers[0]!.lineState).toBe("fresh");
+  });
+
   it("lists the other cited files in the same module — the blast radius one step out", () => {
-    const { store } = seed();
-    const impact = impactOf(store, "src/checkout/route.ts");
+    const { root, store } = seed();
+    const impact = impactOf(store, root, "src/checkout/route.ts");
     store.close();
 
     expect(impact.alsoInModule.map((f) => f.path)).toEqual(["src/checkout/hold.ts"]);

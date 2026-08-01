@@ -52,6 +52,26 @@ const PROMPTS = {
     ``,
     `Uveď u každého flow jeho freshness.state a review.state a řekni, co z toho plyne.`,
   ].join("\n"),
+  // F011. The point is not whether the two tools return data — CI already proves that — but whether
+  // an agent reads their labels the way they are meant: `unreached` says nobody asked, an empty
+  // impact says nobody asked, and neither says the code is unused. A tool whose wording invites the
+  // opposite reading is a tool that will be quoted wrongly in a review.
+  project: [
+    `Odpověz na otázky o repozitáři main-panel POUZE pomocí nástrojů MCP serveru "veriflow".`,
+    `Nečti soubory, nespouštěj grep, nepoužívej žádný jiný nástroj než veriflow.`,
+    ``,
+    `1. Které moduly tohoto projektu zatím žádná uložená odpověď nepokrývá? Vypiš je`,
+    `   a řekni přesně, co ten stav znamená a co neznamená.`,
+    ``,
+    `2. Kterých flow by se dotkla změna souboru`,
+    `   src/modules/payments/fulfillment/fulfillLessonCheckout.ts?`,
+    `   U každého uveď, na kterých řádcích tohoto souboru visí.`,
+    ``,
+    `3. Zeptej se na dopad souboru src/modules/billing/index.ts a vysvětli, co ti výsledek`,
+    `   říká o tom souboru — a co ti o něm neříká.`,
+    ``,
+    `4. Ve kterých modulech se potkává víc než jedno flow, a proč je to pro review podstatné?`,
+  ].join("\n"),
 };
 
 // npm shims on Windows are .cmd/.ps1 and cannot be spawned directly — point at the real executable.

@@ -1,6 +1,7 @@
 import type { FlowAnswer } from "@veriflow/flow-answer";
 import { FlowAnswerSchema } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
+import { fileStates } from "./freshness.js";
 
 /**
  * One project, read as the union of every answer stored about it.
@@ -202,6 +203,18 @@ export interface Impact {
     status: string;
     /** The cited lines in this file, so the reader sees what the flow actually depends on. */
     lines: number[];
+    /**
+     * Whether those line numbers can still be trusted, measured over this file alone.
+     *
+     * `fresh` — the file has not changed since the answer was made, so the lines are current.
+     * `drifted` — it changed; the lines are where they were, not necessarily where they are.
+     * `stale` — the file is gone.
+     *
+     * Cheaper and narrower than `get_freshness`, which measures every file an answer cites and can
+     * relocate each citation. Use that one to find out *where* a line moved to; this one only says
+     * whether asking is worth it.
+     */
+    lineState: "fresh" | "drifted" | "stale";
   }>;
   /** Other files in the same module that some answer cites — the blast radius one step out. */
   alsoInModule: Array<{ path: string; answers: number }>;
@@ -212,26 +225,44 @@ export interface Impact {
  *
  * Superseded answers are included here and labelled, unlike in the coverage counts: when you are
  * about to change a file, "an answer that used to describe this" is information, not noise.
+ *
+ * Every answer carries whether its line numbers still hold, because a real Codex run over this tool
+ * spent thirteen of its seventeen calls on `get_freshness` establishing exactly that: the tool
+ * handed over precise line numbers and no way to know whether they were still true, so the agent
+ * had to ask again, once per answer. Handing back lines without their state was an invitation to
+ * quote them as current.
  */
-export function impactOf(store: Store, path: string): Impact {
+export function impactOf(store: Store, root: string, path: string): Impact {
   const snapshot = store.latestSnapshotAny();
   const modules = snapshot ? (store.readModules(snapshot.id) as unknown as ModuleRecordLike[]) : [];
   const owner = moduleOwning(path, modules);
 
   const answers = store.answersCitingPath(path).map((row) => {
     const id = String(row["id"]);
+    const stored = store.readAnswer(id);
     const lines = store
       .readAnswerCitations(id)
       .filter((c) => String(c["path"]) === path)
       .map((c) => Number(c["line"]))
       .filter((line) => Number.isFinite(line) && line > 0);
+
+    // One hash of one file, against what that answer's own snapshot recorded for it. Not a re-index
+    // and not the full per-citation ladder — just enough to say whether the lines above are current.
+    const [state] = fileStates(store, root, String(stored?.["snapshot_id"] ?? ""), [path]);
+    const lineState: "fresh" | "drifted" | "stale" = state?.missing
+      ? "stale"
+      : state?.changed
+        ? "drifted"
+        : "fresh";
+
     return {
       id,
       title: String(row["title"]),
       citations: Number(row["citations"]),
       reviewState: String(row["review_state"]),
-      status: String(store.readAnswer(id)?.["status"] ?? "current"),
+      status: String(stored?.["status"] ?? "current"),
       lines: [...new Set(lines)].sort((a, b) => a - b),
+      lineState,
     };
   });
 

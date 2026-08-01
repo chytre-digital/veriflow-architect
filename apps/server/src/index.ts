@@ -294,7 +294,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     withStore((store) => {
       const path = c.req.query("path") ?? "";
       if (!path) return c.html(page("Impact", "<main><p>Name a file to see what it lands in.</p></main>"), 400);
-      return c.html(impactPage({ project: projectName, impact: impactOf(store, path) }));
+      return c.html(impactPage({ project: projectName, impact: impactOf(store, root, path) }));
     }),
   );
 
@@ -341,7 +341,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     withStore((store) => {
       const path = c.req.query("path") ?? "";
       if (!path) return c.json({ error: "path is required" }, 400);
-      return c.json({ contractVersion: 1, ...impactOf(store, path) });
+      return c.json({ contractVersion: 1, ...impactOf(store, root, path) });
     }),
   );
 

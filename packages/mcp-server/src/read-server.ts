@@ -212,14 +212,18 @@ export function createReadServer(options: ReadServerOptions): McpServer {
     {
       title: "Which flows a change to this file lands in",
       description:
-        "Every stored answer that cites this file, with the lines it cites and its review state — " +
-        "the review question 'what does this change affect' answered from what has been verified " +
-        "rather than from a guess. Superseded answers are included and labelled: when a file is " +
-        "about to change, an answer that used to describe it is a reason to look. An empty list " +
-        "means nothing anyone has asked about depends on it, not that nothing does.",
+        "Every stored answer that cites this file, with the lines it cites, its review state, and " +
+        "`lineState` — whether those line numbers still hold: `fresh` the file has not changed, " +
+        "`drifted` it has and the lines are where they were rather than where they are, `stale` the " +
+        "file is gone. On `drifted` call get_freshness to find out where each line moved to; on " +
+        "`fresh` you do not need to. This answers the review question 'what does this change affect' " +
+        "from what has been verified rather than from a guess. Superseded answers are included and " +
+        "labelled: when a file is about to change, an answer that used to describe it is a reason " +
+        "to look. An empty list means nothing anyone has asked about depends on it, not that " +
+        "nothing does.",
       inputSchema: { path: z.string().describe("Repository-relative path, as it appears in citations") },
     },
-    async ({ path }) => projectOr(() => ({ data: impactOf(store, path) })),
+    async ({ path }) => projectOr(() => ({ data: impactOf(store, root, path) })),
   );
 
   server.registerTool(

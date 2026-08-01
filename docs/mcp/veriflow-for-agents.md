@@ -196,6 +196,7 @@ agent never fell back to reading the repository.
 | Codex 0.144.3 | review | 100 s | 10 | 0 |
 | Claude Code | design | 103 s | 9 | 2 — `ToolSearch`, its own tool discovery, not a file read |
 | Claude Code | review | 159 s | 14 | 2 — same |
+| Codex 0.144.3 | project (F011) | 203 s | 17 | 0 |
 
 Both clients distinguished the whole-snapshot `drifted` on a listing envelope from the per-answer
 `fresh` on the answers themselves, and both reported `unreviewed` and what it meant for their
@@ -203,12 +204,29 @@ conclusion. Claude Code drew the line the label exists to draw: *"treat the cita
 interpretation of the invariant not — freshness is fresh, so the `file:line` references match the code
 as it is now, but 'this guard protects this invariant' is the agent's conclusion."*
 
-**This measurement predates `get_project_overview` and `get_impact`.** Both are exercised in CI by a
-real MCP client over an in-memory transport, and both are checked against the dogfood project's own
-database — but neither has been put in front of Claude Code or Codex, so the table above says nothing
-about them. The review numbers in particular would be expected to change, since `get_impact` replaces
-the `search_answers`-then-open-each-answer opening of that workflow. Until this table has a row for
-them, treat their agent-facing wording as untested rather than proven.
+### What the F011 row was for
+
+`get_project_overview` and `get_impact` return data in CI; that was never the question. The question
+was whether an agent reads their labels the way they are meant, because a tool whose wording invites
+the opposite reading will be quoted wrongly in a review. Codex was asked which modules no answer
+covers, what a change to one file lands in, and what an empty impact result means.
+
+It held all three lines without being led to them: *"Je to mezera v dosud položených a uložených
+otázkách, nikoli měření runtime coverage"* — a gap in the questions asked, not a coverage
+measurement. On the empty result for `src/modules/billing/index.ts`: *"Neříká to, že `index.ts` nemá
+exporty, importéry, call-graph vazby nebo runtime význam. Neprokazuje ani mrtvý kód či bezpečnost
+změny."* And unprompted, on `shared`: *"neprokazuje, že spolu flow za běhu přímo komunikují… Počet
+citací také není skóre rizika ani důkaz úplného porozumění modulu."*
+
+**One misreading, and it was ours, not the agent's.** Thirteen of the seventeen calls were
+`get_freshness`, which looked like `get_impact` handing over line numbers with no way to know whether
+they still held. `lineState` was added for that — cheap, per-file, `fresh`/`drifted`/`stale`, so an
+agent knows whether asking the expensive question is worth it. It did not change the count, because
+the count was never that. The arguments say what it was: four calls per answer, one unfiltered and
+one per `outcome`. Measured with `artifacts/probe-freshness.mjs`, the unfiltered response for that
+answer returns 100 of 197 citations with a cursor, while each outcome filter returns a complete list
+in one call. The agent was avoiding pagination, and was right to. `lineState` is worth keeping on its
+own merits; it fixed something else.
 
 On the review question both clients named the failure paths crossing each changed file and the
 invariant each protects. Claude Code went further and found a contract *between* the two changed
