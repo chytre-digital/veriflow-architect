@@ -303,7 +303,13 @@ Read-only, and a read tool over MCP rather than a write one — §10 of the prop
 
 ---
 
-## 4 · WP3 — the review verb
+## 4 · WP3 — the review verb · **shipped**
+
+> Built on 2026-08-02: `veriflow review <id> --accept|--reopen [--yes] [--json]`,
+> `POST /answers/:id/review` and `POST /api/answers/:id/review`, the control on the answer screen,
+> and `tests/f014-review-and-decide.test.ts` — 9 cases, whole suite 469 green, typecheck clean.
+> Exercised end to end on `main-panel`: an answer went to `reviewed` and back, which is the first
+> time in the product's life that label has said anything.
 
 **Ships.** `veriflow review <answerId> --accept | --reopen [path]`, and the same as a button on the
 answer screen. That is all. `Store.setReviewState` has existed since F005 at
@@ -329,6 +335,20 @@ of review and requires confirmation when the state is `stale` or `broken` (it do
 labels, it does not gate); and WP4's first migration adds `reviewed_at`, `reviewed_by` and
 `review_fingerprint` and backfills nothing, so an answer reviewed before WP4 reads as reviewed at an
 unknown tree state rather than pretending otherwise.
+
+On `main-panel` that confirmation earns its place immediately. Every one of the six answers is
+`stale` after six commits, so accepting one is exactly the case where a silent write would record a
+judgement nobody knowingly made:
+
+```
+b739e2a6  Vyrovnání již existující rezervace z interního kreditu …
+  STALE    at least one citation no longer locates
+  measured from file hashes · fingerprint 3220634ed085b19e
+  Accept anyway? [y/N]
+```
+
+The browser shows the same fact as a warning pill beside the button rather than disabling it, and a
+test asserts the control is offered rather than gated.
 
 ### Files
 
@@ -633,7 +653,7 @@ gets used far more often, and it is stage 6 of the proposal's own design loop:
 | as-is → built | what actually changed | after, without a proposal |
 
 All three are the same computation. `veriflow diff <a> <b>` already takes two answer ids
-(`apps/cli/src/main.ts:1250`); what this package adds is that the pair may now be an observation and
+(`apps/cli/src/main.ts:1318`); what this package adds is that the pair may now be an observation and
 a proposal, and that the output is framed by which pair it is.
 
 **The matcher is the work.** The proposal calls this "`diffAnswers` unchanged, given a proposal as

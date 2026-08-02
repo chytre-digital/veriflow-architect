@@ -899,6 +899,74 @@ program
     ctx.close();
   });
 
+/* ------------------------------------------------------------------ review */
+
+program
+  .command("review")
+  .argument("<answerId>")
+  .argument("[path]")
+  .option("--accept", "a person has read this answer and stands behind it")
+  .option("--reopen", "put it back to unreviewed")
+  .option("--yes", "do not ask, even when the answer's evidence has moved")
+  .option("--json", "machine-readable output")
+  .description("record that a human has checked a stored answer — the writer for the label MCP already serves")
+  .action(async (
+    answerArg: string,
+    pathArg: string | undefined,
+    options: { accept?: boolean; reopen?: boolean; yes?: boolean; json?: boolean },
+  ) => {
+    if (options.accept === options.reopen) {
+      fail("say which: --accept or --reopen");
+    }
+
+    const ctx = open(pathArg);
+    const stored = loadStoredAnswer(ctx.store, ctx.root, answerArg);
+    if (!stored) {
+      ctx.close();
+      fail(`no stored answer with id or prefix "${answerArg}" - run: veriflow answers`);
+    }
+
+    const state = options.accept ? "reviewed" : "unreviewed";
+    const f = stored.freshness;
+
+    if (!options.json) {
+      log(`${stored.row.id.slice(0, 8)}  ${stored.answer.title}`);
+      log(`  ${f.state.toUpperCase().padEnd(8)} ${thresholdOf(f.state)}`);
+      log(`  measured ${f.source === "verification" ? "citation by citation" : "from file hashes"} · fingerprint ${f.fingerprint}`);
+    }
+
+    // Accepting an answer whose evidence has moved is allowed — D12 labels, it does not gate — but
+    // it is not allowed to happen by accident. The state and the rule that produced it are printed
+    // first, so what is being stood behind is on the screen before the answer is given.
+    if (options.accept && !options.yes && !options.json && (f.state === "stale" || f.state === "broken")) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const reply = (await rl.question(`  Accept anyway? [y/N] `)).trim().toLowerCase();
+      rl.close();
+      if (reply !== "y" && reply !== "yes") {
+        log("  not reviewed");
+        ctx.close();
+        return;
+      }
+    }
+
+    ctx.store.setReviewState(stored.row.id, state);
+
+    if (options.json) {
+      log(
+        JSON.stringify(
+          { contractVersion: 1, answerId: stored.row.id, reviewState: state, freshness: f },
+          null,
+          2,
+        ),
+      );
+    } else {
+      log(`  ${state}`);
+      // Said rather than silently dropped: the columns that would carry these do not exist yet.
+      log("  no reviewer or note is recorded — both arrive with the next schema version");
+    }
+    ctx.close();
+  });
+
 /* ------------------------------------------------------------------ impact */
 
 program

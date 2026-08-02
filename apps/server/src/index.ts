@@ -318,6 +318,46 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  /**
+   * The review writer. One store method behind both this and `veriflow review`, so the browser
+   * cannot come to a different conclusion about the same answer than the terminal did.
+   *
+   * Freshness is deliberately not consulted here: D12 says verification labels and does not gate,
+   * and a screen that refused to record a human's judgement because a file moved would be a gate.
+   * The screen shows the state next to the button instead.
+   */
+  const setReview = (store: Store, idOrPrefix: string, state: "reviewed" | "unreviewed") => {
+    const found = loadAnswer(store, root, idOrPrefix);
+    if (!found) return undefined;
+    store.setReviewState(found.row.id, state);
+    return found.row.id;
+  };
+
+  // The body is read before the store is opened: `withStore` closes its handle in a synchronous
+  // `finally`, so an async callback would run against a database that is already shut.
+  app.post("/answers/:id/review", async (c) => {
+    const body = await c.req.parseBody();
+    const state = String(body["state"] ?? "") === "reviewed" ? "reviewed" : "unreviewed";
+    return withStore((store) => {
+      const id = setReview(store, c.req.param("id"), state);
+      if (!id) return c.html(notice(store, "flow", "Not found", "No such answer."), 404);
+      return c.redirect(`/answers/${id}`, 303);
+    });
+  });
+
+  app.post("/api/answers/:id/review", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const raw = String(body["reviewState"] ?? "");
+    if (raw !== "reviewed" && raw !== "unreviewed") {
+      return c.json({ error: "reviewState must be `reviewed` or `unreviewed`" }, 422);
+    }
+    return withStore((store) => {
+      const id = setReview(store, c.req.param("id"), raw);
+      if (!id) return c.json({ error: "no such answer" }, 404);
+      return c.json({ contractVersion: 1, answerId: id, reviewState: raw });
+    });
+  });
+
   app.get("/answers/:id/paths", (c) =>
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));

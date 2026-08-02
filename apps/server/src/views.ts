@@ -819,6 +819,28 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
   );
 }
 
+/**
+ * The writer for the label every MCP envelope has been carrying since F010. Until now nothing but a
+ * test ever called `setReviewState`, so `unreviewed` meant "nobody can say" rather than "nobody has
+ * said" — and an agent reading it could not tell the two apart.
+ *
+ * The freshness at the moment of review is shown beside the button rather than used to disable it.
+ * D12: verification labels, it does not gate.
+ */
+function reviewControl(row: AnswerRow, freshness: Freshness): string {
+  const reviewed = row.review_state === "reviewed";
+  const warn =
+    !reviewed && (freshness.state === "stale" || freshness.state === "broken")
+      ? `<span class="pill warn">evidence has moved — ${esc(freshness.state)}</span>`
+      : "";
+  return `${warn}<form method="post" action="/answers/${row.id}/review" style="display:inline">
+      <input type="hidden" name="state" value="${reviewed ? "unreviewed" : "reviewed"}">
+      <button class="${reviewed ? "" : "primary"}" type="submit">${
+        reviewed ? "Reopen" : "Mark reviewed"
+      }</button>
+    </form>`;
+}
+
 export interface FlowPageInput {
   chrome: Chrome;
   answer: FlowAnswer;
@@ -912,6 +934,7 @@ export function flowPage(input: FlowPageInput): string {
            answer.branches.length
          } alternative outcome${answer.branches.length === 1 ? "" : "s"}. Nothing here was recomputed to
           open it — the layout is derived from what was stored when the question was answered.`,
+         actions: reviewControl(row, freshness),
          meta: `${ratioPill(row.verified, row.unverified)}
        <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
        <span class="pill">${answer.openQuestions.length} open</span>
