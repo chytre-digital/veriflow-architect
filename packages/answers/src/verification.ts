@@ -96,7 +96,12 @@ export interface StoredCitation {
   reason: string | null;
 }
 
-const hashLine = (text: string): string =>
+/**
+ * The anchor a citation is located by. Exported because F012 checks hand-written documents, whose
+ * claims carry no stored hash, and computes this one from the tree state the document was written
+ * against — the same hash over the same text, so both surfaces locate by one rule.
+ */
+export const hashLine = (text: string): string =>
   createHash("sha256").update(text.trim()).digest("hex").slice(0, 16);
 
 /**
@@ -130,8 +135,11 @@ export function entryPathsOf(answer: FlowAnswer, citations: readonly StoredCitat
  *
  * The search runs outward from the original line, nearest first, so a symbol that appears more than
  * once resolves to the occurrence closest to where it used to be.
+ *
+ * Exported for F012, which locates a claim in a markdown document by exactly this rule. Two
+ * implementations would eventually disagree about the same line.
  */
-function locate(
+export function locate(
   lines: readonly string[],
   fromLine: number,
   lineHash: string | null,

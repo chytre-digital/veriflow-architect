@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { basename, join, resolve } from "node:path";
+import { basename, join, relative as relative_, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -13,6 +13,7 @@ import { serveRead, serveRun } from "@veriflow/mcp-server";
 import {
   DRIFT_WINDOW,
   THRESHOLDS,
+  checkClaims,
   diffAnswers,
   loadStoredAnswer,
   metricsForStoredAnswer,
@@ -890,6 +891,85 @@ program
         if (r.note) log(`                  ${r.note}`);
       }
       log("");
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ check-claims */
+
+program
+  .command("check-claims")
+  .argument("<doc>", "a markdown document making file:line claims — a spec, an issue, an ADR")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .option("--since <ref>", "the tree state the document's claims were written against")
+  .option("--window <n>", "lines a claim may move and still count as an exact match", String(DRIFT_WINDOW))
+  .description("re-locate every file:line a document claims, against the code as it is now")
+  .action((docArg: string, pathArg: string | undefined, options: { json?: boolean; since?: string; window: string }) => {
+    const ctx = open(pathArg);
+
+    const docFile = resolve(docArg);
+    if (!existsSync(docFile)) {
+      ctx.close();
+      fail(`no such document: ${docArg}`);
+    }
+    // Git wants the document's path relative to the work tree, with forward slashes. A document
+    // outside the repository is still checkable — it simply has no history to anchor against.
+    const relative = relative_(ctx.root, docFile).split(sep).join("/");
+    const docPath = relative.startsWith("..") ? docFile.split(sep).join("/") : relative;
+
+    // The indexed tree does two jobs here: it supplies the fallback baseline, and it is what lets
+    // the shorthand a document actually writes — `corrections.ts:45` — resolve to one file.
+    const snapshot = ctx.store.latestSnapshotAny();
+    const commitSha = snapshot
+      ? String(ctx.store.readSnapshot(snapshot.id)?.["commit_sha"] ?? "") || undefined
+      : undefined;
+
+    const check = checkClaims(ctx.root, docPath, readFileSync(docFile, "utf8"), {
+      ...(options.since ? { since: options.since } : {}),
+      ...(commitSha ? { snapshotCommit: commitSha } : {}),
+      ...(snapshot ? { knownPaths: ctx.store.readFileHashes(snapshot.id).map((h) => h.path) } : {}),
+      driftWindow: Number(options.window),
+    });
+
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, thresholds: THRESHOLDS, check }, null, 2));
+      ctx.close();
+      return;
+    }
+
+    log(check.docPath);
+    log(
+      `  baseline  ${check.baseline.commit ? check.baseline.commit.slice(0, 12) : "none"}  ` +
+        `${check.baseline.note}`,
+    );
+    log(
+      `  ${check.found} claim(s) found · ${check.checked} checked · ${check.skipped.length} skipped` +
+        `   (${check.durationMs} ms)`,
+    );
+    log("");
+    for (const [outcome, count] of Object.entries(check.counts)) {
+      if (count > 0) log(`  ${outcome.toUpperCase().padEnd(13)} ${count}`);
+    }
+
+    const notable = check.results.filter((r) => r.outcome !== "resolved");
+    if (notable.length > 0) log("");
+    for (const r of notable) {
+      const where = r.nowLine ? `${r.path}:${r.line} → :${r.nowLine}` : `${r.path}:${r.line}`;
+      log(
+        `    ${r.outcome.padEnd(13)} ${where}${r.symbol ? `  ${r.symbol}` : ""}` +
+          `${r.confidence === "low" ? "  [low confidence]" : ""}`,
+      );
+      log(
+        `                  ${check.docPath}:${r.docLine}  ${r.raw}` +
+          `${r.resolvedFrom ? `  (written as ${r.resolvedFrom})` : ""}`,
+      );
+      if (r.note) log(`                  ${r.note}`);
+    }
+
+    if (check.skipped.length > 0) {
+      log("\n  skipped");
+      for (const s of check.skipped) log(`    line ${String(s.docLine).padEnd(5)} ${s.raw}  —  ${s.reason}`);
     }
     ctx.close();
   });
