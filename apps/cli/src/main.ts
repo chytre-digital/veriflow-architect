@@ -91,6 +91,15 @@ function open(pathArg?: string, options: OpenOptions = {}): Ctx {
   }
 
   const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+  // A database changing shape under a command nobody asked to run a migration is exactly the kind of
+  // silence D19 rules out — and on a real project this file holds answers a re-index cannot rebuild.
+  if (store.migration) {
+    const m = store.migration;
+    log(`veriflow.db migrated from schema ${m.from} to ${m.to}`);
+    for (const step of m.applied) log(`  ${step.to}  ${step.summary}`);
+    log(m.backup ? `  the database as it was is at ${m.backup}` : `  no backup could be written`);
+    log("");
+  }
   if (options.touchProject !== false) {
     store.upsertProject(projectId, root, config?.project.name ?? basename(root));
   }
@@ -1545,6 +1554,12 @@ program
     try {
       const restored = restoreDump(ctx.store, dump);
       log(`Restored ${restored.rows} rows across ${restored.tables} tables from ${file}`);
+      if (restored.migratedFrom !== undefined) {
+        // Said rather than done quietly: the rows that came out of this dump are not shaped exactly
+        // like the rows that went into it, and the reader is entitled to know that.
+        log(`  The dump was written by schema ${restored.migratedFrom}; this build stores schema ${restored.migratedTo}.`);
+        log(`  Columns added since take their defaults — nothing from the dump was dropped.`);
+      }
       const answers = ctx.store.listAnswers();
       for (const a of answers) log(`  ${String(a["id"]).slice(0, 8)}  ${a["title"]}`);
       log(``);

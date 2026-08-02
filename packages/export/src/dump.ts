@@ -107,12 +107,20 @@ export function dumpStore(store: Store, root: string, options: DumpOptions = {})
  * Restore into an empty database. Not a merge: two dumps sharing an answer id would silently pick a
  * winner, and a backup that quietly loses half of itself is worse than one that refuses.
  */
-export function restoreDump(store: Store, dump: Dump): { tables: number; rows: number } {
+export function restoreDump(
+  store: Store,
+  dump: Dump,
+): { tables: number; rows: number; migratedFrom?: number; migratedTo?: number } {
   if (dump.contractVersion !== DUMP_CONTRACT_VERSION) {
     throw new Error(`dump contract ${dump.contractVersion}, this build reads ${DUMP_CONTRACT_VERSION}`);
   }
-  if (dump.schemaVersion !== store.schemaVersion()) {
-    throw new Error(`dump was written by schema ${dump.schemaVersion}, this build expects ${store.schemaVersion()}`);
+  // An older dump is restorable: its rows are inserted by the column names they carry, and a column
+  // added since takes its default. A *newer* one is not — this build cannot know what to do with a
+  // column it has never heard of, and dropping it silently would make the backup a lossy one.
+  if (dump.schemaVersion > store.schemaVersion()) {
+    throw new Error(
+      `dump was written by schema ${dump.schemaVersion}, this build reads up to ${store.schemaVersion()}`,
+    );
   }
   if (!store.isEmpty()) {
     throw new Error("this database already holds data — restore into an empty workspace");
@@ -129,7 +137,13 @@ export function restoreDump(store: Store, dump: Dump): { tables: number; rows: n
     tables += 1;
     rows += data.length;
   }
-  return { tables, rows };
+  return {
+    tables,
+    rows,
+    ...(dump.schemaVersion === store.schemaVersion()
+      ? {}
+      : { migratedFrom: dump.schemaVersion, migratedTo: store.schemaVersion() }),
+  };
 }
 
 function redactRow(row: Record<string, unknown>, root: string): Record<string, unknown> {

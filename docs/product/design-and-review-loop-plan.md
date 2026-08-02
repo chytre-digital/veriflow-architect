@@ -67,10 +67,10 @@ Three rules produced this sequence.
 in any week, and none of them can corrupt a 125 MB database holding six answers that D2 says are not
 reproducible.
 
-**The migration is a gate, not a chore.** `SCHEMA_VERSION = 1`, the schema is one DDL string, and the
-constructor throws on mismatch (`packages/store/src/index.ts:296-311`). `restoreDump` throws on the
-same mismatch (`packages/export/src/dump.ts:114`). Nothing that adds a column can land before WP4,
-and everything from WP5 onwards adds one.
+**The migration is a gate, not a chore.** Before WP4 the schema was one DDL string at version 1, the
+store's constructor threw on any mismatch, and `restoreDump` threw on the same one. Nothing that adds
+a column could land before WP4, and everything from WP5 onwards adds one. *(Shipped — the gate is
+open.)*
 
 **Value per line decides the rest.** WP1 pays off on every spec, issue and ADR already in
 `main-panel` on the day it lands. WP6 is the feature the proposal is actually about and cannot be
@@ -313,7 +313,7 @@ Read-only, and a read tool over MCP rather than a write one — §10 of the prop
 
 **Ships.** `veriflow review <answerId> --accept | --reopen [path]`, and the same as a button on the
 answer screen. That is all. `Store.setReviewState` has existed since F005 at
-`packages/store/src/index.ts:694` and only a test has ever called it.
+`packages/store/src/index.ts:919` and only a test has ever called it.
 
 ### Why `--note` is not in this package
 
@@ -379,15 +379,26 @@ test asserts the control is offered rather than gated.
 
 ---
 
-## 5 · WP4 — the migration runner
+## 5 · WP4 — the migration runner · **shipped**
+
+> Built on 2026-08-02: `MIGRATIONS` and the runner in `packages/store/src/index.ts`,
+> `SCHEMA_VERSION = 2`, `restoreDump` taught to migrate, and `tests/f001-store-migration.test.ts` —
+> 14 cases over a hand-written v1 schema, whole suite 483 green, typecheck clean.
+>
+> **Rehearsed on a copy of the real thing.** `main-panel`'s 125 MB database — 6 answers, 1,055
+> citations, 1,300 verification results, 2,145 run events — was copied to a scratch directory and
+> migrated there. 1.3 seconds, every row count identical across eleven tables, citation values
+> preserved field by field, and the backup opened as a complete schema-1 database with `line` still
+> `NOT NULL`. The original was not touched.
 
 **Ships.** `SCHEMA_VERSION = 2`, an ordered `MIGRATIONS` list applied inside a transaction on open,
 a backup taken before the first one, and `restoreDump` taught to migrate rather than throw.
 
 ### Why it is a gate
 
-`packages/store/src/index.ts:296-311` executes one DDL string and then throws if `meta.schemaVersion`
-disagrees. `packages/export/src/dump.ts:114` throws on the same mismatch. `main-panel`'s database is
+Before this package, the store's constructor executed one DDL string and then threw if
+`meta.schemaVersion` disagreed by any amount, and `restoreDump` threw on the same mismatch.
+`main-panel`'s database is
 125 MB and holds six answers, nine verifications and 1,055 citations that an agent run cannot
 reproduce (D2). "Delete it and re-index" is available for everything derived from the tree and
 available for none of that.
@@ -395,6 +406,21 @@ available for none of that.
 So: **additive only**, in a transaction, with a row-count assertion after each step, and a copy of
 `veriflow.db` to `veriflow.db.v1.bak` before the first migration on any given database. On a
 125 MB file that is a second and it is the cheapest insurance in the plan.
+
+**Two things the implementation had to get right that this section did not say.**
+
+*The backup is taken with `VACUUM INTO`, not by copying the file.* The connection is open and in WAL
+mode, so a byte copy of the main file can miss everything still sitting in the log — which would
+make the insurance policy the least trustworthy file in the directory. `VACUUM INTO` writes a
+consistent database from the open connection. Verified: the backup of the real database opens as a
+complete schema-1 store, 1,055 citations, with `line` still `NOT NULL`.
+
+*The version chain is checked for gaps, not just for direction.* The first cut selected every
+migration between the stored version and `SCHEMA_VERSION` and applied what it found. Given a gap —
+`SCHEMA_VERSION = 3` with only a step to 2 written — it would have applied that step, stamped the
+version it reached, and handed back a database that is neither the old shape nor the new one. The
+runner now requires an unbroken chain from where the database is to where the build expects it, or
+it refuses and touches nothing.
 
 ### Everything v2 adds, in one go
 
@@ -415,7 +441,7 @@ ALTER TABLE answers ADD COLUMN intent INTEGER NOT NULL DEFAULT 0;
 -- WP6 / G1 — the intent citation: needs a table rebuild, see below
 ```
 
-`answer_citations.line` is `INTEGER NOT NULL` (`store/src/index.ts:151`), and an intent citation has
+`answer_citations.line` was `INTEGER NOT NULL`, and an intent citation has
 no line. SQLite cannot relax a `NOT NULL` with `ALTER`, so this one step is a rebuild: create the new
 shape, copy, drop, rename — with `PRAGMA foreign_keys = OFF` around it, since the table references
 `answers(id)`, and with the pragma restored and a row count asserted before commit. It is the only
@@ -653,7 +679,7 @@ gets used far more often, and it is stage 6 of the proposal's own design loop:
 | as-is → built | what actually changed | after, without a proposal |
 
 All three are the same computation. `veriflow diff <a> <b>` already takes two answer ids
-(`apps/cli/src/main.ts:1318`); what this package adds is that the pair may now be an observation and
+(`apps/cli/src/main.ts:1327`); what this package adds is that the pair may now be an observation and
 a proposal, and that the output is framed by which pair it is.
 
 **The matcher is the work.** The proposal calls this "`diffAnswers` unchanged, given a proposal as

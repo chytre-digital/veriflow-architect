@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@veriflow/contracts";
 
@@ -11,7 +11,109 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/**
+ * Every step from an older database to this build's shape, in order, each one the whole of what
+ * takes version N-1 to version N.
+ *
+ * Three rules, and they exist because the thing being migrated cannot be regenerated. A repository's
+ * index is derived and can be rebuilt by re-indexing; its answers are the output of agent runs that
+ * D2 says are not reproducible. "Delete it and start again" is available for everything except the
+ * only part that matters.
+ *
+ *   1. **Additive.** A migration adds columns and tables. It does not drop a column anything reads,
+ *      and it never derives anything from the repository — no file is opened, no provider is called.
+ *   2. **In one transaction, with the rows counted.** A migration that throws leaves the database
+ *      exactly where it was, and every table it touched is asserted to have the same number of rows
+ *      afterwards as before.
+ *   3. **Behind a backup.** The file is copied before the first migration touches it.
+ */
+interface Migration {
+  to: number;
+  summary: string;
+  /**
+   * Statements, run in order inside one transaction. Split into statements rather than one blob so
+   * a failure names the statement that caused it.
+   */
+  statements: readonly string[];
+  /**
+   * Whether this step rebuilds a table that something references. SQLite cannot relax a `NOT NULL`
+   * with `ALTER`, so the only way is create-copy-drop-rename — and a foreign key pointing at the
+   * table being dropped has to be stood down for the length of it.
+   */
+  rebuildsReferencedTable?: boolean;
+}
+
+const MIGRATIONS: readonly Migration[] = [
+  {
+    to: 2,
+    summary:
+      "review provenance on answers, the proposal columns, and a citation that may name a module " +
+      "instead of a line",
+    rebuildsReferencedTable: true,
+    statements: [
+      // F014 — a review state with no record of the tree state it was given at is the same defect
+      // the label was introduced to fix. Nothing is backfilled: an answer reviewed before these
+      // columns existed reads as reviewed at an unknown tree state, which is true.
+      `ALTER TABLE answers ADD COLUMN reviewed_at TEXT`,
+      `ALTER TABLE answers ADD COLUMN reviewed_by TEXT`,
+      `ALTER TABLE answers ADD COLUMN review_note TEXT`,
+      `ALTER TABLE answers ADD COLUMN review_fingerprint TEXT`,
+
+      // F015 — an answer describes what is, or what is proposed. Inert until the proposal feature
+      // lands; here now because the citation rebuild below is the expensive part and doing it twice
+      // for the sake of arriving in two instalments would be worse.
+      `ALTER TABLE answers ADD COLUMN kind TEXT NOT NULL DEFAULT 'observed'`,
+      `ALTER TABLE answers ADD COLUMN intent INTEGER NOT NULL DEFAULT 0`,
+
+      // F015 — a citation to code that does not exist yet has no line. `line` therefore has to stop
+      // being NOT NULL, which SQLite will not do in place.
+      `CREATE TABLE answer_citations_v2 (
+         answer_id TEXT NOT NULL REFERENCES answers(id),
+         seq INTEGER NOT NULL,
+         subject_kind TEXT NOT NULL,
+         subject_id TEXT NOT NULL,
+         path TEXT NOT NULL,
+         line INTEGER,
+         symbol TEXT,
+         state TEXT NOT NULL,
+         line_hash TEXT,
+         reason TEXT,
+         module_id TEXT,
+         planned_path TEXT,
+         PRIMARY KEY (answer_id, seq)
+       )`,
+      `INSERT INTO answer_citations_v2
+         (answer_id, seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason)
+       SELECT answer_id, seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason
+       FROM answer_citations`,
+      `DROP TABLE answer_citations`,
+      `ALTER TABLE answer_citations_v2 RENAME TO answer_citations`,
+    ],
+  },
+];
+
+/** Tables a migration is expected to preserve, counted before and after. */
+const COUNTED_TABLES = [
+  "projects",
+  "snapshots",
+  "answers",
+  "answer_citations",
+  "answer_corrections",
+  "verifications",
+  "verification_results",
+  "exports",
+  "runs",
+] as const;
+
+export interface MigrationReport {
+  from: number;
+  to: number;
+  applied: Array<{ to: number; summary: string }>;
+  /** Where the pre-migration file was copied, when one was taken. */
+  backup?: string;
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -141,8 +243,14 @@ CREATE TABLE IF NOT EXISTS answers (
   title TEXT NOT NULL,
   status TEXT NOT NULL,
   review_state TEXT NOT NULL DEFAULT 'unreviewed',
+  reviewed_at TEXT,
+  reviewed_by TEXT,
+  review_note TEXT,
+  review_fingerprint TEXT,
+  kind TEXT NOT NULL DEFAULT 'observed',
   verified INTEGER NOT NULL,
   unverified INTEGER NOT NULL,
+  intent INTEGER NOT NULL DEFAULT 0,
   open_questions INTEGER NOT NULL,
   body_json TEXT NOT NULL,
   created_at TEXT NOT NULL
@@ -154,11 +262,14 @@ CREATE TABLE IF NOT EXISTS answer_citations (
   subject_kind TEXT NOT NULL,
   subject_id TEXT NOT NULL,
   path TEXT NOT NULL,
-  line INTEGER NOT NULL,
+  /* Null when the citation names a module rather than a line — a flow that does not exist yet. */
+  line INTEGER,
   symbol TEXT,
   state TEXT NOT NULL,
   line_hash TEXT,
   reason TEXT,
+  module_id TEXT,
+  planned_path TEXT,
   PRIMARY KEY (answer_id, seq)
 );
 
@@ -288,20 +399,32 @@ export interface OpenOptions {
 export class Store {
   private readonly db: DatabaseSync;
 
+  /** What opening this database had to do to it, when it had to do anything. */
+  readonly migration?: MigrationReport;
+
   constructor(options: OpenOptions) {
     mkdirSync(dirname(options.file), { recursive: true });
     this.db = new DatabaseSync(options.file);
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
+
+    // `IF NOT EXISTS` throughout, so this creates the current shape on an empty file and does
+    // nothing at all to a database that already has tables — whose shape the migrations below own.
     this.db.exec(SCHEMA);
+
     const row = this.db.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get() as
       | { value: string }
       | undefined;
+
     if (!row) {
       this.db
         .prepare("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)")
         .run(String(SCHEMA_VERSION));
-    } else if (Number(row.value) !== SCHEMA_VERSION) {
+      return;
+    }
+
+    const found = Number(row.value);
+    if (found > SCHEMA_VERSION) {
       // Release the handle before throwing, or the caller is left with an open file it cannot see
       // and cannot close — which on Windows also makes the containing directory undeletable.
       this.db.close();
@@ -309,6 +432,108 @@ export class Store {
         `veriflow.db was written by schema ${row.value}, this build expects ${SCHEMA_VERSION}`,
       );
     }
+    if (found === SCHEMA_VERSION) return;
+
+    try {
+      const report = this.migrate(found, options.file);
+      if (report) this.migration = report;
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
+  }
+
+  /**
+   * Bring an older database up to this build, one version at a time.
+   *
+   * The backup is taken with `VACUUM INTO` rather than by copying the file, because the connection
+   * is open and in WAL mode: a byte copy of the main file can miss everything still in the log,
+   * which would make the insurance policy the least trustworthy file in the directory.
+   */
+  private migrate(from: number, file: string): MigrationReport | undefined {
+    const pending = MIGRATIONS.filter((m) => m.to > from && m.to <= SCHEMA_VERSION).sort(
+      (a, b) => a.to - b.to,
+    );
+
+    // An unbroken chain from where the database is to where this build expects it, or nothing. A
+    // gap anywhere in the middle would otherwise apply the steps it has, stamp the version it
+    // reached, and hand back a database that is neither the old shape nor the new one.
+    const complete =
+      pending.length === SCHEMA_VERSION - from &&
+      pending.every((m, i) => m.to === from + i + 1);
+    if (!complete) {
+      throw new Error(
+        `veriflow.db is at schema ${from} and this build expects ${SCHEMA_VERSION}, but no migration ` +
+          `covers the difference`,
+      );
+    }
+
+    const report: MigrationReport = { from, to: SCHEMA_VERSION, applied: [] };
+
+    const backup = `${file}.v${from}.bak`;
+    if (!existsSync(backup)) {
+      // Not fatal on failure: refusing to migrate because a backup could not be written would leave
+      // the database unusable by this build, which is a worse outcome than migrating without one.
+      // What is not acceptable is doing it quietly, so the report says whether there is one.
+      try {
+        this.db.exec(`VACUUM INTO '${backup.replace(/\\/g, "/").replace(/'/g, "''")}'`);
+        report.backup = backup;
+      } catch {
+        report.backup = undefined;
+      }
+    } else {
+      report.backup = backup;
+    }
+
+    const before = this.rowCounts();
+
+    for (const migration of pending) {
+      // A pragma is a no-op inside a transaction, so foreign keys are stood down out here. The
+      // create-copy-drop-rename below drops a table that another declares a reference to.
+      if (migration.rebuildsReferencedTable) this.db.exec("PRAGMA foreign_keys = OFF;");
+      this.db.exec("BEGIN");
+      try {
+        for (const statement of migration.statements) this.db.exec(statement);
+        this.db
+          .prepare("UPDATE meta SET value = ? WHERE key = 'schemaVersion'")
+          .run(String(migration.to));
+        this.db.exec("COMMIT");
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        if (migration.rebuildsReferencedTable) this.db.exec("PRAGMA foreign_keys = ON;");
+        throw new Error(
+          `migration to schema ${migration.to} failed and was rolled back — the database is still ` +
+            `at ${from}${report.backup ? `, and a copy of it is at ${report.backup}` : ""}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+        );
+      }
+      if (migration.rebuildsReferencedTable) this.db.exec("PRAGMA foreign_keys = ON;");
+      report.applied.push({ to: migration.to, summary: migration.summary });
+    }
+
+    // The whole promise of an additive migration, checked rather than asserted in a comment.
+    const after = this.rowCounts();
+    for (const [table, count] of Object.entries(before)) {
+      if (after[table] !== count) {
+        throw new Error(
+          `migration changed the number of rows in ${table}: ${count} before, ${after[table]} after`,
+        );
+      }
+    }
+
+    return report;
+  }
+
+  private rowCounts(): Record<string, number> {
+    const present = new Set(this.tableNames());
+    const counts: Record<string, number> = {};
+    for (const table of COUNTED_TABLES) {
+      if (!present.has(table)) continue;
+      const row = this.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number };
+      counts[table] = Number(row.n);
+    }
+    return counts;
   }
 
   close(): void {

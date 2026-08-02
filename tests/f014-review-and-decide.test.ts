@@ -264,17 +264,19 @@ describe("in the browser", () => {
 });
 
 describe("what the review state still does not carry", () => {
-  it("records no reviewer and no note, because there is nowhere to put them yet", () => {
+  it("records no reviewer and no note, though schema 2 has given them somewhere to go", () => {
     const { root, store } = fixture();
     store.setReviewState(ANSWER_ID, "reviewed");
 
-    // The columns arrive with the schema version. Until then the product says so rather than
-    // accepting a note and dropping it, and the answer row carries the state and nothing else.
+    // The columns arrived with schema 2 and nothing writes them yet. Empty is the honest value:
+    // this answer was reviewed by somebody the product did not ask to identify themselves, at a
+    // tree state it did not record. The CLI says as much rather than accepting a note and losing it.
     const row = loadStoredAnswer(store, root, ANSWER_ID)!.row as unknown as Record<string, unknown>;
     expect(row["review_state"]).toBe("reviewed");
-    expect(row["reviewed_by"]).toBeUndefined();
-    expect(row["reviewed_at"]).toBeUndefined();
-    expect(row["review_note"]).toBeUndefined();
+    expect(row["reviewed_by"]).toBeNull();
+    expect(row["reviewed_at"]).toBeNull();
+    expect(row["review_note"]).toBeNull();
+    expect(row["review_fingerprint"]).toBeNull();
   });
 
   it("is not writable over MCP — the agent may read a review and may not record one", async () => {
