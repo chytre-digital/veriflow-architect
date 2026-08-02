@@ -39,11 +39,13 @@ import {
   diffHashes,
   loadIgnore,
   readGitFacts,
+  readManifests,
   unappliedExcludes,
+  type Ignore,
 } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { InitError, ProjectLock, initWorkspace, readConfig, DEFAULT_DOCUMENTATION } from "@veriflow/workspace";
-import type { Snapshot } from "@veriflow/contracts";
+import type { EntryPoint, Snapshot, SymbolRecord } from "@veriflow/contracts";
 
 const program = new Command();
 program.name("veriflow").description("Generate an application's architecture and answer questions about it");
@@ -116,6 +118,29 @@ function sourceReader(root: string): SourceReader {
       return cache.get(path);
     },
   };
+}
+
+/**
+ * Where this repository is entered, asked in one place because three commands ask it and an answer
+ * that differs between them is a bug. Path conventions find framework doors; the manifests are read
+ * for the ones a CLI-and-library repository declares instead, under the same ignore rules as the
+ * index, so a directory the project excluded cannot put an entry point back.
+ */
+function detectDoors(
+  root: string,
+  symbols: SymbolRecord[],
+  ignore: Pick<Ignore, "matches">,
+  onNote: (message: string) => void = () => {},
+): EntryPoint[] {
+  const manifests = readManifests(root, {
+    ignore,
+    onMalformed: (path, reason) => onNote(`${path} is not readable as JSON: ${reason}`),
+  });
+  return detectEntryPoints(symbols, {
+    manifests,
+    source: sourceReader(root),
+    onUnresolved: (entry, reason) => onNote(`${entry.manifest} declares ${entry.name}, but ${reason}`),
+  });
 }
 
 function fail(message: string): never {
@@ -322,7 +347,8 @@ program
     );
     const modules = deriveModules(symbols, { communityBySymbol });
     ctx.store.insertModules(snapshot.id, modules);
-    const entryPoints = detectEntryPoints(symbols);
+    const undeclared: string[] = [];
+    const entryPoints = detectDoors(ctx.root, symbols, ignore, (note) => undeclared.push(note));
     ctx.store.insertEntryPoints(snapshot.id, entryPoints);
 
     // Computed once here and stored with coordinates, so opening the browser recomputes nothing and
@@ -346,6 +372,8 @@ program
       new Map(map.dots.map((d) => [d.id, { x: d.x, y: d.y }])),
     );
 
+    const declared = entryPoints.filter((e) => e.kind === "cli" || e.kind === "package-export").length;
+
     log(``);
     log(`Indexed ${basename(ctx.root)} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     log(`  provider     ${provider.id} ${health.version} (${incremental ? "incremental" : "full build"})`);
@@ -360,7 +388,12 @@ program
       );
     }
     log(`  modules      ${modules.length} derived from paths`);
-    log(`  entry points ${entryPoints.length} detected`);
+    log(
+      `  entry points ${entryPoints.length} detected` +
+        (declared ? ` · ${declared} declared by a manifest` : ""),
+    );
+    for (const note of undeclared.slice(0, 5)) log(`               ! ${note}`);
+    if (undeclared.length > 5) log(`               ! and ${undeclared.length - 5} more`);
     log(`  call graph   ${graph.nodes.length} reachable nodes · ${graph.edges.length} edges · ${graph.traffic.filter((t) => t.backward).length} backward`);
     log(`  tree state   ${snapshot.fileCount} files hashed${snapshot.dirty ? " (working tree dirty)" : ""}`);
     if (previous) {
@@ -456,10 +489,18 @@ program
     const ctx = open(pathArg);
     const provider = createProvider(readConfig(ctx.root)?.index.provider);
     const probe = provider.probe({ path: ctx.root });
-    const symbols = await provider.symbols({ path: ctx.root });
-    const callSites = await provider.callSites({ path: ctx.root });
+    // The same filter the index applies. Reading the provider directly and skipping it would draw a
+    // graph over code the project asked not to have indexed.
+    const ignore = loadIgnore(ctx.root).ignore;
+    const { symbols, callSites } = applyIgnore(
+      {
+        symbols: await provider.symbols({ path: ctx.root }),
+        callSites: await provider.callSites({ path: ctx.root }),
+      },
+      ignore,
+    );
 
-    let entryPoints = detectEntryPoints(symbols);
+    let entryPoints = detectDoors(ctx.root, symbols, ignore);
     if (options.entry) {
       const needle = options.entry.toLowerCase();
       entryPoints = entryPoints.filter(
@@ -1287,12 +1328,22 @@ program
   .action(async (pathArg: string | undefined, options: { json?: boolean }) => {
     const ctx = open(pathArg);
     const provider = createProvider(readConfig(ctx.root)?.index.provider);
-    const entryPoints = detectEntryPoints(await provider.symbols({ path: ctx.root }));
+    const ignore = loadIgnore(ctx.root).ignore;
+    const { symbols } = applyIgnore(
+      { symbols: await provider.symbols({ path: ctx.root }), callSites: [] },
+      ignore,
+    );
+    const notes: string[] = [];
+    const entryPoints = detectDoors(ctx.root, symbols, ignore, (note) => notes.push(note));
     if (options.json) {
-      log(JSON.stringify({ contractVersion: 1, entryPoints }, null, 2));
+      log(JSON.stringify({ contractVersion: 1, entryPoints, notDetected: notes }, null, 2));
     } else {
       log(`${entryPoints.length} entry point(s)\n`);
-      for (const e of entryPoints) log(`  ${e.kind.padEnd(13)} ${e.label}`);
+      for (const e of entryPoints) log(`  ${e.kind.padEnd(15)} ${e.label}`);
+      if (notes.length) {
+        log(`\nDeclared, but not turned into a door:`);
+        for (const note of notes) log(`  ${note}`);
+      }
     }
     ctx.close();
   });

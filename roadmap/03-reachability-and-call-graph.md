@@ -27,7 +27,14 @@ repository it does not touch, so that a claim about a flow has a checkable bound
 ### In
 
 - entry-point detection over provider data: HTTP route handlers, pages, server actions, cron and job
-  entries, webhook handlers, and event subscribers;
+  entries, webhook handlers, and event subscribers — recognized from where they sit;
+- entry points a repository **declares** rather than places by convention: `bin` commands and the
+  modules named by `exports` (or `main`) in a package manifest. A path rule can only find the doors a
+  framework agreed to put somewhere, so a CLI-and-library repository detects none and the empty graph
+  that follows describes the detector, not the code. A `bin` roots at the target file's top level,
+  because a command runs its module and nothing calls it; an `exports` entry roots at each function or
+  class the named module publishes, read from that module's own export statements and followed through
+  re-exports. A declaration that resolves to no indexed file is reported rather than dropped;
 - reachability: transitive closure of calls from a chosen entry-point set, including a reached file's
   module initialization, because importing a module runs it;
 - collapsing callback lambdas into their parent function, so a graph node is a named unit;
@@ -120,7 +127,10 @@ A mismatch is a build failure, not a rounding difference.
 - layout is pure: the same graph produces the same coordinates on every platform;
 - node identity is stable across snapshots where the symbol still exists, so F007 can diff;
 - the graph stores no absolute path;
-- computation is offline over stored provider data; no source file is re-parsed by this feature.
+- computation is offline over stored provider data, with two named exceptions that read the tree: the
+  single call line a `callback` edge is recovered from, and the `export` statements of a module a
+  manifest names as public. Both read a declaration rather than re-parsing a file to learn what it
+  does, and neither re-implements the provider.
 
 ## Acceptance criteria
 

@@ -113,10 +113,14 @@ export function rankEntryPoints(
       }
     }
 
-    // A webhook or cron entry rarely answers a "how does X work" question on its own.
+    // A webhook or cron entry rarely answers a "how does X work" question on its own. A command is
+    // the same kind of front door as a route — in a repository that ships one it is the only one.
     if (entryPoint.kind === "http-route") {
       score += 0.5;
       reasons.push("http route");
+    } else if (entryPoint.kind === "cli") {
+      score += 0.5;
+      reasons.push("command");
     }
 
     return { entryPoint, score, reasons };

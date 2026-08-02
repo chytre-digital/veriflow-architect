@@ -75,6 +75,19 @@ describe("port inference", () => {
     );
     expect(edges).toEqual([]);
   });
+
+  it("binds across a workspace, where the code is not under src/ at all", () => {
+    // The candidate set used to be restricted to `src/`, which is one repository layout: in a
+    // workspace both rules silently inferred nothing.
+    const app = fn("apps/cli/src/main.ts", "runCommand", 5);
+    const target = fn("packages/store/src/index.ts", "openProjectStore", 20);
+    const edges = inferPortEdges(
+      [unresolved(app.id, "openProjectStore", app.path, 8)],
+      [app, target],
+      new Set([app.id]),
+    );
+    expect(edges.map((e) => e.to)).toEqual([target.id]);
+  });
 });
 
 describe("callback inference", () => {

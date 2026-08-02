@@ -90,6 +90,9 @@ features:
       - "DEFERRED to F006 — deterministic layout coordinates. Nothing renders yet, so there is no picture for coordinates to be stable in; determinism is asserted today on the graph JSON instead. Recorded rather than silently skipped (D19)."
       - "A symbol that exists in two snapshots keeps its node identity."
       - "`--json` output is versioned and complete enough to rebuild every view."
+      - "On a repository whose doors are declared rather than placed — a `bin` command and workspace packages with `exports` — entry point detection returns them, and the call graph walked from the command alone reaches the bulk of the repository. Detecting nothing there would describe the detector, not the code."
+      - "A manifest declaring a target that is not in the index is reported by `veriflow index` and `veriflow entrypoints`, never dropped in silence."
+      - "A `bin` door draws one node for the file's top level, not two."
     tests:
       - "reachability on a small fixture with a deliberately unreached sibling helper;"
       - "module-init inclusion, and its exclusion when the file is never reached;"
@@ -103,7 +106,11 @@ features:
       - "traffic matrix orientation and backward-edge detection;"
       - "layout determinism across platforms and across two runs;"
       - "node identity stability between two snapshots;"
-      - "depth bound reached is reported, not silently truncated."
+      - "depth bound reached is reported, not silently truncated;"
+      - "`bin` as a string and as a command map; `exports` as a string, a subpath map, and a condition tree;"
+      - "a manifest pointing at `dist/index.js` resolves to the indexed `src/index.ts`, and one pointing at nothing is returned unresolved;"
+      - "a re-export barrel's public names resolve to the files that declare them, including `export * from`;"
+      - "a `type` export and a wildcard subpath produce no door."
   F004:
     title: "Streamed agent session with the user's own client"
     spec: "04-agent-session.md"

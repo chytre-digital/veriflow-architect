@@ -486,10 +486,11 @@ export function callGraphPage(input: CallGraphPageInput): string {
 
        ${
          nodes.length === 0
-           ? `<p class="note">Nothing is reachable. The graph starts at detected entry points — HTTP routes,
-              pages, server actions, cron, webhooks and subscribers — and this snapshot has
-              ${entryPoints.length}. That is a statement about what was detected, not about what the code
-              does.</p>`
+           ? `<p class="note">Nothing is reachable. The graph starts at the doors of the repository —
+              HTTP routes, pages, server actions, cron, webhooks and subscribers, recognized from where
+              they sit, plus the <code>bin</code> commands and <code>exports</code> a package manifest
+              declares — and this snapshot has ${entryPoints.length}. That is a statement about what was
+              detected, not about what the code does.</p>`
            : ""
        }
 

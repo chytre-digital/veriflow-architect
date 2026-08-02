@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { CallSite, SymbolRecord } from "@veriflow/contracts";
+import type { CallSite, PackageManifest, SymbolRecord } from "@veriflow/contracts";
 import {
   buildCallGraph,
   computeBuckets,
   computeReachability,
+  declaredEntries,
   deriveModules,
   detectEntryPoints,
   labelFromPath,
   layerRank,
   moduleForPath,
   moduleIdFromPath,
+  publicNames,
+  resolveDeclaredEntries,
+  type SourceReader,
 } from "@veriflow/callgraph";
 
 const fn = (id: string, path: string, name: string, line = 1): SymbolRecord => ({
@@ -21,6 +25,21 @@ const fn = (id: string, path: string, name: string, line = 1): SymbolRecord => (
   lineEnd: line + 5,
   isTest: false,
 });
+
+/** A provider emits one of these per file, and its id is the path. A `bin` door is one of them. */
+const file = (path: string): SymbolRecord => ({
+  id: path,
+  name: path.split("/").pop()!,
+  kind: "File",
+  path,
+  lineStart: 1,
+  lineEnd: 1,
+  isTest: false,
+});
+
+const manifest = (path: string, json: unknown): PackageManifest => ({ path, json });
+
+const reader = (files: Record<string, string>): SourceReader => ({ read: (path) => files[path] });
 
 const call = (from: string, to: string | undefined, path: string, line = 10): CallSite => ({
   fromSymbolId: from,
@@ -116,6 +135,176 @@ describe("entry point detection", () => {
       fn("src/app/api/x/route.ts::helper", "src/app/api/x/route.ts", "helper"),
     ]);
     expect(entries).toEqual([]);
+  });
+});
+
+describe("what a package manifest declares", () => {
+  it("reads bin as a command map and as the package's own name", () => {
+    expect(
+      declaredEntries([
+        manifest("apps/cli/package.json", { name: "@acme/cli", bin: { acme: "./src/main.ts" } }),
+        manifest("tools/package.json", { name: "@acme/tool", bin: "./run.ts" }),
+      ]),
+    ).toEqual([
+      { kind: "cli", name: "acme", target: "apps/cli/src/main.ts", manifest: "apps/cli/package.json" },
+      { kind: "cli", name: "tool", target: "tools/run.ts", manifest: "tools/package.json" },
+    ]);
+  });
+
+  it("walks an exports condition tree past types, and names each subpath", () => {
+    const entries = declaredEntries([
+      manifest("packages/lib/package.json", {
+        name: "@acme/lib",
+        exports: {
+          ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
+          "./testing": "./dist/testing.js",
+          "./*": "./dist/*.js",
+        },
+      }),
+    ]);
+    expect(entries.map((e) => [e.name, e.target])).toEqual([
+      ["@acme/lib", "packages/lib/dist/index.js"],
+      ["@acme/lib/testing", "packages/lib/dist/testing.js"],
+    ]);
+  });
+
+  it("falls back to main only when exports says nothing", () => {
+    expect(declaredEntries([manifest("package.json", { name: "a", main: "./index.js" })])).toHaveLength(1);
+    expect(
+      declaredEntries([manifest("package.json", { name: "a", main: "./old.js", exports: "./new.js" })]).map(
+        (e) => e.target,
+      ),
+    ).toEqual(["new.js"]);
+  });
+
+  it("resolves a published dist path onto the source that was indexed", () => {
+    const { resolved, unresolved } = resolveDeclaredEntries(
+      declaredEntries([
+        manifest("packages/lib/package.json", { name: "@acme/lib", exports: "./dist/index.js" }),
+      ]),
+      ["packages/lib/src/index.ts"],
+    );
+    expect(resolved.map((e) => e.path)).toEqual(["packages/lib/src/index.ts"]);
+    expect(unresolved).toEqual([]);
+  });
+
+  it("returns a declaration it cannot find rather than dropping it", () => {
+    const { resolved, unresolved } = resolveDeclaredEntries(
+      declaredEntries([manifest("package.json", { name: "a", bin: "./bin/a.js" })]),
+      ["src/other.ts"],
+    );
+    expect(resolved).toEqual([]);
+    expect(unresolved.map((e) => e.target)).toEqual(["bin/a.js"]);
+  });
+});
+
+describe("what a module makes public", () => {
+  const source = reader({
+    "packages/lib/src/index.ts": [
+      `export { render, paint as brush } from "./render.js";`,
+      `export * from "./util.js";`,
+      `export type { Config } from "./types.js";`,
+      `export interface Options {}`,
+      `export function boot() {}`,
+    ].join("\n"),
+    "packages/lib/src/render.ts": `export function render() {}\nexport function paint() {}\n`,
+    "packages/lib/src/util.ts": `export function slugify() {}\nexport type Slug = string;\n`,
+    "packages/lib/src/types.ts": `export type Config = { a: 1 };\n`,
+  });
+
+  it("follows re-exports to the file that declares each name", () => {
+    expect(publicNames("packages/lib/src/index.ts", source)).toEqual([
+      { name: "boot", path: "packages/lib/src/index.ts", local: "boot" },
+      { name: "brush", path: "packages/lib/src/render.ts", local: "paint" },
+      { name: "render", path: "packages/lib/src/render.ts", local: "render" },
+      { name: "slugify", path: "packages/lib/src/util.ts", local: "slugify" },
+    ]);
+  });
+
+  it("does not treat a type as a door", () => {
+    const names = publicNames("packages/lib/src/index.ts", source).map((n) => n.name);
+    expect(names).not.toContain("Config");
+    expect(names).not.toContain("Options");
+    expect(names).not.toContain("Slug");
+  });
+});
+
+describe("doors a repository declares rather than places", () => {
+  const symbols = [
+    file("apps/cli/src/main.ts"),
+    fn("apps/cli/src/main.ts::run", "apps/cli/src/main.ts", "run"),
+    file("packages/lib/src/index.ts"),
+    fn("packages/lib/src/index.ts::boot", "packages/lib/src/index.ts", "boot"),
+    fn("packages/lib/src/render.ts::render", "packages/lib/src/render.ts", "render"),
+  ];
+  const source = reader({
+    "packages/lib/src/index.ts": `export { render } from "./render.js";\nexport function boot() {}\n`,
+    "packages/lib/src/render.ts": `export function render() {}\n`,
+  });
+
+  it("roots a bin at the file's top level, because a command runs its module", () => {
+    const entries = detectEntryPoints(symbols, {
+      manifests: [manifest("apps/cli/package.json", { name: "@acme/cli", bin: { acme: "./src/main.ts" } })],
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "cli",
+      symbolId: "apps/cli/src/main.ts",
+      label: "acme (apps/cli/src/main.ts)",
+    });
+  });
+
+  it("roots an exports entry at every function the module publishes, not at the module", () => {
+    const entries = detectEntryPoints(symbols, {
+      manifests: [manifest("packages/lib/package.json", { name: "@acme/lib", exports: "./src/index.ts" })],
+      source,
+    });
+    expect(entries.map((e) => [e.kind, e.symbolId, e.label])).toEqual([
+      ["package-export", "packages/lib/src/index.ts::boot", "boot (@acme/lib)"],
+      ["package-export", "packages/lib/src/render.ts::render", "render (@acme/lib)"],
+    ]);
+  });
+
+  it("reports a declaration it could not turn into a door instead of detecting nothing", () => {
+    const notes: string[] = [];
+    const entries = detectEntryPoints(symbols, {
+      manifests: [manifest("packages/gone/package.json", { name: "@acme/gone", bin: "./src/main.ts" })],
+      onUnresolved: (entry, reason) => notes.push(`${entry.name}: ${reason}`),
+    });
+    expect(entries).toEqual([]);
+    expect(notes).toEqual(["gone: packages/gone/src/main.ts is not in the index"]);
+  });
+
+  it("keeps the more specific name when a path rule already claimed the symbol", () => {
+    const routeSymbols = [
+      file("src/app/api/x/route.ts"),
+      fn("src/app/api/x/route.ts::POST", "src/app/api/x/route.ts", "POST"),
+    ];
+    const entries = detectEntryPoints(routeSymbols, {
+      manifests: [manifest("package.json", { name: "app", exports: "./src/app/api/x/route.ts" })],
+      source: reader({ "src/app/api/x/route.ts": `export function POST() {}\n` }),
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.kind).toBe("http-route");
+  });
+
+  it("walks the call graph from a bin, and draws its top level once", () => {
+    const entryPoints = detectEntryPoints(symbols, {
+      manifests: [manifest("apps/cli/package.json", { name: "@acme/cli", bin: { acme: "./src/main.ts" } })],
+    });
+    const graph = buildCallGraph(
+      symbols,
+      [
+        // A top-level statement's calls are attributed to the file, which is why the file is the door.
+        call("apps/cli/src/main.ts", "packages/lib/src/render.ts::render", "apps/cli/src/main.ts"),
+      ],
+      { snapshotId: "s1", callSiteLinesExact: true, entryPoints },
+    );
+    expect(graph.nodes.find((n) => n.id === "apps/cli/src/main.ts")!.kind).toBe("entry");
+    expect(graph.nodes.some((n) => n.id === "apps/cli/src/main.ts::<module>")).toBe(false);
+    expect(graph.nodes.some((n) => n.id === "packages/lib/src/render.ts::render")).toBe(true);
+    // Nothing reaches the unrelated helper, so it is not on the map.
+    expect(graph.nodes.some((n) => n.id === "apps/cli/src/main.ts::run")).toBe(false);
   });
 });
 

@@ -34,6 +34,19 @@ export interface ChangedFile {
   kind: ChangeKind;
 }
 
+/**
+ * A package manifest as found in the tree: where it is, and what it said.
+ *
+ * The contents stay `unknown` on purpose. A `package.json` is written by hand and is allowed to say
+ * anything at all — `bin` is a string in one repository and an object in the next — so the shape is
+ * checked where it is interpreted rather than asserted here.
+ */
+export interface PackageManifest {
+  /** Repository-relative path of the manifest itself, POSIX separators. */
+  path: string;
+  json: unknown;
+}
+
 /* ------------------------------------------------------------------ provider */
 
 export const ProviderCapabilitiesSchema = z.object({
@@ -156,13 +169,20 @@ export interface ModuleRecord {
 
 /* ------------------------------------------------------------------ call graph */
 
+/**
+ * The last two are declared rather than inferred from a path. A repository that ships a command and a
+ * library has no route file to recognize, and detecting nothing there is a true statement about the
+ * detector, not about the code: the doors are in `package.json`, under `bin` and `exports`.
+ */
 export type EntryPointKind =
   | "http-route"
   | "page"
   | "server-action"
   | "cron"
   | "webhook"
-  | "subscriber";
+  | "subscriber"
+  | "cli"
+  | "package-export";
 
 export interface EntryPoint {
   id: string;

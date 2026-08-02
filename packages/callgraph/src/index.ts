@@ -7,29 +7,70 @@ import type {
   EntryPoint,
   EntryPointKind,
   ModuleRecord,
+  PackageManifest,
   SymbolRecord,
   TrafficCell,
 } from "@veriflow/contracts";
 import { deriveModules, layerRank, moduleForPath } from "./modules.js";
-import { inferCallbackEdges, inferPortEdges, type InferenceOptions } from "./infer.js";
+import { inferCallbackEdges, inferPortEdges, type InferenceOptions, type SourceReader } from "./infer.js";
+import { declaredEntries, resolveDeclaredEntries, type DeclaredEntry } from "./manifests.js";
+import { publicNames } from "./exports.js";
 
 export { deriveModules, moduleForPath, moduleIdFromPath, labelFromPath, layerRank, LAYER_ORDER } from "./modules.js";
 export { inferPortEdges, inferCallbackEdges, type SourceReader, type InferenceOptions } from "./infer.js";
+export {
+  declaredEntries,
+  resolveDeclaredEntries,
+  type DeclaredEntry,
+  type DeclaredEntryKind,
+  type ResolvedEntry,
+  type ResolveResult,
+} from "./manifests.js";
+export { publicNames, type PublicName } from "./exports.js";
 
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+
+export interface EntryPointOptions {
+  /**
+   * Package manifests found in the tree. `bin` and `exports` declare doors that no path convention
+   * gives away, which is the whole architecture of a repository that ships a command and a library.
+   */
+  manifests?: readonly PackageManifest[];
+  /**
+   * Required to turn an `exports` entry into doors: the manifest names a module, and which of that
+   * module's symbols are public is written in the module itself.
+   */
+  source?: SourceReader;
+  /**
+   * Called for every declaration that names something this could not turn into a door. A manifest
+   * pointing at a file nobody indexed is a finding, and dropping it in silence would read as "this
+   * repository declares no doors".
+   */
+  onUnresolved?: (entry: DeclaredEntry, reason: string) => void;
+}
 
 /**
  * Entry points are detected by VeriFlow over symbol and path data, not taken from the provider.
  * The spike measured its flow detection as weak for TypeScript — 50 flows, several named just `GET`,
  * typical depth 5 — so provider flows are a cross-check at most.
+ *
+ * Two of the kinds are declared rather than recognized. A path convention can only find the doors a
+ * framework puts in a known place; a CLI-and-library repository has none, and reporting zero there
+ * describes the detector rather than the code. `bin` and `exports` in a manifest are the author
+ * saying where the code is entered, so they are read as the doors they are.
  */
-export function detectEntryPoints(symbols: SymbolRecord[]): EntryPoint[] {
+export function detectEntryPoints(
+  symbols: SymbolRecord[],
+  options: EntryPointOptions = {},
+): EntryPoint[] {
   const out: EntryPoint[] = [];
+  const claimed = new Set<string>();
   for (const symbol of symbols) {
     if (symbol.kind === "File") continue;
     const path = symbol.path;
     const kind = entryKindFor(path, symbol.name);
     if (!kind) continue;
+    claimed.add(symbol.id);
     out.push({
       id: symbol.id,
       symbolId: symbol.id,
@@ -39,7 +80,89 @@ export function detectEntryPoints(symbols: SymbolRecord[]): EntryPoint[] {
       line: symbol.lineStart,
     });
   }
+  // Path rules run first and keep what they claimed: a route file that a manifest also exports is a
+  // route before it is an export, and the more specific name is the more useful one.
+  out.push(...declaredEntryPoints(symbols, claimed, options));
   out.sort((a, b) => (a.id < b.id ? -1 : 1));
+  return out;
+}
+
+function declaredEntryPoints(
+  symbols: SymbolRecord[],
+  claimed: Set<string>,
+  options: EntryPointOptions,
+): EntryPoint[] {
+  const manifests = options.manifests ?? [];
+  if (manifests.length === 0) return [];
+
+  const { resolved, unresolved } = resolveDeclaredEntries(
+    declaredEntries(manifests),
+    symbols.map((symbol) => symbol.path),
+  );
+  for (const entry of unresolved) options.onUnresolved?.(entry, `${entry.target} is not in the index`);
+
+  const fileByPath = new Map<string, SymbolRecord>();
+  const byPathAndName = new Map<string, SymbolRecord>();
+  for (const symbol of symbols) {
+    if (symbol.kind === "File") {
+      if (!fileByPath.has(symbol.path)) fileByPath.set(symbol.path, symbol);
+      continue;
+    }
+    const key = `${symbol.path} ${symbol.name}`;
+    if (!byPathAndName.has(key)) byPathAndName.set(key, symbol);
+  }
+
+  const out: EntryPoint[] = [];
+  for (const entry of resolved) {
+    if (entry.kind === "cli") {
+      // A command runs its module top to bottom. The door is that top level, not any one function in
+      // the file — nothing calls `main.ts`, the shell does.
+      const file = fileByPath.get(entry.path);
+      if (!file) {
+        options.onUnresolved?.(entry, `${entry.path} is indexed but has no file symbol`);
+        continue;
+      }
+      if (claimed.has(file.id)) continue;
+      claimed.add(file.id);
+      out.push({
+        id: file.id,
+        symbolId: file.id,
+        kind: "cli",
+        label: `${entry.name} (${entry.path})`,
+        path: entry.path,
+        line: file.lineStart,
+      });
+      continue;
+    }
+
+    if (!options.source) {
+      options.onUnresolved?.(entry, `no source reader, so ${entry.path} was not read for its exports`);
+      continue;
+    }
+    let found = 0;
+    for (const name of publicNames(entry.path, options.source)) {
+      const symbol =
+        byPathAndName.get(`${name.path} ${name.local}`) ?? byPathAndName.get(`${name.path} ${name.name}`);
+      // A type is not a door and a test is not the application. Everything else the module publishes
+      // is callable from outside the repository, which is exactly what an entry point is.
+      if (!symbol || symbol.isTest) continue;
+      if (symbol.kind !== "Function" && symbol.kind !== "Class") continue;
+      found += 1;
+      if (claimed.has(symbol.id)) continue;
+      claimed.add(symbol.id);
+      out.push({
+        id: symbol.id,
+        symbolId: symbol.id,
+        kind: "package-export",
+        label: `${name.name} (${entry.name})`,
+        path: symbol.path,
+        line: symbol.lineStart,
+      });
+    }
+    if (found === 0) {
+      options.onUnresolved?.(entry, `${entry.path} publishes nothing the index knows as a function`);
+    }
+  }
   return out;
 }
 
@@ -103,13 +226,6 @@ export function computeReachability(
   }
 
   const symbolById = new Map(symbols.map((s) => [s.id, s]));
-  const symbolsByFile = new Map<string, string[]>();
-  for (const symbol of symbols) {
-    if (symbol.kind === "File") continue;
-    const list = symbolsByFile.get(symbol.path);
-    if (list) list.push(symbol.id);
-    else symbolsByFile.set(symbol.path, [symbol.id]);
-  }
 
   const reached = new Set<string>();
   const depth = new Map<string, number>();
@@ -266,13 +382,22 @@ export function buildCallGraph(
       path: symbol.path,
       line: symbol.lineStart,
       moduleId: module?.id ?? "unassigned",
-      kind: entryIds.has(id) ? "entry" : symbol.kind === "Class" ? "method" : "function",
+      kind: entryIds.has(id)
+        ? "entry"
+        : symbol.kind === "File"
+          ? "module-init"
+          : symbol.kind === "Class"
+            ? "method"
+            : "function",
     });
   }
   // Module initialization of every reached file, because importing a module runs it.
   for (const path of reach.moduleInit) {
     const id = `${path}::<module>`;
     if (reach.reached.has(id)) continue;
+    // A `bin` door is the file symbol itself, and that symbol already *is* the file's top level. A
+    // second node for the same top level would draw one thing twice and count it twice.
+    if (reach.reached.has(path)) continue;
     const module = moduleForPath(modules, path);
     nodes.push({
       id,

@@ -32,11 +32,15 @@ const AMBIGUOUS_NAMES = new Set([
 
 function candidateTargets(symbols: SymbolRecord[]): Map<string, SymbolRecord> {
   // A name is a candidate only when exactly one function in the source tree defines it.
+  //
+  // "The source tree" used to mean `src/`, which is one repository layout out of several: in a
+  // workspace the code lives under `packages/*/src`, so both rules quietly inferred nothing at all.
+  // What keeps non-application code out is `.veriflowignore`, applied before any of this — filtering
+  // a second time here on a path prefix only decides which layouts the feature works on.
   const seen = new Map<string, SymbolRecord[]>();
   for (const symbol of symbols) {
     if (symbol.kind !== "Function") continue;
     if (symbol.isTest) continue;
-    if (!symbol.path.startsWith("src/")) continue;
     const list = seen.get(symbol.name);
     if (list) list.push(symbol);
     else seen.set(symbol.name, [symbol]);

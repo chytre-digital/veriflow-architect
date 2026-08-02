@@ -14,6 +14,7 @@ import {
   isSecretPath,
   loadIgnore,
   readGitFacts,
+  readManifests,
   unappliedExcludes,
 } from "@veriflow/snapshot";
 
@@ -298,5 +299,33 @@ describe("the ignore file", () => {
     expect(hashTree(dir, { ignore }).map((h) => h.path)).toEqual(["a.ts"]);
     // And without it, the mockup is indexed — the file is the whole difference.
     expect(hashTree(dir).map((h) => h.path)).toEqual(["a.ts", "artifacts/mockups/page.tsx"]);
+  });
+});
+
+describe("package manifests", () => {
+  it("finds every manifest the project would index, and none it excluded", () => {
+    const dir = tempRepo();
+    mkdirSync(join(dir, "packages", "lib"), { recursive: true });
+    mkdirSync(join(dir, "artifacts", "mockups"), { recursive: true });
+    mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+    writeFileSync(join(dir, "package.json"), `{"name":"root"}`);
+    writeFileSync(join(dir, "packages", "lib", "package.json"), `{"name":"@acme/lib"}`);
+    writeFileSync(join(dir, "artifacts", "mockups", "package.json"), `{"name":"mockups"}`);
+    writeFileSync(join(dir, "node_modules", "left-pad", "package.json"), `{"name":"left-pad"}`);
+    writeFileSync(join(dir, IGNORE_FILE), "/artifacts/\n");
+
+    const { ignore } = loadIgnore(dir);
+    const manifests = readManifests(dir, { ignore });
+    expect(manifests.map((m) => m.path)).toEqual(["package.json", "packages/lib/package.json"]);
+    expect((manifests[1]!.json as { name: string }).name).toBe("@acme/lib");
+  });
+
+  it("reports a manifest it cannot parse rather than passing it off as absent", () => {
+    const dir = tempRepo();
+    writeFileSync(join(dir, "package.json"), `{"name": broken`);
+    const seen: string[] = [];
+    const manifests = readManifests(dir, { onMalformed: (path) => seen.push(path) });
+    expect(manifests).toEqual([]);
+    expect(seen).toEqual(["package.json"]);
   });
 });

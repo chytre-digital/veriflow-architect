@@ -86,6 +86,31 @@ features:
     outcome: >-
       The application's module registry, plus the functions a flow reaches and the traffic between
       modules.
+    notes: >-
+      Entry point detection was six path conventions, all of them framework shapes, and the first
+      repository to expose what that costs was this one: with the mockups excluded it indexed to zero
+      entry points and an empty call graph. That was a true statement about the detector and a false
+      picture of the code — a repository that ships a command and sixteen packages is not a repository
+      with no way in. It says where it is entered in `package.json`, so `bin` and `exports` are now
+      read as what they are: a declaration by the author, which is stronger evidence than a path
+      convention, not weaker. A `bin` roots at the target file's top level, because a command runs its
+      module and nothing calls it. An `exports` entry roots at each function the named module
+      publishes, which needs the module's own export statements — nothing in the provider's index
+      records what is exported — followed through re-exports, since a barrel that forwards its surface
+      would otherwise look like a package with no public functions at all. Resolution has to survive
+      the ordinary case of a manifest pointing at `dist/index.js` when the index holds `src/index.ts`,
+      and a declaration that resolves to nothing is reported rather than dropped, because silence
+      about a door VeriFlow was told about reads as "there are none".
+
+      Two monorepo assumptions surfaced with it. Port and callback inference only considered symbols
+      under `src/`, so in a workspace both rules inferred nothing at all; `.veriflowignore` is what
+      keeps non-application code out, and a second filter on a path prefix only decided which layouts
+      the feature worked on. And `veriflow callgraph` and `veriflow entrypoints` read the provider
+      directly without applying the ignore, so they drew what `veriflow index` had refused to store.
+
+      On this repository: 153 doors, of which one is the `veriflow` command, and that one command
+      reaches 409 of the 440 reachable functions. The difference between those two closures is the
+      useful reading — what the command does, against what the packages publish beyond it.
   F004:
     title: Streamed agent session with the user's own client
     spec: 04-agent-session.md

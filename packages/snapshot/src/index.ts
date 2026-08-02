@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import type { ChangedFile, FileHash, Snapshot } from "@veriflow/contracts";
+import type { ChangedFile, FileHash, PackageManifest, Snapshot } from "@veriflow/contracts";
 import type { Ignore } from "./ignore.js";
 
 export * from "./ignore.js";
@@ -91,10 +91,76 @@ export interface HashOptions {
  * not describe what was actually indexed, but the hash set does.
  */
 export function hashTree(root: string, options: HashOptions = {}): FileHash[] {
-  const excludes = new Set(options.excludes ?? DEFAULT_EXCLUDES);
-  const ignore = options.ignore;
   const out: FileHash[] = [];
   let seen = 0;
+
+  walkTree(root, options, (rel, abs, name) => {
+    const dot = name.lastIndexOf(".");
+    if (dot < 0 || !INDEXABLE.has(name.slice(dot))) return;
+    let buf: Buffer;
+    try {
+      buf = readFileSync(abs);
+    } catch {
+      return;
+    }
+    out.push({
+      path: rel,
+      sha256: createHash("sha256").update(buf).digest("hex"),
+      size: buf.byteLength,
+    });
+    seen += 1;
+    if (seen % 200 === 0) options.onProgress?.(seen);
+  });
+
+  out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return out;
+}
+
+export interface ManifestOptions extends Pick<HashOptions, "excludes" | "ignore"> {
+  /** A manifest that is not JSON. Reported rather than skipped in silence — it declares doors. */
+  onMalformed?: (path: string, reason: string) => void;
+}
+
+/**
+ * Every `package.json` in the part of the tree the project asked to have indexed.
+ *
+ * A manifest is not source and carries no symbols, so nothing else reads it — but `bin` and `exports`
+ * are where a repository that ships a command and a library says how it is entered, and that is the
+ * only place those doors are written down. It is walked with the same rules as the hash set, so a
+ * directory the project excluded cannot smuggle an entry point back in.
+ */
+export function readManifests(root: string, options: ManifestOptions = {}): PackageManifest[] {
+  const out: PackageManifest[] = [];
+  walkTree(root, options, (rel, abs, name) => {
+    if (name !== "package.json") return;
+    let text: string;
+    try {
+      text = readFileSync(abs, "utf8");
+    } catch (error) {
+      options.onMalformed?.(rel, error instanceof Error ? error.message : String(error));
+      return;
+    }
+    try {
+      out.push({ path: rel, json: JSON.parse(text) });
+    } catch (error) {
+      options.onMalformed?.(rel, error instanceof Error ? error.message : String(error));
+    }
+  });
+  out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return out;
+}
+
+/**
+ * One walk, one set of rules about what is in the tree. A second walker would eventually disagree
+ * with this one about whether a directory is in the project, and then two screens would disagree.
+ */
+function walkTree(
+  root: string,
+  options: Pick<HashOptions, "excludes" | "ignore">,
+  visit: (repoRelative: string, absolute: string, name: string) => void,
+): void {
+  const excludes = new Set(options.excludes ?? DEFAULT_EXCLUDES);
+  const ignore = options.ignore;
 
   const walk = (dir: string): void => {
     let entries;
@@ -116,27 +182,11 @@ export function hashTree(root: string, options: HashOptions = {}): FileHash[] {
       if (!entry.isFile()) continue;
       if (isSecretPath(rel)) continue;
       if (ignore?.matches(rel)) continue;
-      const dot = entry.name.lastIndexOf(".");
-      if (dot < 0 || !INDEXABLE.has(entry.name.slice(dot))) continue;
-      let buf: Buffer;
-      try {
-        buf = readFileSync(abs);
-      } catch {
-        continue;
-      }
-      out.push({
-        path: rel,
-        sha256: createHash("sha256").update(buf).digest("hex"),
-        size: buf.byteLength,
-      });
-      seen += 1;
-      if (seen % 200 === 0) options.onProgress?.(seen);
+      visit(rel, abs, entry.name);
     }
   };
 
   walk(root);
-  out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return out;
 }
 
 /** What changed between a recorded snapshot and the tree as it is now. */

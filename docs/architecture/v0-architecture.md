@@ -316,10 +316,12 @@ indexer, with anything that satisfies the protocol — must require a new adapte
 
 Derived deterministically from provider data and stored per snapshot:
 
-- **entry points** — HTTP route handlers, pages, server actions, cron/job entries, webhook handlers.
-  VeriFlow detects these itself over provider symbol and path data. Provider-supplied flows are
-  treated as hints to cross-check against, never as the source, because their quality for TypeScript
-  is explicitly weak;
+- **entry points** — two ways in, because there are two ways a repository says where it is entered.
+  *Recognized* from where they sit: HTTP route handlers, pages, server actions, cron/job entries,
+  webhook handlers, event subscribers. *Declared* in a package manifest: `bin` commands and the
+  modules named by `exports` (or `main` when there is no `exports`). VeriFlow detects both itself —
+  provider-supplied flows are treated as hints to cross-check against, never as the source, because
+  their quality for TypeScript is explicitly weak. See [How a door is found](#how-a-door-is-found);
 - **reachability** — transitive closure of calls from a chosen entry-point set, including a file's
   module initialization, because importing a module runs it;
 - **edge kinds** — `call` (resolved to a definition), `port` (dispatch through an interface, target
@@ -333,6 +335,36 @@ Derived deterministically from provider data and stored per snapshot:
   dependency order so a cell below the diagonal is a layer calling back up;
 - **layout** — computed once per snapshot and stored as coordinates, so a rendered map is identical
   on every render and a change to the graph appears as a data diff.
+
+### How a door is found
+
+A path convention can only find the doors a framework agreed to put somewhere. That covers a Next.js
+application completely and a CLI-and-library repository not at all — and on such a repository the
+honest-looking output, zero entry points and an empty graph, describes the detector rather than the
+code. VeriFlow's own repository was in exactly that state.
+
+Such a repository does say where it is entered; it says it in `package.json`, which is the author
+declaring it rather than VeriFlow guessing:
+
+| declaration | the door it means |
+|---|---|
+| `bin` | the target file's **top level**. A command runs its module top to bottom — nothing calls `main.ts`, the shell does — so the door is the file symbol, and no separate module-init node is drawn for a top level that is already on the map |
+| `exports`, or `main` when there is no `exports` | not the module, but each **function or class it publishes**. Nothing in the provider's index records which symbols are exported, so the module's own `export` statements are read, following re-exports (`export { x } from "./y.js"`, `export * from "./y.js"`) to the file that declares each one. A `type` export is not a door |
+
+Between the declaration and the index sit three ordinary facts: a published manifest points at
+`dist/`, it spells `.js` where the source is `.ts`, and it may name a directory. All three are tried,
+in that order. A declaration that survives none of them — a door VeriFlow was told about and could not
+find — is reported by `veriflow index` and `veriflow entrypoints` rather than dropped, because silence
+about it reads as "this repository has no doors".
+
+Manifests are read under the same ignore rules as everything else, so a directory the project excluded
+cannot put an entry point back. A `bin` or an `exports` entry that a path rule already claimed keeps
+the more specific name: a route file that a manifest also exports is a route.
+
+What this does not claim: an export is a door because something outside the repository *can* call it,
+not evidence that anything does. In a workspace most of those consumers are in the tree, and the
+useful reading is the difference — the closure of the `bin` command against the closure of everything,
+which is what one repository's own command reaches versus what its packages publish beyond it.
 
 ## Flow answer contract
 
