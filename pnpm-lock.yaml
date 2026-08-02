@@ -99,6 +99,12 @@ importers:
       '@veriflow/ask':
         specifier: workspace:*
         version: link:../../packages/ask
+      '@veriflow/callgraph':
+        specifier: workspace:*
+        version: link:../../packages/callgraph
+      '@veriflow/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@veriflow/diagram':
         specifier: workspace:*
         version: link:../../packages/diagram

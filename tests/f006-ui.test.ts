@@ -507,7 +507,134 @@ describe("call map layout", () => {
 
   it("dims out-of-scope dots instead of removing them, so the map never reflows", () => {
     const svg = renderCallMapSvg(layout, { inScope: new Set(["src/app/route.ts::POST"]) });
-    expect((svg.match(/is-dim/g) ?? []).length).toBe(3);
-    expect((svg.match(/<circle/g) ?? []).length).toBe(4);
+    expect((svg.match(/class="cm-node[^"]*is-dim/g) ?? []).length).toBe(3);
+    expect((svg.match(/class="cm-node/g) ?? []).length).toBe(4);
+  });
+
+  it("draws the mesh only when it is asked for", () => {
+    const mesh = [{ from: "src/app/route.ts::POST", to: "src/modules/payments/a.ts::pay" }];
+    expect(renderCallMapSvg(layout)).not.toContain("cm-link");
+    expect(renderCallMapSvg(layout, { mesh })).toContain("cm-link");
+  });
+});
+
+/**
+ * The call graph screen, over a graph small enough to assert on exactly.
+ *
+ * `POST` reaches `pay` and, through it, `refund`; `orphan` belongs to the other door. That is enough
+ * to check every claim the screen makes: what one door reaches, what it does not, and that what it
+ * does not stays on the map.
+ */
+describe("the call graph screen", () => {
+  const NODES = [
+    { id: "src/app/route.ts::POST", symbol: "POST", path: "src/app/route.ts", line: 1, moduleId: "src-app", kind: "entry" },
+    { id: "src/app/other.ts::GET", symbol: "GET", path: "src/app/other.ts", line: 1, moduleId: "src-app", kind: "entry" },
+    { id: "src/modules/payments/a.ts::pay", symbol: "pay", path: "src/modules/payments/a.ts", line: 3, moduleId: "src-modules-payments", kind: "function" },
+    { id: "src/modules/payments/b.ts::refund", symbol: "refund", path: "src/modules/payments/b.ts", line: 4, moduleId: "src-modules-payments", kind: "function" },
+    { id: "src/modules/payments/c.ts::orphan", symbol: "orphan", path: "src/modules/payments/c.ts", line: 5, moduleId: "src-modules-payments", kind: "function" },
+  ];
+  const EDGES = [
+    { from: "src/app/route.ts::POST", to: "src/modules/payments/a.ts::pay", kind: "call", inferred: false, sites: 2 },
+    { from: "src/modules/payments/a.ts::pay", to: "src/modules/payments/b.ts::refund", kind: "port", inferred: true, rule: "port-unique-definition", sites: 1 },
+    { from: "src/app/other.ts::GET", to: "src/modules/payments/c.ts::orphan", kind: "call", inferred: false, sites: 1 },
+  ];
+
+  function graphProject(): string {
+    const root = mkdtempSync(join(tmpdir(), "veriflow-cg-"));
+    made.push(root);
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    initWorkspace(root);
+
+    const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    store.upsertProject("p", root, "p");
+    store.insertSnapshot(
+      { id: "s1", projectId: "p", path: root, dirty: false, fileCount: 4, createdAt: new Date().toISOString() },
+      null,
+    );
+    store.insertModules("s1", [
+      { id: "src-app", label: "App", paths: ["src/app"], source: "app-route-tree", fileCount: 2, symbolCount: 2, communityIds: [] },
+      { id: "src-modules-payments", label: "Payments", paths: ["src/modules/payments"], source: "explicit-module-root", fileCount: 3, symbolCount: 3, communityIds: [] },
+    ]);
+    store.insertEntryPoints("s1", [
+      { id: "src/app/route.ts::POST", symbolId: "src/app/route.ts::POST", kind: "http-route", label: "POST /checkout", path: "src/app/route.ts", line: 1 },
+      { id: "src/app/other.ts::GET", symbolId: "src/app/other.ts::GET", kind: "http-route", label: "GET /other", path: "src/app/other.ts", line: 1 },
+    ]);
+    store.saveCallGraph(
+      "s1",
+      NODES,
+      EDGES,
+      layoutCallMap({
+        modules: [
+          { id: "src-app", label: "App", paths: ["src/app"], source: "app-route-tree", fileCount: 2, symbolCount: 2, communityIds: [] },
+          { id: "src-modules-payments", label: "Payments", paths: ["src/modules/payments"], source: "explicit-module-root", fileCount: 3, symbolCount: 3, communityIds: [] },
+        ],
+        nodes: NODES as never,
+      }),
+      [{ from: "src-app", to: "src-modules-payments", calls: 3, edges: 2, backward: false, note: "via pay, orphan" }],
+      { total: 9, resolved: 3, database: 2, stdlib: 1, unresolved: 3, packages: [], externalSdk: [], exact: true },
+      new Map(),
+    );
+    store.close();
+    return root;
+  }
+
+  it("renders the three views from stored coordinates", async () => {
+    const html = await (await createApp(graphProject()).request("/callgraph")).text();
+    expect(html).toContain('class="callmap"');
+    expect(html).toContain('class="dsm"');
+    expect(html).toContain('class="hier"');
+    expect(html).toContain("5 functions");
+    expect(html).toContain("3 edges");
+  });
+
+  it("filters to one door by dimming, and never by reflowing", async () => {
+    const app = createApp(graphProject());
+    const everything = await (await app.request("/callgraph")).text();
+    const scoped = await (
+      await app.request(`/callgraph?entry=${encodeURIComponent("src/app/route.ts::POST")}`)
+    ).text();
+
+    const dots = (svg: string): string[] =>
+      [...svg.matchAll(/<circle class="cm-dot" cx="([\d.]+)" cy="([\d.]+)"/g)].map((m) => `${m[1]},${m[2]}`);
+
+    // Same dots, same coordinates: the filter changes what is lit, never where anything is.
+    expect(dots(scoped)).toEqual(dots(everything));
+    expect(everything.match(/class="cm-node[^"]*is-dim/g)).toBeNull();
+    // POST reaches pay, pay reaches refund, and both files' module init comes with them. `orphan` and
+    // the other door are out of reach and stay on the map, faded.
+    expect((scoped.match(/class="cm-node[^"]*is-dim/g) ?? []).length).toBe(2);
+    expect(scoped).toContain("3 of 5 functions are reachable from");
+  });
+
+  it("keeps the call mesh off until it is asked for", async () => {
+    const app = createApp(graphProject());
+    expect(await (await app.request("/callgraph")).text()).not.toContain('class="cm-link');
+    expect(await (await app.request("/callgraph?mesh=1")).text()).toContain('class="cm-link');
+  });
+
+  it("centres the hierarchy on the selected function and names its edges", async () => {
+    const html = await (
+      await createApp(graphProject()).request(`/callgraph?fn=${encodeURIComponent("src/modules/payments/a.ts::pay")}`)
+    ).text();
+    expect(html).toContain("pay");
+    expect(html).toContain("refund");
+    expect(html).toContain("called by · 1");
+    expect(html).toContain("calls · 1");
+    // The inferred edge is drawn as inferred rather than as a proven one.
+    expect(html).toContain("hier-card is-inferred");
+    expect(html).toContain("1 hop from an entry point");
+  });
+
+  it("counts the diagonal the stored traffic leaves out", async () => {
+    const html = await (await createApp(graphProject()).request("/callgraph")).text();
+    // src-modules-payments calls itself once (pay → refund); F003 stores cross-module cells only.
+    expect(html).toContain("dsm-cell has-calls is-self");
+  });
+
+  it("says where the graph goes dark instead of implying it is complete", async () => {
+    const html = await (await createApp(graphProject()).request("/callgraph")).text();
+    expect(html).toContain("3 call sites did not resolve");
+    expect(html).toContain("1 edge is inferred");
+    expect(html).toContain("Reachability starts at 2 detected entry points");
   });
 });

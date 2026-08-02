@@ -530,6 +530,39 @@ lives at `/api/project/overview`, having briefly and wrongly taken the shorter n
 path answering a different question is worse than an absent one, because the client gets a
 well-formed answer to something it did not ask.
 
+### Browser screens
+
+Server-rendered HTML, one shell around every screen: the project and its answers on the left, where
+you are and what the index knows about itself on top, one screen in the middle.
+
+```text
+GET  /                                       every stored answer
+GET  /ask                    ?q               plan a run; POST /ask starts it
+GET  /runs/:id                                the live console
+GET  /answers/:id           ?step&branch      flow
+GET  /answers/:id/paths                       outcomes
+GET  /answers/:id/modules                     participants and contracts
+GET  /answers/:id/freshness                   citation by citation
+GET  /answers/:id/metrics   ?view             health | functions | structure | coverage
+GET  /project                                 the union of the answers
+GET  /architecture                            modules and traffic, needs no agent
+GET  /callgraph             ?fn&entry&mesh&cell&q
+GET  /source                ?path&line        read-only, inside the root, never a secret
+GET  /impact                ?path             which answers a change here lands in
+```
+
+The call graph's whole interactive surface is those five query parameters, and every control on the
+screen is a link that sets one of them: `fn` re-centres the hierarchy, `entry` filters the map to one
+door, `mesh` opts into drawing every call between what is in scope, `cell` opens a traffic cell, `q`
+searches the reached functions. State in the URL means a particular view can be sent to somebody, and
+it means the screen has no client-side model that could disagree with the server's.
+
+Filtering to a door **dims** what the door does not reach and never reflows the map: the stored
+layout is the same on every render, so what changes is which dots are lit, and how much of the
+repository one door misses stays visible instead of being cropped out of the picture. The mesh is off
+by default and refuses to draw past a budget — a smear that looks like a graph is worse than no
+graph.
+
 ## MCP server
 
 `veriflow mcp` exposes stored results so any agent can design and review against them. This is the

@@ -26,53 +26,246 @@ import {
 // report different numbers about the same answer.
 export type { AnswerRow, CitationRow, Freshness, SnapshotFacts };
 
+/**
+ * One stylesheet, ported from the F001–F006 mockup.
+ *
+ * The old sheet had a working palette and no system: every screen invented its own spacing and the
+ * chrome was a `<header>` plus a row of links. What the mockup has that this did not is a shell — the
+ * project on the left, where you are on top, the screen in the middle — and a small vocabulary of
+ * parts (tile, chip, detail, screen-head) that every screen is built out of. The legacy names
+ * (`--fg`, `--dim`, `--card`, `--bad`) stay as aliases so the SVG renderers and the inline styles they
+ * emit keep resolving against the new palette instead of being rewritten alongside it.
+ */
 const CSS = `
-:root { color-scheme: light dark; --bg:#fbfbfa; --fg:#1a1a19; --dim:#6b6b68; --line:#e2e2de;
-  --accent:#2f6f5e; --warn:#a8600f; --bad:#a33; --card:#fff; }
-@media (prefers-color-scheme: dark) { :root { --bg:#161715; --fg:#eceae4; --dim:#9a978f;
-  --line:#2c2e2a; --accent:#7fc6ac; --warn:#e0a458; --bad:#e08585; --card:#1e201d; } }
+:root {
+  --bg:#ffffff; --panel:#fcfcfc; --panel-2:#f6f6f7; --line:#e6e6e8; --line-strong:#d3d3d7;
+  --ink:#0b0b0c; --ink-2:#46464b; --muted:#71717a; --quiet:#9a9aa2;
+  --accent:#1d4ed8; --accent-soft:#eef2ff; --warn:#a1620a; --warn-soft:#fdf6e7;
+  --danger:#b4232a; --danger-soft:#fdf1f1; --ok:#14663f; --ok-soft:#eef7f2;
+  --radius:8px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --fg:var(--ink); --dim:var(--muted); --card:var(--panel); --bad:var(--danger);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0b0b0c; --panel:#101012; --panel-2:#17171a; --line:#26262a; --line-strong:#35353b;
+    --ink:#f7f7f8; --ink-2:#c8c8cf; --muted:#9a9aa4; --quiet:#6d6d76;
+    --accent:#6d97ff; --accent-soft:#14192b; --warn:#d9a13c; --warn-soft:#221c10;
+    --danger:#e8686e; --danger-soft:#241417; --ok:#59b98a; --ok-soft:#101d17;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0b0b0c; --panel:#101012; --panel-2:#17171a; --line:#26262a; --line-strong:#35353b;
+  --ink:#f7f7f8; --ink-2:#c8c8cf; --muted:#9a9aa4; --quiet:#6d6d76;
+  --accent:#6d97ff; --accent-soft:#14192b; --warn:#d9a13c; --warn-soft:#221c10;
+  --danger:#e8686e; --danger-soft:#241417; --ok:#59b98a; --ok-soft:#101d17;
+  color-scheme:dark;
+}
 * { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+html { min-width:320px; background:var(--bg); }
+body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:14px;
+  line-height:1.5; -webkit-font-smoothing:antialiased; }
 a { color:inherit; }
-header { padding:20px 28px 14px; border-bottom:1px solid var(--line); }
-header h1 { margin:0 0 4px; font-size:19px; font-weight:600; letter-spacing:-.01em; }
-.meta { color:var(--dim); font-size:13px; }
-nav { display:flex; gap:18px; padding:10px 28px; border-bottom:1px solid var(--line); font-size:14px; }
-nav a { text-decoration:none; color:var(--dim); padding-bottom:2px; }
-nav a.on { color:var(--fg); border-bottom:2px solid var(--accent); }
-main { padding:22px 28px 60px; }
-.pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid var(--line); color:var(--dim); }
-.pill.good { color:var(--accent); border-color:currentColor; }
-.pill.warn { color:var(--warn); border-color:currentColor; }
-.pill.bad  { color:var(--bad); border-color:currentColor; }
-.list { display:grid; gap:10px; max-width:900px; }
-.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; text-decoration:none; display:block; }
-.card h2 { margin:0 0 6px; font-size:16px; font-weight:600; }
-.split { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:22px; align-items:start; }
+code, pre, .mono { font-family:var(--mono); font-size:12px; }
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+h1,h2,h3 { letter-spacing:-.01em; }
+
+/* ------------------------------------------------------------------ shell */
+.shell { display:grid; grid-template-columns:236px minmax(0,1fr); min-height:100vh; }
+/* The rail carries the background and the border so they run the whole height of the page; the
+   sidebar inside it is what sticks. Putting both on one element leaves the panel ending mid-page. */
+.rail { border-right:1px solid var(--line); background:var(--panel); }
+.sidebar { display:flex; flex-direction:column; gap:16px; padding:18px 14px; position:sticky; top:0;
+  height:100vh; }
+.brand { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.brand a { text-decoration:none; display:flex; align-items:center; gap:8px; }
+.brand-mark { display:grid; place-items:center; width:24px; height:24px; border-radius:6px;
+  background:var(--ink); color:var(--bg); font-size:11px; font-weight:650; }
+.brand-name { font-weight:620; letter-spacing:-.01em; }
+.brand-ver { width:100%; font-size:11px; color:var(--quiet); }
+.project { padding:10px 11px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg); }
+.project-name { font-weight:560; font-size:13px; }
+.project-sub { font-size:11.5px; color:var(--muted); }
+.nav { display:flex; flex-direction:column; gap:2px; min-height:0; flex:1; }
+.nav-section { margin-top:14px; display:flex; flex-direction:column; gap:2px; min-height:0; }
+.nav-flows { flex:1; min-height:64px; }
+.nav-scroll { overflow-y:auto; scrollbar-width:thin; display:flex; flex-direction:column; gap:2px; }
+.nav-section-label { padding:0 10px 4px; font-size:10px; font-weight:560; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--quiet); }
+.nav-item { display:flex; flex-direction:column; gap:1px; padding:7px 10px; border-radius:6px;
+  text-align:left; color:var(--ink-2); text-decoration:none; border:1px solid transparent; }
+.nav-item:hover { background:var(--panel-2); }
+.nav-item.is-active { background:var(--bg); border-color:var(--line); color:var(--ink);
+  box-shadow:inset 2px 0 0 var(--accent); }
+.nav-label { font-size:13px; font-weight:540; }
+.nav-hint { font-size:11px; color:var(--quiet); line-height:1.35; }
+.nav-question { display:flex; gap:7px; padding:6px 10px 8px; text-align:left; font-size:12.5px;
+  font-weight:560; line-height:1.35; color:var(--ink); text-decoration:none; }
+.nav-question span { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+  overflow:hidden; }
+.nav-question::before { content:""; flex-shrink:0; width:6px; height:6px; margin-top:5px;
+  border-radius:50%; background:var(--ok); }
+.nav-question.is-superseded::before { background:var(--quiet); }
+.nav-question:hover { color:var(--accent); }
+.nav-children { display:flex; flex-direction:column; gap:2px; margin:0 0 6px 12px; padding-left:8px;
+  border-left:1px solid var(--line); }
+.nav-child.is-active { box-shadow:inset 2px 0 0 var(--accent); }
+.sidebar-foot { margin-top:auto; display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
+.foot-note { font-size:11px; color:var(--quiet); }
+
+/* ------------------------------------------------------------------- main */
+.main { min-width:0; display:flex; flex-direction:column; }
+.topbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between;
+  gap:16px; flex-wrap:wrap; padding:11px 24px; border-bottom:1px solid var(--line);
+  background:color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter:blur(6px); }
+.crumbs { display:flex; gap:7px; font-size:12.5px; color:var(--muted); flex-wrap:wrap; }
+.crumbs a { text-decoration:none; }
+.crumbs a:hover { color:var(--ink); }
+.crumbs .sep { color:var(--quiet); }
+.crumb-active { color:var(--ink); font-weight:540; }
+.index-state { display:flex; align-items:center; gap:10px; font-size:11.5px; color:var(--muted); flex-wrap:wrap; }
+.index-state .dot { width:3px; height:3px; border-radius:50%; background:var(--line-strong); }
+.warn-pill { padding:2px 7px; border:1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  border-radius:999px; background:var(--warn-soft); color:var(--warn); font-size:11px; }
+.canvas { padding:26px 24px 60px; }
+.screen { max-width:1340px; }
+.screen-narrow { max-width:760px; }
+.screen-head { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:20px; }
+.eyebrow { display:block; font-size:11px; font-weight:560; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--quiet); margin-bottom:6px; }
+.h1 { margin:0 0 8px; font-size:25px; line-height:1.2; letter-spacing:-.02em; font-weight:620; }
+.lede { margin:0; max-width:82ch; color:var(--ink-2); font-size:13.5px; }
+.lede a { color:var(--accent); }
+.actions { display:flex; gap:8px; flex-shrink:0; align-items:center; }
+.primary { padding:7px 13px; border-radius:6px; background:var(--ink); color:var(--bg); font-size:13px;
+  font-weight:540; text-decoration:none; display:inline-block; }
+.primary:hover { opacity:.88; }
+.ghost { padding:6px 12px; border:1px solid var(--line-strong); border-radius:6px; background:var(--bg);
+  font-size:12.5px; color:var(--ink-2); text-decoration:none; display:inline-block; }
+.ghost:hover { background:var(--panel-2); }
+h2.section { font-size:15px; font-weight:600; margin:28px 0 10px; }
+
+/* ------------------------------------------------------------------ parts */
+.pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px;
+  border:1px solid var(--line-strong); color:var(--muted); background:var(--bg); vertical-align:middle; }
+.pill.good { color:var(--ok); border-color:color-mix(in srgb, var(--ok) 35%, var(--line)); background:var(--ok-soft); }
+.pill.warn { color:var(--warn); border-color:color-mix(in srgb, var(--warn) 35%, var(--line)); background:var(--warn-soft); }
+.pill.bad { color:var(--danger); border-color:color-mix(in srgb, var(--danger) 35%, var(--line)); background:var(--danger-soft); }
+.meta { color:var(--muted); font-size:12.5px; line-height:2; }
+.meta a { color:inherit; }
+.meta .pill { margin-right:3px; }
+.list { display:grid; gap:8px; max-width:1000px; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:13px 15px; text-decoration:none; display:block; }
+a.card:hover { border-color:var(--line-strong); background:var(--panel-2); }
+.card h2 { margin:0 0 6px; font-size:15px; font-weight:590; }
+.split { display:grid; grid-template-columns:minmax(0,1fr) 312px; gap:18px; align-items:start; }
 @media (max-width:1100px) { .split { grid-template-columns:1fr; } }
-.scroll { overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--card); }
-aside { position:sticky; top:14px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
-aside h3 { margin:0 0 8px; font-size:14px; }
-.ev { font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; padding:6px 0; border-bottom:1px solid var(--line); }
+.scroll { overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg);
+  padding:4px; scrollbar-width:thin; min-width:0; }
+.scroll > table.grid { border:0; border-radius:0; }
+.split > .scroll { padding:0; }
+aside { position:sticky; top:60px; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); padding:14px 16px; }
+aside h3 { margin:0 0 8px; font-size:13px; font-weight:590; }
+.ev { font:11.5px/1.5 var(--mono); padding:6px 0; border-bottom:1px solid var(--line); }
 .ev:last-child { border-bottom:0; }
-.ev .why { color:var(--dim); font-family:inherit; }
-.branch { background:var(--card); border:1px solid var(--line); border-left:3px solid var(--dim); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
-.branch.refused { border-left-color:var(--bad); }
-.branch.compensated { border-left-color:var(--warn); }
+.ev .why { color:var(--muted); font-family:var(--sans); font-size:11.5px; }
+.branch { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--line-strong);
+  border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; }
+.branch.refused { border-left-color:var(--warn); }
+.branch.compensated { border-left-color:var(--danger); }
 .branch.recovered { border-left-color:var(--accent); }
-.branch h3 { margin:0 0 4px; font-size:15px; }
-.inv { font-size:13px; color:var(--dim); }
-.inv b { color:var(--fg); font-weight:500; }
+.branch h3 { margin:0 0 4px; font-size:14px; font-weight:580; }
+.inv { font-size:12.5px; color:var(--muted); }
+.inv b { color:var(--ink); font-weight:550; }
+.legend { color:var(--muted); font-size:11.5px; margin:8px 0 0; max-width:100ch; }
+.dim { color:var(--muted); font-size:11.5px; }
+.note { max-width:820px; background:var(--panel); border:1px solid var(--line);
+  border-left:3px solid var(--warn); border-radius:var(--radius); padding:12px 14px; margin:0 0 16px; }
+.note.bad { border-left-color:var(--danger); }
+
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:8px; margin-bottom:14px; }
+.tile { display:flex; flex-direction:column; gap:3px; padding:12px 14px; border:1px solid var(--line);
+  border-radius:var(--radius); background:var(--panel); }
+.tile-label { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--quiet); }
+.tile-value { font-size:26px; font-weight:600; letter-spacing:-.03em; line-height:1.05; }
+.tile-unit { margin-left:5px; font-size:12px; font-weight:480; letter-spacing:0; color:var(--muted); }
+.tile-sub { font-size:11.5px; color:var(--muted); }
+
+.chips { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 12px; }
+.chip { flex-shrink:0; display:inline-flex; align-items:center; gap:7px; padding:5px 11px;
+  border:1px solid var(--line); border-radius:999px; background:var(--bg); font-size:12px;
+  color:var(--ink-2); white-space:nowrap; text-decoration:none; }
+.chip:hover { border-color:var(--line-strong); }
+.chip.on, .chip.is-active { border-color:var(--ink); background:var(--ink); color:var(--bg); }
+.chip i { width:5px; height:5px; border-radius:999px; background:currentColor; display:inline-block; }
+.chip.refused { color:var(--warn); }
+.chip.compensated { color:var(--danger); }
+.chip.recovered { color:var(--accent); }
+.chip.alternate { color:var(--muted); }
+.chip.happy { color:var(--ok); }
+.chip.on i, .chip.is-active i { background:var(--bg); }
+.chip-count { color:var(--quiet); font-size:11px; }
+.chip.on .chip-count, .chip.is-active .chip-count { color:color-mix(in srgb, var(--bg) 70%, transparent); }
+
+.detail { margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:var(--radius);
+  background:var(--panel); }
+.detail-cols { display:grid; grid-template-columns:minmax(240px,1.2fr) 1fr 1fr; gap:24px; }
+.detail-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
+.detail-route { font-size:13.5px; font-weight:580; }
+.kind { padding:2px 7px; border:1px solid var(--line-strong); border-radius:4px; font-size:10.5px;
+  letter-spacing:.04em; text-transform:uppercase; color:var(--muted); background:var(--bg); }
+.guard-pill { padding:2px 7px; border:1px solid var(--line-strong); border-radius:4px; background:var(--bg);
+  font-family:var(--mono); font-size:11px; color:var(--ink-2); }
+.detail-call { margin:0 0 9px; padding:9px 11px; border:1px solid var(--line); border-radius:6px;
+  background:var(--bg); color:var(--ink-2); font-size:11.5px; line-height:1.6; white-space:pre-wrap; overflow-x:auto; }
+.detail-note { margin:0; max-width:100ch; font-size:12.5px; color:var(--ink-2); }
+.refs { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+.ref { padding:2px 7px; border:1px solid var(--line); border-radius:4px; background:var(--bg);
+  color:var(--muted); font-size:11px; font-family:var(--mono); text-decoration:none; }
+.col-label { display:block; font-size:11px; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--quiet); margin-bottom:7px; }
+.bullets { margin:0; padding-left:16px; font-size:12.5px; color:var(--ink-2); }
+.bullets li { margin-bottom:5px; }
+
+table.grid { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); overflow:hidden; font-size:12.5px; }
+table.grid th { text-align:left; font-weight:560; color:var(--quiet); font-size:10.5px;
+  letter-spacing:.06em; text-transform:uppercase; background:var(--panel-2); }
+table.grid th, table.grid td { padding:8px 11px; border-bottom:1px solid var(--line); vertical-align:top; }
+table.grid tr:last-child td { border-bottom:0; }
+table.grid tr.on td { background:var(--accent-soft); }
+table.grid td a { font-family:var(--mono); }
+table.src { border-collapse:collapse; font:12px/1.6 var(--mono); width:100%; }
+table.src td { padding:0 10px; white-space:pre; }
+table.src td.ln { color:var(--quiet); text-align:right; user-select:none; width:1%; }
+table.src tr.on { background:var(--warn-soft); }
+table.traffic { border-collapse:collapse; width:100%; max-width:1000px; font-size:12.5px;
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+table.traffic th { text-align:left; color:var(--quiet); font-weight:560; font-size:10.5px;
+  letter-spacing:.06em; text-transform:uppercase; background:var(--panel-2);
+  border-bottom:1px solid var(--line); padding:8px 11px; }
+table.traffic td { border-bottom:1px solid var(--line); padding:7px 11px; color:var(--ink-2); }
+table.traffic tr:last-child td { border-bottom:0; }
+table.traffic tr.backward td { background:var(--danger-soft); }
+
+/* --------------------------------------------------------------- sequence */
 svg.flow { display:block; min-width:100%; }
-.band { fill:color-mix(in srgb, var(--fg) 3%, transparent); }
-.band-title { font-size:11px; fill:var(--dim); text-transform:uppercase; letter-spacing:.08em; }
+.band { fill:var(--panel-2); }
+.band-title { font-size:11px; fill:var(--quiet); text-transform:uppercase; letter-spacing:.08em; }
 .lifeline { stroke:var(--line); stroke-width:1; }
-.lane { fill:var(--card); stroke:var(--line); }
+.lane { fill:var(--panel); stroke:var(--line); }
 .lane-external, .lane-gateway { stroke-dasharray:4 3; }
-.lane-name { font-size:11px; fill:var(--fg); }
-.arrow { stroke:var(--fg); stroke-width:1.4; }
-.head { fill:var(--fg); }
-.step-label { font-size:11.5px; fill:var(--fg); paint-order:stroke; stroke:var(--card); stroke-width:3px;
+.lane-name { font-size:11px; fill:var(--ink); font-weight:560; }
+.lane-tech { font-size:9px; fill:var(--quiet); }
+.arrow { stroke:var(--ink-2); stroke-width:1.4; }
+.head { fill:var(--ink-2); }
+.step-label { font-size:11.5px; fill:var(--ink); paint-order:stroke; stroke:var(--bg); stroke-width:3px;
   stroke-linejoin:round; }
 .step { cursor:pointer; }
 .step:hover .arrow { stroke:var(--accent); }
@@ -80,91 +273,263 @@ svg.flow { display:block; min-width:100%; }
 .step.is-selected .step-label { font-weight:600; fill:var(--accent); }
 .step.is-unverified .step-label { fill:var(--warn); }
 .step.is-bare .arrow { stroke-dasharray:1 4; opacity:.65; }
-.legend { color:var(--dim); font-size:12px; margin:10px 0 0; }
-.dim { color:var(--dim); font-size:12px; }
-table.grid { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line);
-  border-radius:10px; overflow:hidden; font-size:13px; }
-table.grid th { text-align:left; font-weight:500; color:var(--dim); font-size:12px; }
-table.grid th, table.grid td { padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-table.grid tr:last-child td { border-bottom:0; }
-table.grid tr.on td { background:color-mix(in srgb, var(--accent) 10%, transparent); }
-table.grid td a { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
-table.src { border-collapse:collapse; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; width:100%; }
-table.src td { padding:0 10px; white-space:pre; }
-table.src td.ln { color:var(--dim); text-align:right; user-select:none; width:1%; }
-table.src tr.on { background:color-mix(in srgb, var(--warn) 18%, transparent); }
-svg.callmap { display:block; }
-.cm-module { fill:color-mix(in srgb, var(--fg) 3%, transparent); stroke:var(--line); }
-.cm-module-label { font-size:11px; fill:var(--dim); font-family:ui-monospace,monospace; }
-.cm-file { fill:var(--card); stroke:var(--line); }
-.cm-file-label { font-size:7px; fill:var(--dim); font-family:ui-monospace,monospace; }
-.cm-dot { fill:var(--accent); }
-.cm-dot.is-dim { fill:var(--dim); opacity:.25; }
-.cm-dot.is-on { fill:var(--warn); r:5; }
-.cm-dot:hover { fill:var(--warn); }
-table.traffic { border-collapse:collapse; width:100%; max-width:900px; font-size:13px; }
-table.traffic th { text-align:left; color:var(--dim); font-weight:500; border-bottom:1px solid var(--line); padding:5px 8px; }
-table.traffic td { border-bottom:1px solid var(--line); padding:5px 8px; }
-table.traffic tr.backward td { background:color-mix(in srgb, var(--bad) 8%, transparent); }
-.lane-tech { font-size:9px; fill:var(--dim); }
-.step-no circle { fill:var(--card); stroke:var(--line); }
-.step-no text { font-size:9px; fill:var(--dim); }
+.step-no circle { fill:var(--bg); stroke:var(--line); }
+.step-no text { font-size:9px; fill:var(--quiet); }
 .step.is-dim { opacity:.2; }
 .step.is-branch .arrow { stroke:var(--warn); stroke-width:1.8; }
 .step.is-branch .step-label { fill:var(--warn); font-weight:600; }
-.flow.tone-refused .step.is-branch .arrow { stroke:var(--bad); }
-.flow.tone-refused .step.is-branch .step-label { fill:var(--bad); }
+.flow.tone-refused .step.is-branch .arrow { stroke:var(--danger); }
+.flow.tone-refused .step.is-branch .step-label { fill:var(--danger); }
 .flow.tone-recovered .step.is-branch .arrow { stroke:var(--accent); }
 .flow.tone-recovered .step.is-branch .step-label { fill:var(--accent); }
-.chips { display:flex; gap:7px; flex-wrap:wrap; margin:0 0 14px; }
-.chip { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border:1px solid var(--line);
-  border-radius:99px; font-size:13px; text-decoration:none; color:var(--dim); background:var(--card); }
-.chip.on { color:var(--fg); border-color:var(--fg); }
-.chip i { width:7px; height:7px; border-radius:99px; background:var(--dim); display:inline-block; }
-.chip.refused i { background:var(--bad); }
-.chip.compensated i { background:var(--warn); }
-.chip.recovered i { background:var(--accent); }
-.chip.happy i { background:var(--fg); }
+
+/* ------------------------------------------------------------------ paths */
 svg.paths { display:block; min-width:100%; }
-.pt-spine { stroke:var(--line); stroke-width:1.5; }
-.pt-link { stroke:var(--line); stroke-width:1.2; stroke-dasharray:4 4; }
-.pt-phase { fill:var(--card); stroke:var(--line); }
-.pt-phase-title { font-size:12px; fill:var(--fg); font-weight:600; }
-.pt-phase-sub { font-size:10.5px; fill:var(--dim); }
+.pt-spine { stroke:var(--line-strong); stroke-width:1.5; }
+.pt-link { stroke:var(--line-strong); stroke-width:1.2; stroke-dasharray:4 4; }
+.pt-phase { fill:var(--panel); stroke:var(--line); }
+.pt-phase-title { font-size:12px; fill:var(--ink); font-weight:600; }
+.pt-phase-sub { font-size:10.5px; fill:var(--quiet); }
 .pt-card { cursor:pointer; }
-.pt-card-box { fill:var(--card); stroke:var(--line); }
-.pt-card:hover .pt-card-box { stroke:var(--accent); }
-.pt-card.is-selected .pt-card-box { stroke:var(--accent); stroke-width:2; }
-.pt-dot { fill:var(--dim); }
-.pt-card.tone-refused .pt-dot { fill:var(--bad); }
-.pt-card.tone-compensated .pt-dot { fill:var(--warn); }
+.pt-card-box { fill:var(--panel); stroke:var(--line); }
+.pt-card:hover .pt-card-box { stroke:var(--line-strong); fill:var(--panel-2); }
+.pt-card.is-selected .pt-card-box { stroke:var(--accent); stroke-width:2; fill:var(--accent-soft); }
+.pt-dot { fill:var(--quiet); }
+.pt-card.tone-refused .pt-dot { fill:var(--warn); }
+.pt-card.tone-compensated .pt-dot { fill:var(--danger); }
 .pt-card.tone-recovered .pt-dot { fill:var(--accent); }
-.pt-card-title { font-size:13px; fill:var(--fg); font-weight:600; }
-.pt-card-outcome { font-size:11.5px; fill:var(--fg); font-family:ui-monospace,monospace; }
-.pt-card-inv { font-size:11px; fill:var(--dim); }
-.pt-card-steps { font-size:10.5px; fill:var(--dim); }
+.pt-card-title { font-size:13px; fill:var(--ink); font-weight:600; }
+.pt-card-outcome { font-size:11.5px; fill:var(--ink-2); font-family:var(--mono); }
+.pt-card-inv { font-size:11px; fill:var(--muted); }
+.pt-card-steps { font-size:10.5px; fill:var(--quiet); }
+
+/* ---------------------------------------------------------------- modules */
 svg.modmap { display:block; }
-.mm-box { fill:var(--card); stroke:var(--line); }
+.mm-box { fill:var(--panel); stroke:var(--line); }
 .mm-node.kind-external .mm-box, .mm-node.kind-gateway .mm-box { stroke-dasharray:4 3; }
-.mm-kind { font-size:8.5px; fill:var(--dim); letter-spacing:.09em; }
-.mm-name { font-size:13px; fill:var(--fg); font-weight:600; }
-.mm-detail { font-size:10px; fill:var(--dim); font-family:ui-monospace,monospace; }
-.mm-line { stroke:var(--fg); stroke-width:1.3; }
-.mm-head { fill:var(--fg); }
+.mm-kind { font-size:8.5px; fill:var(--quiet); letter-spacing:.09em; }
+.mm-name { font-size:13px; fill:var(--ink); font-weight:600; }
+.mm-detail { font-size:10px; fill:var(--muted); font-family:var(--mono); }
+.mm-line { stroke:var(--ink-2); stroke-width:1.3; }
+.mm-head { fill:var(--ink-2); }
 /* The halo is what keeps a label readable where its corridor crosses a line running the other way.
    Corridor allocation stops labels colliding with each other; it cannot stop a vertical run passing
    underneath one, and paint-order costs nothing. */
-.mm-label { font-size:10px; fill:var(--dim); paint-order:stroke; stroke:var(--card);
+.mm-label { font-size:10px; fill:var(--muted); paint-order:stroke; stroke:var(--bg);
   stroke-width:3.5px; stroke-linejoin:round; }
 .mm-edge.is-inferred .mm-line { stroke-dasharray:5 4; }
-.mm-edge.is-backward .mm-line { stroke:var(--bad); stroke-dasharray:6 4; }
-.mm-edge.is-backward .mm-label { fill:var(--bad); }
+.mm-edge.is-backward .mm-line { stroke:var(--danger); stroke-dasharray:6 4; }
+.mm-edge.is-backward .mm-label { fill:var(--danger); }
+
+/* -------------------------------------------------------------- call map */
+svg.callmap { display:block; }
+.cm-module { fill:var(--panel-2); stroke:var(--line); }
+.cm-module-label { font-size:10px; fill:var(--muted); font-family:var(--mono); font-weight:600; }
+.cm-file { fill:var(--bg); stroke:var(--line); }
+.cm-file-label { font-size:7px; fill:var(--ink-2); font-family:var(--mono); }
+.cm-dot { fill:var(--c8); pointer-events:none; }
+.cm-hit { fill:transparent; cursor:pointer; }
+.cm-node[data-cluster="0"] .cm-dot { fill:var(--c0); }
+.cm-node[data-cluster="1"] .cm-dot { fill:var(--c1); }
+.cm-node[data-cluster="2"] .cm-dot { fill:var(--c2); }
+.cm-node[data-cluster="3"] .cm-dot { fill:var(--c3); }
+.cm-node[data-cluster="4"] .cm-dot { fill:var(--c4); }
+.cm-node[data-cluster="5"] .cm-dot { fill:var(--c5); }
+.cm-node[data-cluster="6"] .cm-dot { fill:var(--c6); }
+.cm-node[data-cluster="7"] .cm-dot { fill:var(--c7); }
+.cm-node:hover .cm-dot { stroke:var(--ink); stroke-width:1.6; }
+.cm-node.is-on .cm-dot { stroke:var(--ink); stroke-width:2.2; }
+/* Out of the current door's reach: kept as context, not removed, so the map does not reflow and the
+   size of what the door misses stays visible. */
+.cm-node.is-dim { opacity:.16; }
+.cm-node.is-dim .cm-hit { pointer-events:none; }
+.cm-file-g.is-faded, .cm-module-g.is-faded { opacity:.4; }
+.cm-link { stroke:var(--ink-2); stroke-width:.6; opacity:.3; }
+.cm-link.is-inferred { stroke:var(--warn); stroke-dasharray:3 2; opacity:.8; }
+.cm-ray { stroke:var(--accent); stroke-width:1.1; opacity:.75; }
+.cm-ray.is-in { stroke:var(--ink); opacity:.5; }
+.cm-ray.is-inferred { stroke-dasharray:4 3; }
+.cm-caption { font-family:var(--mono); font-size:11px; font-weight:600; fill:var(--ink);
+  paint-order:stroke; stroke:var(--bg); stroke-width:4px; stroke-linejoin:round; }
+
+/* ---------------------------------------------- dependency structure matrix */
+svg.dsm { display:block; --dsm:29,78,216; }
+:root[data-theme="dark"] svg.dsm { --dsm:109,151,255; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) svg.dsm { --dsm:109,151,255; } }
+.dsm-axis { font-size:10px; text-transform:uppercase; letter-spacing:.08em; fill:var(--quiet); }
+.dsm-col { font-size:11px; font-weight:600; fill:var(--ink-2); }
+.dsm-row { font-size:11.5px; font-weight:600; fill:var(--ink-2); }
+.dsm-count { font-size:10px; fill:var(--quiet); }
+.dsm-fill { fill:rgb(var(--dsm)); fill-opacity:0; stroke:var(--line); stroke-width:1; }
+.dsm-cell.has-calls { cursor:pointer; }
+.dsm-cell.has-calls:hover .dsm-fill, .dsm-cell.is-active .dsm-fill { stroke:var(--ink); stroke-width:1.6; }
+/* The diagonal is a module calling itself — expected, so it is outlined rather than filled, which
+   keeps the eye on the off-diagonal traffic. */
+.dsm-cell.is-self .dsm-fill { fill:var(--panel-2); fill-opacity:1; stroke-dasharray:3 2; }
+.dsm-cell.is-back .dsm-fill { fill:var(--danger); stroke:var(--danger); }
+.dsm-value { font-family:var(--mono); font-size:13px; font-weight:600; fill:var(--ink); pointer-events:none; }
+.dsm-edges { font-size:9.5px; fill:var(--muted); pointer-events:none; }
+.dsm-cell.is-back .dsm-value, .dsm-cell.is-back .dsm-edges { fill:var(--danger); }
+
+/* ------------------------------------------------------------- hierarchy */
+svg.hier { display:block; }
+.hier-head { font-size:10px; text-transform:uppercase; letter-spacing:.08em; fill:var(--quiet); }
+.hier-card { cursor:pointer; }
+.hier-box { fill:var(--panel); stroke:var(--line); stroke-width:1; }
+.hier-card:hover .hier-box { stroke:var(--line-strong); fill:var(--panel-2); }
+.hier-card.is-center .hier-box { fill:var(--accent-soft); stroke:var(--accent); stroke-width:1.6; }
+.hier-card.is-inferred .hier-box { stroke-dasharray:4 3; }
+.hier-tag { fill:var(--c8); }
+.hier-card[data-cluster="0"] .hier-tag { fill:var(--c0); }
+.hier-card[data-cluster="1"] .hier-tag { fill:var(--c1); }
+.hier-card[data-cluster="2"] .hier-tag { fill:var(--c2); }
+.hier-card[data-cluster="3"] .hier-tag { fill:var(--c3); }
+.hier-card[data-cluster="4"] .hier-tag { fill:var(--c4); }
+.hier-card[data-cluster="5"] .hier-tag { fill:var(--c5); }
+.hier-card[data-cluster="6"] .hier-tag { fill:var(--c6); }
+.hier-card[data-cluster="7"] .hier-tag { fill:var(--c7); }
+.hier-name { font-family:var(--mono); font-size:11.5px; font-weight:600; fill:var(--ink); }
+.hier-file { font-size:10px; fill:var(--muted); }
+.hier-link { stroke:var(--line-strong); stroke-width:1.2; fill:none; }
+.hier-link.is-inferred { stroke-dasharray:4 3; }
+.hier-ah { fill:var(--line-strong); }
+.hier-empty { font-size:11px; font-style:italic; fill:var(--quiet); }
+
+/* one stable colour per module, assigned by sorted order so a re-index does not reshuffle them */
+:root { --c0:#1d4ed8; --c1:#b45309; --c2:#0d9488; --c3:#7e22ce; --c4:#64748b; --c5:#047857;
+  --c6:#78716c; --c7:#be185d; --c8:#a1a1aa; }
+:root[data-theme="dark"] { --c0:#7fa2ff; --c1:#e0a355; --c2:#3fbfb0; --c3:#bd8cf5; --c4:#93a3b8;
+  --c5:#45b98a; --c6:#a8a29e; --c7:#f28bb5; --c8:#8a8a94; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --c0:#7fa2ff; --c1:#e0a355; --c2:#3fbfb0; --c3:#bd8cf5;
+    --c4:#93a3b8; --c5:#45b98a; --c6:#a8a29e; --c7:#f28bb5; --c8:#8a8a94; }
+}
+
+/* ------------------------------------------------------------- call graph */
+.cg-block { margin-top:22px; }
+.cg-block-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; margin-bottom:2px; }
+.cg-block-hint { font-size:11.5px; color:var(--quiet); max-width:90ch; }
+.cg-scope { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; }
+.cg-scope-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin:10px 0; }
+.cg-scope-note { flex:1 1 340px; font-size:11.5px; color:var(--muted); }
+.switch { display:inline-flex; align-items:center; gap:8px; padding:4px 10px 4px 5px;
+  border:1px solid var(--line-strong); border-radius:999px; background:var(--bg); font-size:12px;
+  color:var(--ink-2); text-decoration:none; }
+.switch:hover { background:var(--panel-2); }
+.switch-track { position:relative; display:block; width:28px; height:16px; border-radius:999px;
+  background:var(--line-strong); }
+.switch-knob { position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:var(--bg); }
+.switch.is-on { border-color:var(--accent); color:var(--ink); }
+.switch.is-on .switch-track { background:var(--accent); }
+.switch.is-on .switch-knob { transform:translateX(12px); }
+.cg-legend { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:8px; font-size:11px; color:var(--muted); }
+.cg-key { display:inline-flex; align-items:center; gap:6px; }
+.cg-key b { color:var(--quiet); font-weight:500; }
+.cg-key i { width:9px; height:9px; border-radius:50%; background:var(--c8); }
+.cg-key[data-cluster="0"] i { background:var(--c0); }
+.cg-key[data-cluster="1"] i { background:var(--c1); }
+.cg-key[data-cluster="2"] i { background:var(--c2); }
+.cg-key[data-cluster="3"] i { background:var(--c3); }
+.cg-key[data-cluster="4"] i { background:var(--c4); }
+.cg-key[data-cluster="5"] i { background:var(--c5); }
+.cg-key[data-cluster="6"] i { background:var(--c6); }
+.cg-key[data-cluster="7"] i { background:var(--c7); }
+.cg-picker { display:flex; flex-wrap:wrap; gap:10px 24px; margin-top:12px; }
+.cg-group { display:flex; flex-direction:column; gap:5px; }
+.cg-group-find { flex:1 1 280px; }
+.cg-group-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--quiet); }
+.cg-group-chips { display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
+.cg-find { width:100%; max-width:340px; padding:5px 9px; font:inherit; font-size:12px; color:var(--ink);
+  background:var(--panel); border:1px solid var(--line-strong); border-radius:6px; }
+.cg-chip-file { margin-left:6px; font-size:10px; color:var(--quiet); }
+.chip.on .cg-chip-file { color:color-mix(in srgb, var(--bg) 70%, transparent); }
+.cg-more { font-size:11px; color:var(--quiet); }
+.cg-spine { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:4px; }
+.cg-spine em { color:var(--quiet); font-style:normal; }
+.cg-hop { font-family:var(--mono); font-size:11.5px; color:var(--accent); text-decoration:none; }
+.cg-hop:hover { text-decoration:underline; }
+
+/* ------------------------------------------------- the project as its answers */
+.tally { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 18px; }
+.tally div { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:11px 15px; min-width:150px; }
+.tally b { display:block; font-size:24px; font-weight:600; letter-spacing:-.03em; }
+.tally span { color:var(--muted); font-size:11.5px; }
+.reach { max-width:1000px; display:grid; gap:8px; }
+.reach .m { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:11px 14px; }
+.reach .m.shared { border-left:3px solid var(--accent); }
+.reach .m.unreached { border-left:3px solid var(--warn); }
+.reach .m h3 { margin:0 0 3px; font-size:14px; font-weight:580; }
+.reach .flows { font-size:12px; color:var(--muted); margin-top:5px; }
+.reach .flows a { color:var(--ink); }
+
+/* ------------------------------------------------------ ask and the console */
+form.ask { max-width:820px; display:grid; gap:12px; }
+form.ask textarea { width:100%; min-height:74px; padding:11px 13px; border:1px solid var(--line-strong);
+  border-radius:var(--radius); background:var(--bg); color:var(--ink); font:inherit; resize:vertical; }
+button.primary, button.quiet { padding:7px 15px; border-radius:6px; }
+button.primary { background:var(--ink); color:var(--bg); font-size:13px; font-weight:540; border:1px solid var(--ink); }
+button.primary:disabled { opacity:.45; cursor:default; }
+button.quiet { background:transparent; color:var(--muted); border:1px solid var(--line-strong); font-size:12.5px; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.manifest { max-width:820px; font:12px/1.7 var(--mono); color:var(--muted); background:var(--panel);
+  border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px; }
+.manifest b { color:var(--ink); font-weight:500; }
+.cand { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; max-width:820px; align-items:baseline; }
+.cand .sc { font:12px var(--mono); color:var(--quiet); text-align:right; }
+.cand .lead { color:var(--accent); font-weight:600; }
+#console { max-width:1100px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:12px 14px; font:12px/1.6 var(--mono); overflow-x:auto; }
+#console .e { padding:2px 0; white-space:pre-wrap; word-break:break-word; }
+#console .ch { color:var(--quiet); user-select:none; }
+#console .e.tool { color:var(--accent); }
+#console .e.err { color:var(--danger); }
+#console .e.status { color:var(--muted); }
+.ask-user { max-width:820px; background:var(--panel); border:1px solid var(--warn);
+  border-radius:var(--radius); padding:14px 16px; margin:16px 0; }
+.ask-user input[name=value] { width:100%; padding:8px 11px; border:1px solid var(--line-strong);
+  border-radius:6px; background:var(--bg); color:var(--ink); font:inherit; margin:8px 0; }
+
+/* ------------------------------------------------------------ responsive */
+@media (max-width:900px) {
+  .shell { grid-template-columns:1fr; }
+  .rail { border-right:0; border-bottom:1px solid var(--line); }
+  .sidebar { position:static; height:auto; }
+  .nav-flows { flex:none; }
+  .nav { flex-direction:row; flex-wrap:wrap; }
+  .nav-hint { display:none; }
+  .canvas { padding:20px 14px 44px; }
+  .detail-cols { grid-template-columns:1fr; gap:16px; }
+  .screen-head { flex-direction:column; }
+}
 `;
+
+/** Applied before first paint, so a dark reader never gets a white flash on navigation. */
+const THEME_SCRIPT = `try{var t=localStorage.getItem("vf-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`;
+
+const TOGGLE_SCRIPT = `
+(function(){
+  var b = document.getElementById("theme-toggle");
+  if (!b) return;
+  var dark = function(){
+    return document.documentElement.dataset.theme
+      ? document.documentElement.dataset.theme === "dark"
+      : matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+  var paint = function(){ b.textContent = dark() ? "Light" : "Dark"; };
+  paint();
+  b.addEventListener("click", function(){
+    var next = dark() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("vf-theme", next); } catch (e) {}
+    paint();
+  });
+})();`;
 
 export function page(title: string, body: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} — VeriFlow</title><style>${CSS}</style></head><body>${body}</body></html>`;
+<title>${esc(title)} — VeriFlow</title><script>${THEME_SCRIPT}</script><style>${CSS}</style></head><body>${body}</body></html>`;
 }
 
 export function esc(value: string): string {
@@ -173,6 +538,220 @@ export function esc(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/* ------------------------------------------------------------------ the shell */
+
+export type NavId =
+  | "answers"
+  | "ask"
+  | "project"
+  | "architecture"
+  | "callgraph"
+  | "flow"
+  | "paths"
+  | "modules"
+  | "freshness"
+  | "metrics"
+  | "source"
+  | "impact"
+  | "run";
+
+/** What the index knows about itself, printed in the top right of every screen. */
+export interface IndexState {
+  commit?: string;
+  branch?: string;
+  files?: number;
+  symbols?: number;
+  dirty?: boolean;
+  capturedAt?: string;
+}
+
+export interface Chrome {
+  project: string;
+  active: NavId;
+  /** The answer whose views the sidebar expands, when the screen belongs to one. */
+  answer?: { id: string; title: string };
+  /** Every standing answer, so the sidebar is a table of contents rather than a back link. */
+  answers?: Array<{ id: string; title: string; superseded?: boolean }>;
+  index?: IndexState;
+  /** The project line under the brand: what has been indexed and how much has been asked. */
+  subtitle?: string;
+}
+
+const ANSWER_VIEWS: Array<{ id: NavId; label: string; hint: string; path: (id: string) => string }> = [
+  { id: "flow", label: "Flow", hint: "who talks to whom, in order", path: (id) => `/answers/${id}` },
+  { id: "paths", label: "Paths", hint: "every outcome, not just the happy one", path: (id) => `/answers/${id}/paths` },
+  { id: "modules", label: "Modules", hint: "boundaries and contracts", path: (id) => `/answers/${id}/modules` },
+  { id: "freshness", label: "Freshness", hint: "does it still locate", path: (id) => `/answers/${id}/freshness` },
+  { id: "metrics", label: "Metrics", hint: "debt and coverage of this flow", path: (id) => `/answers/${id}/metrics` },
+];
+
+const PROJECT_VIEWS: Array<{ id: NavId; label: string; hint: string; href: string }> = [
+  { id: "answers", label: "All answers", hint: "what has been asked", href: "/" },
+  { id: "project", label: "Project", hint: "what the answers add up to", href: "/project" },
+  { id: "architecture", label: "Architecture", hint: "modules and the traffic between them", href: "/architecture" },
+  { id: "callgraph", label: "Call graph", hint: "every function the doors reach", href: "/callgraph" },
+];
+
+const NAV_LABEL: Record<NavId, string> = {
+  answers: "All answers",
+  ask: "Ask",
+  project: "Project",
+  architecture: "Architecture",
+  callgraph: "Call graph",
+  flow: "Flow",
+  paths: "Paths",
+  modules: "Modules",
+  freshness: "Freshness",
+  metrics: "Metrics",
+  source: "Source",
+  impact: "Impact",
+  run: "Run",
+};
+
+const MAX_SIDEBAR_ANSWERS = 8;
+
+function navItem(href: string, label: string, hint: string, active: boolean, child = false): string {
+  return `<a class="nav-item${child ? " nav-child" : ""}${active ? " is-active" : ""}" href="${esc(href)}">
+    <span class="nav-label">${esc(label)}</span><span class="nav-hint">${esc(hint)}</span></a>`;
+}
+
+function sidebar(chrome: Chrome): string {
+  const answers = chrome.answers ?? [];
+  const openId = chrome.answer?.id;
+  // The open answer is always in the list even when it sits past the cut, because the screen you are
+  // looking at going missing from the navigation is worse than a longer list.
+  const shown = answers.slice(0, MAX_SIDEBAR_ANSWERS);
+  if (openId && !shown.some((a) => a.id === openId)) {
+    const found = answers.find((a) => a.id === openId);
+    shown.unshift(found ?? { id: openId, title: chrome.answer?.title ?? openId });
+  }
+  const hidden = answers.length - shown.length;
+
+  const flows = shown
+    .map((answer) => {
+      const open = answer.id === openId;
+      const question = `<a class="nav-question${answer.superseded ? " is-superseded" : ""}" href="/answers/${esc(
+        answer.id,
+      )}"><span>${esc(answer.title)}</span></a>`;
+      if (!open) return question;
+      return `${question}<div class="nav-children">${ANSWER_VIEWS.map((view) =>
+        navItem(view.path(answer.id), view.label, view.hint, chrome.active === view.id, true),
+      ).join("")}</div>`;
+    })
+    .join("");
+
+  return `<div class="rail"><aside class="sidebar">
+    <div class="brand">
+      <a href="/"><span class="brand-mark">VF</span><span class="brand-name">VeriFlow</span></a>
+      <span class="brand-ver">local · read-only · nothing runs on open</span>
+    </div>
+    <div class="project">
+      <div class="project-name">${esc(chrome.project)}</div>
+      <div class="project-sub">${esc(chrome.subtitle ?? "indexed locally")}</div>
+    </div>
+    <nav class="nav">
+      ${navItem("/ask", "Ask", "question in, flow out", chrome.active === "ask")}
+      <div class="nav-section">
+        <span class="nav-section-label">Project</span>
+        ${PROJECT_VIEWS.map((view) => navItem(view.href, view.label, view.hint, chrome.active === view.id)).join("")}
+      </div>
+      <div class="nav-section nav-flows">
+        <span class="nav-section-label">Answered flows</span>
+        <div class="nav-scroll">
+          ${flows || `<span class="nav-hint" style="padding:4px 10px">Nothing asked yet.</span>`}
+          ${hidden > 0 ? `<a class="nav-item" href="/"><span class="nav-hint">… and ${hidden} more</span></a>` : ""}
+        </div>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <button type="button" class="ghost" id="theme-toggle">Dark</button>
+      <span class="foot-note">no API key · runs in your agent</span>
+    </div>
+  </aside></div>`;
+}
+
+function indexState(state: IndexState | undefined): string {
+  if (!state) return "";
+  const bits: string[] = [];
+  if (state.commit) bits.push(`<span class="mono">${esc(state.commit.slice(0, 7))}</span>`);
+  if (state.branch) bits.push(`<span>${esc(state.branch)}</span>`);
+  if (state.files !== undefined) {
+    bits.push(
+      `<span>${state.files} file${state.files === 1 ? "" : "s"}${
+        state.symbols === undefined ? "" : ` · ${state.symbols} symbols`
+      }</span>`,
+    );
+  }
+  if (state.dirty) bits.push(`<span class="warn-pill" title="uncommitted changes when this was indexed">tree was dirty at capture</span>`);
+  if (bits.length === 0) return "";
+  return `<div class="index-state">${bits.join(`<span class="dot"></span>`)}</div>`;
+}
+
+function crumbs(chrome: Chrome): string {
+  const parts: string[] = [`<a href="/">${esc(chrome.project)}</a>`];
+  if (chrome.answer) {
+    parts.push(`<a href="/answers/${esc(chrome.answer.id)}">${esc(clipText(chrome.answer.title, 52))}</a>`);
+  }
+  parts.push(`<span class="crumb-active">${esc(NAV_LABEL[chrome.active])}</span>`);
+  return `<div class="crumbs">${parts.join(`<span class="sep">/</span>`)}</div>`;
+}
+
+function clipText(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+/**
+ * Every screen is this: the project on the left, where you are on top, one screen in the middle.
+ *
+ * The chrome is passed in rather than derived here because only the route knows what it opened —
+ * and a screen that had to look up its own navigation would be a screen that can disagree with it.
+ */
+export function shell(chrome: Chrome, title: string, body: string): string {
+  return page(
+    title,
+    `<div class="shell">${sidebar(chrome)}
+      <main class="main">
+        <header class="topbar">${crumbs(chrome)}${indexState(chrome.index)}</header>
+        <div class="canvas">${body}</div>
+      </main>
+    </div><script>${TOGGLE_SCRIPT}</script>`,
+  );
+}
+
+export interface ScreenHead {
+  eyebrow: string;
+  title: string;
+  lede?: string;
+  meta?: string;
+  actions?: string;
+}
+
+export function screenHead(head: ScreenHead): string {
+  return `<div class="screen-head">
+    <div><span class="eyebrow">${esc(head.eyebrow)}</span>
+      <h1 class="h1">${esc(head.title)}</h1>
+      ${head.lede ? `<p class="lede">${head.lede}</p>` : ""}
+      ${head.meta ? `<div class="meta" style="margin-top:10px">${head.meta}</div>` : ""}
+    </div>
+    ${head.actions ? `<div class="actions">${head.actions}</div>` : ""}
+  </div>`;
+}
+
+/** A screen with nothing on it yet — no index, no such answer — said in the same chrome as the rest. */
+export function noticePage(chrome: Chrome, title: string, message: string): string {
+  return shell(
+    chrome,
+    title,
+    `<section class="screen screen-narrow">${screenHead({ eyebrow: title, title, lede: message })}</section>`,
+  );
+}
+
+export function tile(label: string, value: string, unit: string, sub: string): string {
+  return `<div class="tile"><span class="tile-label">${esc(label)}</span>
+    <span class="tile-value">${esc(value)}${unit ? `<span class="tile-unit">${esc(unit)}</span>` : ""}</span>
+    <span class="tile-sub">${esc(sub)}</span></div>`;
 }
 
 function ratioPill(verified: number, unverified: number): string {
@@ -200,7 +779,10 @@ export function freshnessPill(f: Freshness): string {
   }`;
 }
 
-export function answersPage(rows: AnswerRow[], project: string): string {
+export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
+  const standing = rows.filter((r) => r.status !== "superseded").length;
+  const open = rows.reduce((total, r) => total + r.open_questions, 0);
+
   const body = rows.length
     ? rows
         .map(
@@ -210,20 +792,35 @@ export function answersPage(rows: AnswerRow[], project: string): string {
     <span class="pill">${r.open_questions} open question${r.open_questions === 1 ? "" : "s"}</span>
     <span class="pill">${esc(r.review_state)}</span>
     ${r.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}
-    &nbsp;${esc(r.created_at.slice(0, 16).replace("T", " "))}</div></a>`,
+    <span>${esc(r.created_at.slice(0, 16).replace("T", " "))}</span></div></a>`,
         )
         .join("\n")
     : `<p class="meta">No answers yet. <a href="/ask">Ask the first question</a>.</p>`;
 
-  return page(
+  return shell(
+    chrome,
     "Answers",
-    `<header><h1>${esc(project)}</h1><div class="meta">Stored flow answers</div></header>
-     <nav><a href="/" class="on">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
-     <main><div class="list">${body}</div></main>`,
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Answers",
+         title: "What has been asked of this codebase",
+         lede: rows.length
+           ? `${standing} standing answer${standing === 1 ? "" : "s"}${
+               rows.length - standing > 0 ? ` and ${rows.length - standing} superseded` : ""
+             }, ${open} open question${open === 1 ? "" : "s"} between them. Every claim on every one of
+              these screens carries a file reference, and a claim without one is reported as an open
+              question rather than narrated.`
+           : `Nothing has been asked yet. <a href="/ask">Ask the first question</a>, or read the
+              <a href="/architecture">architecture</a> — that one needs no agent at all.`,
+         actions: `<a class="primary" href="/ask">Ask a question</a>`,
+       })}
+       <div class="list">${body}</div>
+     </section>`,
   );
 }
 
 export interface FlowPageInput {
+  chrome: Chrome;
   answer: FlowAnswer;
   row: AnswerRow;
   citations: CitationRow[];
@@ -300,10 +897,22 @@ export function flowPage(input: FlowPageInput): string {
        }`
     : `<h3>Evidence</h3><p class="meta">Select a step to see what it is based on.</p>`;
 
-  return page(
+  const phases = new Set(answer.steps.map((s) => s.phaseId)).size;
+
+  return shell(
+    input.chrome,
     answer.title,
-    `<header><h1>${esc(answer.title)}</h1>
-       <div class="meta">${ratioPill(row.verified, row.unverified)}
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Answer",
+         title: answer.title,
+         lede: `${answer.lanes.length} participant${answer.lanes.length === 1 ? "" : "s"}, ${
+           answer.steps.length
+         } step${answer.steps.length === 1 ? "" : "s"} across ${phases} phase${phases === 1 ? "" : "s"}, and ${
+           answer.branches.length
+         } alternative outcome${answer.branches.length === 1 ? "" : "s"}. Nothing here was recomputed to
+          open it — the layout is derived from what was stored when the question was answered.`,
+         meta: `${ratioPill(row.verified, row.unverified)}
        <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
        <span class="pill">${answer.openQuestions.length} open</span>
        ${row.status === "superseded" ? `<span class="pill warn">superseded — a newer answer exists</span>` : ""}
@@ -314,10 +923,8 @@ export function flowPage(input: FlowPageInput): string {
                 title="exported ${esc(input.exports[0]!.exportedAt.slice(0, 16).replace("T", " "))} at revision ${esc(input.exports[0]!.revision)}"
                 style="text-decoration:none">published → ${esc(input.exports[0]!.targetPath)}</a>`
            : ""
-       }</div>
-     </header>
-     ${nav(row.id, "flow")}
-     <main>
+       }`,
+       })}
        ${variantChips(answer, row.id, input.selectedBranchId)}
        ${
          layout.variant
@@ -330,11 +937,11 @@ export function flowPage(input: FlowPageInput): string {
          <p class="legend">Dotted arrow: no citation. Amber label: at least one citation did not verify.
          Click a step for its evidence.</p></div>
        <aside>${panel}</aside>
-     </div></main>`,
+     </div></section>`,
   );
 }
 
-export function pathsPage(answer: FlowAnswer, row: AnswerRow): string {
+export function pathsPage(chrome: Chrome, answer: FlowAnswer, row: AnswerRow): string {
   const layout = layoutPaths(answer);
   const svg = renderPathsSvg(layout, {
     hrefOf: (branchId) => `/answers/${row.id}?branch=${encodeURIComponent(branchId)}`,
@@ -342,7 +949,7 @@ export function pathsPage(answer: FlowAnswer, row: AnswerRow): string {
   const forks = new Set(answer.branches.map((b) => b.forkStepId)).size;
 
   const open = answer.openQuestions.length
-    ? `<h2 style="font-size:16px;margin:26px 0 8px">Open questions</h2>` +
+    ? `<h2 class="section">Open questions</h2>` +
       answer.openQuestions
         .map(
           (q) =>
@@ -353,22 +960,21 @@ export function pathsPage(answer: FlowAnswer, row: AnswerRow): string {
         .join("")
     : "";
 
-  return page(
+  return shell(
+    chrome,
     `${answer.title} — paths`,
-    `<header><h1>Where this flow can end</h1>
-       <div class="meta">${answer.branches.length} alternative outcome${answer.branches.length === 1 ? "" : "s"}
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Paths",
+         title: "Where this flow can end",
+         lede: `${answer.branches.length} alternative outcome${answer.branches.length === 1 ? "" : "s"}
        plus the happy path, leaving at ${forks} point${forks === 1 ? "" : "s"} across
        ${layout.spine.length} phase${layout.spine.length === 1 ? "" : "s"}.
-       Pick one to see it drawn against the steps that still ran.</div>
-     </header>
-     ${nav(row.id, "paths")}
-     <main><div class="scroll">${svg}</div>
-       <div style="max-width:900px">${open}</div></main>`,
+       Pick one to see it drawn against the steps that still ran.`,
+       })}
+       <div class="scroll">${svg}</div>
+       <div style="max-width:1000px">${open}</div></section>`,
   );
-}
-
-function nav(id: string, on: "flow" | "paths"): string {
-  return navFull(id, on);
 }
 
 export interface ModuleRow {
@@ -395,6 +1001,7 @@ export interface EntryPointRow {
 export { moduleOwning };
 
 export interface ArchitectureInput {
+  chrome: Chrome;
   project: string;
   modules: ModuleRow[];
   entryPoints: EntryPointRow[];
@@ -479,20 +1086,25 @@ export function architecturePage(input: ArchitectureInput): string {
     })
     .join("\n");
 
-  return page(
+  return shell(
+    input.chrome,
     `${project} — architecture`,
-    `<header><h1>${esc(project)}</h1>
-       <div class="meta">${modules.length} modules · ${entryPoints.length} entry points ·
-       ${traffic.length} module-to-module traffic cell${traffic.length === 1 ? "" : "s"}
-       ${
-         backward.length
-           ? `· <span class="pill bad">${backward.length} running back up a layer</span>`
-           : `· <span class="pill good">nothing runs back up a layer</span>`
-       }</div>
-       <div class="meta" style="margin-top:6px">Measured from the index alone. No agent ran to produce this.</div>
-     </header>
-     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture" class="on">Architecture</a><a href="/callgraph">Call graph</a></nav>
-     <main>
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Architecture",
+         title: "What this application is made of",
+         lede: `Measured from the index alone. No agent ran to produce this — the modules are derived
+           from paths and the traffic between them is counted from the call graph, which is why this
+           screen exists after <code>veriflow index</code> and before anybody asks anything.`,
+         meta: `<span class="pill">${modules.length} modules</span>
+           <span class="pill">${entryPoints.length} entry points</span>
+           <span class="pill">${traffic.length} module-to-module traffic cell${traffic.length === 1 ? "" : "s"}</span>
+           ${
+             backward.length
+               ? `<span class="pill bad">${backward.length} running back up a layer</span>`
+               : `<span class="pill good">nothing runs back up a layer</span>`
+           }`,
+       })}
        ${
          traffic.length
            ? `<div class="scroll">${svg}</div>
@@ -507,9 +1119,9 @@ export function architecturePage(input: ArchitectureInput): string {
               }</p>`
            : `<p class="meta">No call graph stored yet, so there is no traffic to draw. Run <code>veriflow index</code>.</p>`
        }
-       <h2 style="font-size:16px;margin:26px 0 10px">What each module is</h2>
+       <h2 class="section">What each module is</h2>
        <div class="list">${rows}</div>
-     </main>`,
+     </section>`,
   );
 }
 
@@ -579,7 +1191,12 @@ function moduleNodes(answer: FlowAnswer, modules: ModuleRow[]): Parameters<typeo
   });
 }
 
-export function modulesPage(answer: FlowAnswer, row: AnswerRow, modules: ModuleRow[] = []): string {
+export function modulesPage(
+  chrome: Chrome,
+  answer: FlowAnswer,
+  row: AnswerRow,
+  modules: ModuleRow[] = [],
+): string {
   const nodes = moduleNodes(answer, modules);
   const layout = layoutModules(nodes, answer.moduleEdges);
   const svg = renderModulesSvg(layout);
@@ -623,46 +1240,39 @@ export function modulesPage(answer: FlowAnswer, row: AnswerRow, modules: ModuleR
         .join("")
     : `<p class="meta">No external systems declared.</p>`;
 
-  return page(
+  return shell(
+    chrome,
     `${answer.title} — modules`,
-    `<header><h1>Who takes part, and what may cross</h1>
-       <div class="meta">${layout.nodes.length} participant${layout.nodes.length === 1 ? "" : "s"} ·
-       ${answer.moduleEdges.length} edge${answer.moduleEdges.length === 1 ? "" : "s"} with a contract ·
-       ${answer.externalSystems.length} external system${answer.externalSystems.length === 1 ? "" : "s"}
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Modules",
+         title: "Who takes part, and what may cross",
+         lede: `The participants this answer declared, with the contract written on every edge. A dashed
+           edge is inferred rather than proven, and it says which rule inferred it.`,
+         meta: `<span class="pill">${layout.nodes.length} participant${layout.nodes.length === 1 ? "" : "s"}</span>
+       <span class="pill">${answer.moduleEdges.length} edge${answer.moduleEdges.length === 1 ? "" : "s"} with a contract</span>
+       <span class="pill">${answer.externalSystems.length} external system${answer.externalSystems.length === 1 ? "" : "s"}</span>
        ${
          backward.length
-           ? `· <span class="pill bad">${backward.length} back up a layer</span>`
-           : `· <span class="pill good">nothing calls back up a layer</span>`
-       }</div>
-     </header>
-     ${navFull(row.id, "modules")}
-     <main>
+           ? `<span class="pill bad">${backward.length} back up a layer</span>`
+           : `<span class="pill good">nothing calls back up a layer</span>`
+       }`,
+       })}
        <div class="scroll">${svg}</div>
        <p class="legend">Layers come from the dependency direction. A red dashed edge on the right runs
        back up a layer. A dashed edge is inferred, not proven. Hover any edge for the full contract.</p>
-       <div style="max-width:900px">
-         <h2 style="font-size:16px;margin:26px 0 10px">What crosses each module edge</h2>${edges}
-         <h2 style="font-size:16px;margin:26px 0 10px">Outside the repository</h2>${external}
+       <div style="max-width:1000px">
+         <h2 class="section">What crosses each module edge</h2>${edges}
+         <h2 class="section">Outside the repository</h2>${external}
        </div>
-     </main>`,
+     </section>`,
   );
-}
-
-function navFull(id: string, on: "flow" | "paths" | "modules" | "freshness" | "metrics"): string {
-  return `<nav>
-    <a href="/">All answers</a>
-    <a href="/architecture">Architecture</a>
-    <a href="/answers/${id}" class="${on === "flow" ? "on" : ""}">Flow</a>
-    <a href="/answers/${id}/paths" class="${on === "paths" ? "on" : ""}">Paths</a>
-    <a href="/answers/${id}/modules" class="${on === "modules" ? "on" : ""}">Modules</a>
-    <a href="/answers/${id}/freshness" class="${on === "freshness" ? "on" : ""}">Freshness</a>
-    <a href="/answers/${id}/metrics" class="${on === "metrics" ? "on" : ""}">Metrics</a>
-  </nav>`;
 }
 
 /* ------------------------------------------------------------------ freshness (F007) */
 
 export interface FreshnessPageInput {
+  chrome: Chrome;
   row: AnswerRow;
   answer: FlowAnswer;
   verification: Verification;
@@ -733,14 +1343,18 @@ export function freshnessPage(input: FreshnessPageInput): string {
         .join("")}</table>`
     : "";
 
-  return page(
+  return shell(
+    input.chrome,
     `Freshness — ${input.answer.title}`,
-    `<header><h1>${esc(input.answer.title)}</h1>
-       <div class="meta"><span class="pill ${
-         v.state === "fresh" ? "good" : v.state === "drifted" ? "warn" : "bad"
-       }">${v.state}</span> ${esc(thresholdOf(v.state))}</div></header>
-     ${navFull(row.id, "freshness")}
-     <main>
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Freshness",
+         title: "Does this answer still locate",
+         lede: esc(thresholdOf(v.state)),
+         meta: `<span class="pill ${
+           v.state === "fresh" ? "good" : v.state === "drifted" ? "warn" : "bad"
+         }">${v.state}</span><span class="pill">${v.total} citation${v.total === 1 ? "" : "s"} re-checked</span>`,
+       })}
        <p class="meta">${v.citedFilesChanged} of ${v.citedFiles} cited files changed since
          ${esc(input.snapshot.capturedAt.slice(0, 16).replace("T", " "))}${
            input.snapshot.commit ? ` (${esc(input.snapshot.commit)})` : ""
@@ -754,10 +1368,10 @@ export function freshnessPage(input: FreshnessPageInput): string {
              : ""
          }</p>
        <div class="split">
-         <table class="grid">
+         <div class="scroll"><table class="grid">
            <tr><th>Outcome</th><th>Where it is now</th><th>Symbol</th><th>What it backs</th></tr>
            ${rows || `<tr><td colspan="4" class="dim">No citations on this answer.</td></tr>`}
-         </table>
+         </table></div>
          <aside>
            <h3>Thresholds</h3>
            <table class="grid">${thresholds}</table>
@@ -766,7 +1380,7 @@ export function freshnessPage(input: FreshnessPageInput): string {
            ${history}
          </aside>
        </div>
-     </main>`,
+     </section>`,
   );
 }
 
@@ -775,6 +1389,7 @@ export function freshnessPage(input: FreshnessPageInput): string {
 export type MetricsView = "health" | "functions" | "structure" | "coverage";
 
 export interface MetricsPageInput {
+  chrome: Chrome;
   row: AnswerRow;
   title: string;
   metrics: FlowMetrics;
@@ -816,11 +1431,18 @@ export function metricsPage(input: MetricsPageInput): string {
           ? coverageView(m)
           : healthView(m);
 
-  return page(
+  return shell(
+    input.chrome,
     `${input.title} — metrics`,
-    `<header><h1>${esc(input.title)} — metrics</h1>
-       <div class="meta">
-         <span class="pill">${m.scope.files} files in scope</span>
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Metrics",
+         title: "Technical debt carried by this flow",
+         lede: `Measured over the files this flow runs through, never the whole repository. Nothing was
+           executed to produce these numbers${
+             input.source === "stored" ? ", and this run was already taken over this exact tree state" : ""
+           }.`,
+         meta: `<span class="pill">${m.scope.files} files in scope</span>
          <span class="pill">${m.scope.citedFiles} cited + ${m.scope.reachedFiles} reached at depth ${m.scope.depth}</span>
          <span class="pill">${m.scope.functions} functions</span>
          ${
@@ -829,15 +1451,8 @@ export function metricsPage(input: MetricsPageInput): string {
              : `<span class="pill warn">history unavailable</span>`
          }
          ${m.totals.contradictions ? `<span class="pill warn">${m.totals.contradictions} contradiction${m.totals.contradictions === 1 ? "" : "s"}</span>` : ""}
-         ${m.totals.caveats ? `<span class="pill">${m.totals.caveats} caveat${m.totals.caveats === 1 ? "" : "s"}</span>` : ""}
-       </div>
-       <div class="meta" style="margin-top:6px">Measured over the files this flow runs through, never the
-         whole repository. Nothing was executed to produce these numbers${
-           input.source === "stored" ? ", and this run was already taken over this exact tree state" : ""
-         }.</div>
-     </header>
-     ${navFull(row.id, "metrics")}
-     <main>
+         ${m.totals.caveats ? `<span class="pill">${m.totals.caveats} caveat${m.totals.caveats === 1 ? "" : "s"}</span>` : ""}`,
+       })}
        <div class="chips">
          ${tab("health", "Code health")}${tab("functions", "Functions")}
          ${tab("structure", "Structure")}${tab("coverage", "Coverage")}
@@ -849,11 +1464,48 @@ export function metricsPage(input: MetricsPageInput): string {
               revisions, hotspot, age and coupling are reported as zero rather than guessed.</p>`
        }
        ${body}
-     </main>`,
+     </section>`,
   );
 }
 
+/**
+ * The headline numbers of a view, before its table.
+ *
+ * The mockup opens every measurement screen with these because a table of forty files answers "which
+ * one" and never answers "how bad" — the tile row is the second question, and it is the one somebody
+ * scrolling past the screen actually reads.
+ */
 function healthView(m: FlowMetrics): string {
+  const worst = [...m.files].sort((a, b) => b.hotspot - a.hotspot)[0];
+  const soloOwned = m.files.filter((f) => f.authors === 1).length;
+  const tangled = m.files.filter((f) => f.spaghettiBand === "high" || f.spaghettiBand === "severe").length;
+  const authors = new Set(m.files.flatMap((f) => (f.authors ? [f.path] : []))).size;
+
+  const tiles = [
+    tile("Files in scope", String(m.scope.files), "", `${m.totals.nloc.toLocaleString("en")} lines of code`),
+    tile(
+      "Worst hotspot",
+      worst ? String(worst.hotspot) : "—",
+      "score",
+      worst ? (worst.path.split("/").pop() ?? worst.path) : "nothing measured",
+    ),
+    tile("Tangled files", String(tangled), `/ ${m.scope.files}`, "spaghetti index 60 or above"),
+    tile(
+      "Solo-owned",
+      String(soloOwned),
+      "files",
+      m.history.available ? `of ${authors} with history` : "history unavailable",
+    ),
+    tile(
+      "Flagged",
+      String(m.totals.caveats + m.totals.contradictions),
+      "",
+      `${m.totals.caveats} caveat${m.totals.caveats === 1 ? "" : "s"} · ${m.totals.contradictions} contradiction${
+        m.totals.contradictions === 1 ? "" : "s"
+      }`,
+    ),
+  ].join("");
+
   const rows = [...m.files]
     .sort((a, b) => b.hotspot - a.hotspot || b.complexity - a.complexity)
     .map((f) => {
@@ -874,11 +1526,12 @@ function healthView(m: FlowMetrics): string {
     })
     .join("");
 
-  return `<div class="split">
-    <table class="grid">
+  return `<div class="tiles">${tiles}</div>
+  <div class="split">
+    <div class="scroll"><table class="grid">
       <tr><th>File</th><th>Revisions</th><th>Complexity</th><th>Hotspot</th><th>Age</th><th>Spaghetti index</th></tr>
       ${rows || `<tr><td colspan="6" class="dim">No files in scope.</td></tr>`}
-    </table>
+    </table></div>
     <aside>
       <h3>How these are made</h3>
       <p class="dim">Hotspot is <b>revisions × indent complexity</b>, the code-maat model: complexity
@@ -897,6 +1550,15 @@ function healthView(m: FlowMetrics): string {
 }
 
 function functionsView(m: FlowMetrics): string {
+  const worst = [...m.functions].sort((a, b) => b.cognitive - a.cognitive)[0];
+  const tiles = [
+    tile("Functions in the flow", String(m.totals.functions), "", `across ${m.scope.files} files`),
+    tile("Complex methods", String(m.totals.complexMethods), "", "cyclomatic past the gate"),
+    tile("Brain methods", String(m.totals.brainMethods), "", "long AND branchy AND nested"),
+    tile("Bumpy roads", String(m.totals.bumpyRoads), "", "separate nesting humps"),
+    tile("Worst cognitive", worst ? String(worst.cognitive) : "—", "", worst?.symbol ?? "nothing measured"),
+  ].join("");
+
   const rows = [...m.functions]
     .sort((a, b) => b.ccn - a.ccn || b.nloc - a.nloc || (a.path < b.path ? -1 : 1))
     .map(
@@ -913,11 +1575,12 @@ function functionsView(m: FlowMetrics): string {
     )
     .join("");
 
-  return `<div class="split">
-    <table class="grid">
+  return `<div class="tiles">${tiles}</div>
+  <div class="split">
+    <div class="scroll"><table class="grid">
       <tr><th>Function</th><th>CCN</th><th>NLOC</th><th>Nesting</th><th>Cognitive</th><th>Humps</th><th>Findings</th></tr>
       ${rows || `<tr><td colspan="7" class="dim">No functions in scope.</td></tr>`}
-    </table>
+    </table></div>
     <aside>
       <h3>Thresholds</h3>
       <table class="grid">${FUNCTION_RULES.map(
@@ -931,6 +1594,29 @@ function functionsView(m: FlowMetrics): string {
 }
 
 function structureView(m: FlowMetrics): string {
+  const depended = [...m.structure].sort((a, b) => b.fanIn - a.fanIn)[0];
+  const tiles = [
+    tile("Circular deps", String(m.totals.cycles), "", "import cycles touching this flow"),
+    tile(
+      "Cloned blocks",
+      String(m.totals.duplicatedBlocks),
+      "",
+      `${m.totals.duplicatedLines} duplicated line${m.totals.duplicatedLines === 1 ? "" : "s"}`,
+    ),
+    tile(
+      "Most depended on",
+      depended ? String(depended.fanIn) : "—",
+      "fan-in",
+      depended ? (depended.path.split("/").pop() ?? depended.path) : "nothing measured",
+    ),
+    tile(
+      "Files changing together",
+      String(m.coupling.length),
+      "pairs",
+      m.history.available ? "two or more shared commits" : "no history to read",
+    ),
+  ].join("");
+
   const cycles = m.cycles.length
     ? m.cycles
         .map(
@@ -973,18 +1659,19 @@ function structureView(m: FlowMetrics): string {
         m.history.available ? "No pair of these files changes together twice." : "No history to read."
       }</td></tr>`;
 
-  return `<div class="split">
+  return `<div class="tiles">${tiles}</div>
+  <div class="split">
     <div>
-      <h2 style="font-size:16px;margin:0 0 10px">Circular dependencies</h2>
+      <h2 class="section" style="margin-top:0">Circular dependencies</h2>
       ${cycles}
-      <h2 style="font-size:16px;margin:26px 0 10px">Fan-in, fan-out, instability</h2>
+      <h2 class="section">Fan-in, fan-out, instability</h2>
       <table class="grid">
         <tr><th>File</th><th>Fan-in</th><th>Fan-out</th><th>Packages</th><th>I</th><th>Cycle</th></tr>
         ${rows || `<tr><td colspan="6" class="dim">No files in scope.</td></tr>`}
       </table>
-      <h2 style="font-size:16px;margin:26px 0 10px">Duplicated blocks — ${m.duplicationTotal}</h2>
+      <h2 class="section">Duplicated blocks — ${m.duplicationTotal}</h2>
       <table class="grid"><tr><th>Size</th><th>Where</th></tr>${duplication}</table>
-      <h2 style="font-size:16px;margin:26px 0 10px">Files that keep changing together</h2>
+      <h2 class="section">Files that keep changing together</h2>
       <table class="grid"><tr><th>Degree</th><th>Shared commits</th><th>Pair</th></tr>${coupling}</table>
     </div>
     <aside>
@@ -998,6 +1685,17 @@ function structureView(m: FlowMetrics): string {
 }
 
 function coverageView(m: FlowMetrics): string {
+  const tiles = [
+    tile(
+      "Outcomes named by a test",
+      String(m.totals.coverage.covered),
+      `/ ${m.coverage.length}`,
+      "a test file names the identifier",
+    ),
+    tile("Partially named", String(m.totals.coverage.partial), "", "some identifiers, not all"),
+    tile("Named by nothing", String(m.totals.coverage.gap), "", "not the same claim as untested"),
+  ].join("");
+
   const rows = m.coverage
     .map(
       (c) => `<tr>
@@ -1013,7 +1711,8 @@ function coverageView(m: FlowMetrics): string {
     )
     .join("");
 
-  return `<div class="split">
+  return `<div class="tiles">${tiles}</div>
+  <div class="split">
     <div>
       <p class="meta"><b>This is a proxy, not executed coverage.</b> VeriFlow does not run the
         project's tests. What it checks is narrower and reproducible: does any test file name the
@@ -1038,6 +1737,7 @@ function coverageView(m: FlowMetrics): string {
 }
 
 export interface SourcePageInput {
+  chrome: Chrome;
   path: string;
   line: number;
   text: string;
@@ -1054,127 +1754,30 @@ export function sourcePage(input: SourcePageInput): string {
         )}</td></tr>`,
     )
     .join("");
-  return page(
+  return shell(
+    input.chrome,
     input.path,
-    `<header><h1>${esc(input.path)}</h1><div class="meta">line ${input.line} · read-only ·
-       <a href="/impact?path=${encodeURIComponent(input.path)}">what changing this lands in</a></div></header>
-     <main><table class="src">${body}</table>
-     <script>document.getElementById("L${input.line}")?.scrollIntoView({block:"center"})</script></main>`,
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Source",
+         title: input.path.split("/").pop() ?? input.path,
+         lede: `<code>${esc(input.path)}</code> · line ${input.line} · ${lines.length} lines · read-only`,
+         actions: `<a class="ghost" href="/impact?path=${encodeURIComponent(
+           input.path,
+         )}">What changing this lands in</a>`,
+       })}
+       <div class="scroll"><table class="src">${body}</table></div>
+     </section>
+     <script>document.getElementById("L${input.line}")?.scrollIntoView({block:"center"})</script>`,
   );
 }
 
-export interface CallGraphPageInput {
-  project: string;
-  nodes: Array<{ id: string; symbol: string; path: string; line: number; module_id: string; kind: string }>;
-  layout: Parameters<typeof renderCallMapSvg>[0];
-  traffic: TrafficCell[];
-  buckets: {
-    total: number;
-    resolved: number;
-    database: number;
-    stdlib: number;
-    unresolved: number;
-    packages: Array<{ name: string; sites: number }>;
-    externalSdk: Array<{ name: string; sites: number }>;
-    exact: boolean;
-    degradedReason?: string;
-  };
-  selected?: string;
-  callers: Array<Record<string, unknown>>;
-  callees: Array<Record<string, unknown>>;
-}
-
-export function callGraphPage(input: CallGraphPageInput): string {
-  const { buckets } = input;
-  const labels = new Map(input.nodes.map((n) => [n.id, `${n.symbol} — ${n.path}:${n.line}`]));
-  const svg = renderCallMapSvg(input.layout, {
-    selected: input.selected,
-    labelOf: (id) => labels.get(id) ?? id,
-  });
-
-  const sum =
-    buckets.resolved +
-    buckets.database +
-    buckets.stdlib +
-    buckets.unresolved +
-    buckets.packages.reduce((a, b) => a + b.sites, 0) +
-    buckets.externalSdk.reduce((a, b) => a + b.sites, 0);
-
-  const selectedNode = input.nodes.find((n) => n.id === input.selected);
-  const side = selectedNode
-    ? `<h3>${esc(selectedNode.symbol)}</h3>
-       <div class="ev">${esc(selectedNode.path)}:${selectedNode.line}</div>
-       <h3 style="margin-top:12px">Called by (${input.callers.length})</h3>
-       ${hierarchy(input.callers)}
-       <h3 style="margin-top:12px">Calls (${input.callees.length})</h3>
-       ${hierarchy(input.callees)}`
-    : `<h3>Call hierarchy</h3><p class="meta">Click a dot to see who calls it and what it calls.
-       Each dot is a function, inside its file, inside its module.</p>`;
-
-  return page(
-    `${input.project} — call graph`,
-    `<header><h1>${esc(input.project)} — call graph</h1>
-       <div class="meta">${input.nodes.length} functions actually reached from the entry points ·
-       ${input.traffic.length} module traffic cells ·
-       ${input.traffic.filter((t) => t.backward).length} running back up a layer</div>
-     </header>
-     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph" class="on">Call graph</a></nav>
-     <main>
-       <div class="split">
-         <div class="scroll">${svg}</div>
-         <aside>${side}</aside>
-       </div>
-
-       <h2 style="font-size:16px;margin:26px 0 8px">Where the calls go — ${buckets.total} sites</h2>
-       <p class="meta">${
-         buckets.exact
-           ? "Every site lands in exactly one bucket and the buckets add up."
-           : `⚠ not exact: ${esc(buckets.degradedReason ?? "")}`
-       } ${sum === buckets.total ? `<span class="pill good">${sum} = ${buckets.total}</span>` : `<span class="pill bad">${sum} ≠ ${buckets.total}</span>`}</p>
-       <table class="traffic"><tbody>
-         <tr><td>resolved to a definition</td><td style="text-align:right">${buckets.resolved}</td></tr>
-         <tr><td>database verbs</td><td style="text-align:right">${buckets.database}</td></tr>
-         <tr><td>stdlib and local</td><td style="text-align:right">${buckets.stdlib}</td></tr>
-         <tr><td>packages</td><td style="text-align:right">${buckets.packages.reduce((a, b) => a + b.sites, 0)}</td></tr>
-         <tr><td>external SDK</td><td style="text-align:right">${buckets.externalSdk.reduce((a, b) => a + b.sites, 0)}</td></tr>
-         <tr><td>unresolved — counted, never guessed into a bucket</td><td style="text-align:right">${buckets.unresolved}</td></tr>
-       </tbody></table>
-
-       <h2 style="font-size:16px;margin:26px 0 8px">Module traffic</h2>
-       ${renderTrafficTable(input.traffic)}
-     </main>`,
-  );
-}
-
-function hierarchy(rows: Array<Record<string, unknown>>): string {
-  if (rows.length === 0) return `<p class="meta">none</p>`;
-  return rows
-    .slice(0, 24)
-    .map(
-      (r) => `<div class="ev"><a href="?fn=${encodeURIComponent(String(r["id"]))}">${esc(String(r["symbol"]))}</a>
-      ${r["inferred"] ? `<span class="pill warn">inferred${r["rule"] ? `: ${esc(String(r["rule"]))}` : ""}</span>` : ""}
-      <div class="why">${esc(String(r["path"]))}:${String(r["line"])} · ${String(r["sites"])} site(s)</div></div>`,
-    )
-    .join("");
-}
+/* the call graph screen lives in callgraph-page.ts */
 
 /* ------------------------------------------------- the project as its answers (F011) */
 
-const PROJECT_CSS = `
-.tally { display:flex; gap:20px; flex-wrap:wrap; margin:0 0 20px; }
-.tally div { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 16px; min-width:120px; }
-.tally b { display:block; font-size:22px; font-weight:600; letter-spacing:-.02em; }
-.tally span { color:var(--dim); font-size:12.5px; }
-.reach { max-width:1000px; display:grid; gap:8px; }
-.reach .m { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:11px 14px; }
-.reach .m.shared { border-left:3px solid var(--accent); }
-.reach .m.unreached { border-left:3px solid var(--warn); }
-.reach .m h3 { margin:0 0 3px; font-size:14.5px; font-weight:600; }
-.reach .flows { font-size:12.5px; color:var(--dim); margin-top:5px; }
-.reach .flows a { color:var(--fg); }
-`;
-
 export interface ProjectPageInput {
+  chrome: Chrome;
   project: string;
   view: {
     snapshotId: string;
@@ -1254,19 +1857,20 @@ export function projectPage(input: ProjectPageInput): string {
         .join("")}</div>`
     : `<p class="meta">No answer left an open question.</p>`;
 
-  return page(
+  return shell(
+    input.chrome,
     "Project",
-    `<style>${PROJECT_CSS}</style>
-     <header><h1>${esc(input.project)}</h1>
-       <div class="meta">What ${counts.answers} answer${counts.answers === 1 ? "" : "s"} add up to,
-         over the ${counts.modules} modules of snapshot ${esc(input.view.snapshotId.slice(0, 8))}${
-           counts.supersededAnswers
-             ? ` · ${counts.supersededAnswers} superseded answer${counts.supersededAnswers === 1 ? "" : "s"} excluded`
-             : ""
-         }</div>
-     </header>
-     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project" class="on">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
-     <main>
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Project",
+         title: "The project as the union of its answers",
+         lede: `What ${counts.answers} answer${counts.answers === 1 ? "" : "s"} add up to, over the
+           ${counts.modules} modules of snapshot ${esc(input.view.snapshotId.slice(0, 8))}${
+             counts.supersededAnswers
+               ? ` · ${counts.supersededAnswers} superseded answer${counts.supersededAnswers === 1 ? "" : "s"} excluded`
+               : ""
+           }.`,
+       })}
        <div class="tally">
          <div><b>${counts.unreached}</b><span>${counts.unreached === 1 ? "module" : "modules"} no answer reaches</span></div>
          <div><b>${counts.shared}</b><span>${counts.shared === 1 ? "module" : "modules"} more than one flow runs through</span></div>
@@ -1277,7 +1881,7 @@ export function projectPage(input: ProjectPageInput): string {
        answer cites a file inside it. That is a citation count, not a judgement that the module is
        understood — and a superseded answer never counts, because nobody stands behind it.</p>
 
-       <h2 style="font-size:16px;margin:0 0 10px">Where flows meet</h2>
+       <h2 class="section" style="margin-top:0">Where flows meet</h2>
        ${
          shared.length
            ? `<p class="meta" style="margin:0 0 10px">A change in one of these lands in more than one flow.</p>
@@ -1286,7 +1890,7 @@ export function projectPage(input: ProjectPageInput): string {
               or there are not enough of them to overlap.</p>`
        }
 
-       <h2 style="font-size:16px;margin:26px 0 10px">What no answer explains</h2>
+       <h2 class="section">What no answer explains</h2>
        ${
          unreached.length
            ? `<p class="meta" style="max-width:760px;margin:0 0 10px">Largest first. The registry is
@@ -1297,14 +1901,15 @@ export function projectPage(input: ProjectPageInput): string {
            : `<p class="meta">Every module in the registry is cited by at least one answer.</p>`
        }
 
-       <h2 style="font-size:16px;margin:26px 0 10px">Outside the repository</h2>${externals}
+       <h2 class="section">Outside the repository</h2>${externals}
 
-       <h2 style="font-size:16px;margin:26px 0 10px">Open questions across every flow</h2>${questions}
-     </main>`,
+       <h2 class="section">Open questions across every flow</h2>${questions}
+     </section>`,
   );
 }
 
 export interface ImpactPageInput {
+  chrome: Chrome;
   project: string;
   impact: {
     path: string;
@@ -1351,7 +1956,7 @@ export function impactPage(input: ImpactPageInput): string {
        it — only that nothing anyone has asked about does.</p>`;
 
   const neighbours = impact.alsoInModule.length
-    ? `<h2 style="font-size:16px;margin:26px 0 10px">Also cited in ${esc(impact.module?.label ?? "this module")}</h2>
+    ? `<h2 class="section">Also cited in ${esc(impact.module?.label ?? "this module")}</h2>
        <table class="grid"><tbody>${impact.alsoInModule
          .map(
            (f) => `<tr><td><a href="/impact?path=${encodeURIComponent(f.path)}">${esc(f.path)}</a></td>
@@ -1360,64 +1965,32 @@ export function impactPage(input: ImpactPageInput): string {
          .join("")}</tbody></table>`
     : "";
 
-  return page(
+  return shell(
+    input.chrome,
     "Impact",
-    `<header><h1>${esc(impact.path)}</h1>
-       <div class="meta">${
-         impact.module ? `in ${esc(impact.module.label)}` : "in no module of the current registry"
-       } · <a href="/source?path=${encodeURIComponent(impact.path)}&line=1">read it</a></div>
-     </header>
-     <nav><a href="/">Answers</a><a href="/ask">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
-     <main>
-       <h2 style="font-size:16px;margin:0 0 10px">Flows that would notice a change here</h2>${rows}
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Impact",
+         title: impact.path,
+         lede: `${
+           impact.module ? `In ${esc(impact.module.label)}.` : "In no module of the current registry."
+         } What would notice if this file changed — measured over the answers, not over the imports.`,
+         actions: `<a class="ghost" href="/source?path=${encodeURIComponent(impact.path)}&line=1">Read it</a>`,
+       })}
+       <h2 class="section" style="margin-top:0">Flows that would notice a change here</h2>${rows}
        ${neighbours}
-     </main>`,
+     </section>`,
   );
 }
 
 /* ------------------------------------------------------- ask and the run console (F006) */
 
-const ASK_CSS = `
-form.ask { max-width:760px; display:grid; gap:12px; }
-form.ask textarea { width:100%; min-height:74px; padding:11px 13px; border:1px solid var(--line);
-  border-radius:10px; background:var(--card); color:var(--fg); font:inherit; resize:vertical; }
-button { font:inherit; padding:8px 16px; border-radius:99px; border:1px solid var(--accent);
-  background:var(--accent); color:var(--bg); cursor:pointer; }
-button.quiet { background:transparent; color:var(--dim); border-color:var(--line); }
-.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-.note { max-width:760px; background:var(--card); border:1px solid var(--line); border-left:3px solid var(--warn);
-  border-radius:8px; padding:12px 14px; margin:0 0 16px; }
-.note.bad { border-left-color:var(--bad); }
-.manifest { max-width:760px; font:12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--dim);
-  background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
-.manifest b { color:var(--fg); font-weight:500; }
-.cand { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; max-width:760px; align-items:baseline; }
-.cand .sc { font:12px ui-monospace,monospace; color:var(--dim); text-align:right; }
-.cand .lead { color:var(--accent); font-weight:600; }
-#console { max-width:1000px; background:var(--card); border:1px solid var(--line); border-radius:10px;
-  padding:12px 14px; font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-x:auto; }
-#console .e { padding:2px 0; white-space:pre-wrap; word-break:break-word; }
-#console .ch { color:var(--dim); user-select:none; }
-#console .e.tool { color:var(--accent); }
-#console .e.err { color:var(--bad); }
-#console .e.status { color:var(--dim); }
-.ask-user { max-width:760px; background:var(--card); border:1px solid var(--warn); border-radius:10px;
-  padding:14px 16px; margin:16px 0; }
-.ask-user input[name=value] { width:100%; padding:8px 11px; border:1px solid var(--line); border-radius:8px;
-  background:var(--bg); color:var(--fg); font:inherit; margin:8px 0; }
-`;
-
-function askShell(project: string, title: string, body: string): string {
-  return page(
-    title,
-    `<style>${ASK_CSS}</style>
-     <header><h1>${esc(project)}</h1><div class="meta">${esc(title)}</div></header>
-     <nav><a href="/">Answers</a><a href="/ask" class="on">Ask</a><a href="/project">Project</a><a href="/architecture">Architecture</a><a href="/callgraph">Call graph</a></nav>
-     <main>${body}</main>`,
-  );
+function askShell(chrome: Chrome, title: string, head: ScreenHead, body: string): string {
+  return shell(chrome, title, `<section class="screen">${screenHead(head)}${body}</section>`);
 }
 
 export interface AskPageInput {
+  chrome: Chrome;
   project: string;
   /** What was typed, when a plan is being previewed. */
   question?: string;
@@ -1457,11 +2030,19 @@ export function askPage(input: AskPageInput): string {
 
   const form = `<form class="ask" method="get" action="/ask">
       <textarea name="q" placeholder="Jak funguje rezervace a zaplacení lekce?" autofocus>${esc(input.question ?? "")}</textarea>
-      <div class="row"><button type="submit">Plan the run</button>
+      <div class="row"><button class="primary" type="submit">Plan the run</button>
         <span class="meta">Nothing runs yet — the next screen shows what would.</span></div>
     </form>`;
 
-  if (!input.plan) return askShell(input.project, "Ask", `${live}${error}${form}`);
+  const head: ScreenHead = {
+    eyebrow: "Ask",
+    title: "Ask the codebase a question",
+    lede: `VeriFlow hands the indexed evidence to the coding agent you are already signed in to, over a
+      read-only MCP toolset. It ships no API key of its own and adds no token bill, and the answer comes
+      back as a flow with a file reference under every claim.`,
+  };
+
+  if (!input.plan) return askShell(input.chrome, "Ask", head, `${live}${error}${form}`);
 
   const plan = input.plan;
   const location =
@@ -1513,15 +2094,16 @@ export function askPage(input: AskPageInput): string {
     </div>`;
 
   return askShell(
-    input.project,
+    input.chrome,
     "Ask",
+    head,
     `${live}${error}${form}${location}
      <form method="post" action="/ask">
        <input type="hidden" name="q" value="${esc(input.question ?? "")}">
-       <h2 style="font-size:15px;margin:24px 0 8px">Entry points ranked</h2>${candidates}${decision}
-       <h2 style="font-size:15px;margin:24px 0 8px">What will run</h2>${manifest}
+       <h2 class="section">Entry points ranked</h2>${candidates}${decision}
+       <h2 class="section">What will run</h2>${manifest}
        <div class="row" style="margin-top:18px">
-         <button type="submit"${input.liveRunId ? " disabled" : ""}>${
+         <button class="primary" type="submit"${input.liveRunId ? " disabled" : ""}>${
            plan.classification.kind === "location" ? "Ask anyway" : "Start the run"
          }</button>
          <a href="/ask" class="meta">edit the question</a>
@@ -1531,6 +2113,7 @@ export function askPage(input: AskPageInput): string {
 }
 
 export interface RunPageInput {
+  chrome: Chrome;
   project: string;
   runId: string;
   question: string;
@@ -1563,7 +2146,7 @@ export function runPage(input: RunPageInput): string {
         <form method="post" action="/runs/${esc(input.runId)}/answer">
           <input type="hidden" name="questionId" value="${esc(q.id)}">
           <input name="value" autofocus placeholder="your answer" required>
-          <button type="submit">Answer and resume</button>
+          <button class="primary" type="submit">Answer and resume</button>
         </form>
       </div>`,
     )
@@ -1594,12 +2177,17 @@ export function runPage(input: RunPageInput): string {
       : `<a class="meta" href="/ask">Ask another question</a>`;
 
   return askShell(
-    input.project,
+    input.chrome,
     "Run",
-    `<div class="row" style="margin-bottom:14px">${statusPill}
-       <span class="meta">${esc(input.question)}</span>
-       <span style="flex:1"></span>${controls}</div>
-     ${input.error ? `<div class="note bad">${esc(input.error)}</div>` : ""}
+    {
+      eyebrow: "Run",
+      title: input.question || "Run",
+      lede: `The console reads its transcript from the database and then follows what is still being
+        written, so a run opened late, reloaded, or started from the terminal all show the whole run.`,
+      meta: statusPill,
+      actions: controls,
+    },
+    `${input.error ? `<div class="note bad">${esc(input.error)}</div>` : ""}
      <div id="pending">${pending}</div>
      <div id="console">${transcript}</div>
      <div id="answers">${answers}</div>

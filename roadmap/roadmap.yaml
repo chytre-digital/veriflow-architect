@@ -105,6 +105,15 @@ features:
       session `veriflow ask` starts — one plan, one prompt, one transcript in one store — and the
       console reads that transcript from the database rather than from a buffer, so replaying and
       following are the same code path and a run started in the terminal is watchable in the browser.
+
+      The call graph screen was the second thing to read as finished while missing what it was for.
+      It drew the function map and listed the traffic, and the two criteria that make the map usable
+      on a real repository — filtering to one entry point, and the call mesh — were simply absent, so
+      740 identical dots and a table of numbers were the whole screen. It is now the three views the
+      spec asks for: the map, the module matrix with the diagonal counted, and the caller/callee
+      hierarchy for one function. Filtering to a door dims what it does not reach and never reflows,
+      the mesh is off by default and refuses to draw past a budget, and the whole interactive surface
+      is five query parameters, so a view of it can be sent to somebody.
     gaps:
       - >-
         Corrections have their schema, their provenance and their store methods, but no editing

@@ -3,11 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "@veriflow/agent-session": "workspace:*",
     "@veriflow/answers": "workspace:*",
     "@veriflow/ask": "workspace:*",
+    "@veriflow/callgraph": "workspace:*",
+    "@veriflow/contracts": "workspace:*",
     "@veriflow/diagram": "workspace:*",
     "@veriflow/flow-answer": "workspace:*",
     "@veriflow/metrics": "workspace:*",

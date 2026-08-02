@@ -352,7 +352,7 @@ describe("in the browser", () => {
     expect(html).toContain("line 40");
 
     const source = await (await app.request("/source?path=.veriflow%2Fconfig.yaml&line=1")).text();
-    expect(source).toContain("what changing this lands in");
+    expect(source).toContain("What changing this lands in");
   });
 
   it("keeps /api/project meaning the project, and serves the aggregate under its own name", async () => {

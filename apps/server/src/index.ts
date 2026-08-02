@@ -33,17 +33,20 @@ import {
   metricsPage,
   moduleOwning,
   modulesPage,
-  callGraphPage,
+  noticePage,
   pathsPage,
-  page,
   runPage,
   sourcePage,
   transcriptText,
   type AnswerRow,
+  type Chrome,
   type EntryPointRow,
+  type IndexState,
   type MetricsView,
   type ModuleRow,
+  type NavId,
 } from "./views.js";
+import { callGraphPage, type CallGraphEdge, type CallGraphNode } from "./callgraph-page.js";
 import type { TrafficCell } from "@veriflow/contracts";
 
 /** How often the live console looks for what the run has written since it last looked. */
@@ -118,10 +121,49 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }
   };
 
+  /**
+   * The navigation and the index state every screen is framed by, read once per request.
+   *
+   * It is assembled here rather than inside the views because only the route knows what it opened —
+   * a screen that looked up its own navigation would be a screen that can disagree with it.
+   */
+  const chromeOf = (store: Store, active: NavId, answer?: { id: string; title: string }): Chrome => {
+    const rows = store.listAnswers() as unknown as AnswerRow[];
+    const snapshot = store.latestSnapshotAny();
+    const facts = snapshot ? store.readSnapshot(snapshot.id) : undefined;
+    const counts = snapshot ? store.counts(snapshot.id) : undefined;
+
+    const index: IndexState | undefined = facts
+      ? {
+          commit: facts["commit_sha"] ? String(facts["commit_sha"]) : undefined,
+          branch: facts["branch"] ? String(facts["branch"]) : undefined,
+          files: Number(facts["file_count"]),
+          symbols: counts?.symbols,
+          dirty: Boolean(facts["dirty"]),
+          capturedAt: String(facts["created_at"]),
+        }
+      : undefined;
+
+    return {
+      project: projectName,
+      active,
+      ...(answer ? { answer } : {}),
+      answers: rows.map((r) => ({ id: r.id, title: r.title, superseded: r.status === "superseded" })),
+      ...(index ? { index } : {}),
+      subtitle: snapshot
+        ? `${counts?.modules ?? 0} modules · ${rows.length} answer${rows.length === 1 ? "" : "s"}`
+        : "nothing indexed yet",
+    };
+  };
+
+  /** A 404 or an empty state, said in the same chrome as everything else. */
+  const notice = (store: Store, active: NavId, title: string, message: string): string =>
+    noticePage(chromeOf(store, active), title, message);
+
   app.get("/", (c) =>
     withStore((store) => {
       const rows = store.listAnswers() as unknown as AnswerRow[];
-      return c.html(answersPage(rows, projectName));
+      return c.html(answersPage(chromeOf(store, "answers"), rows));
     }),
   );
 
@@ -129,7 +171,10 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     withStore((store) => {
       const snapshot = store.latestSnapshotAny();
       if (!snapshot) {
-        return c.html(page("Architecture", "<main><p>Nothing indexed yet. Run <code>veriflow index</code>.</p></main>"), 404);
+        return c.html(
+          notice(store, "architecture", "Architecture", "Nothing indexed yet. Run <code>veriflow index</code>."),
+          404,
+        );
       }
       const modules = store.readModules(snapshot.id) as unknown as ModuleRow[];
       const entryPoints = (store.readEntryPoints(snapshot.id) as Array<Record<string, unknown>>).map((r) => ({
@@ -153,6 +198,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
 
       return c.html(
         architecturePage({
+          chrome: chromeOf(store, "architecture"),
           project: projectName,
           modules,
           entryPoints,
@@ -163,25 +209,72 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  /**
+   * The call graph, filtered by query string and by nothing else.
+   *
+   * `fn`, `entry`, `mesh`, `cell` and `q` are the whole interactive surface: every one of them is a
+   * link, so the state of this screen is in the URL and a particular view of it can be sent to
+   * somebody. What the server does with them is read stored rows and traverse stored edges — no
+   * provider call, no layout computation, nothing that could make two renders disagree.
+   */
   app.get("/callgraph", (c) =>
     withStore((store) => {
       const snapshot = store.latestSnapshotAny();
       const graph = snapshot ? store.readCallGraph(snapshot.id) : undefined;
       if (!snapshot || !graph) {
-        return c.html(page("Call graph", "<main><p>No call graph yet. Run <code>veriflow index</code>.</p></main>"), 404);
+        return c.html(
+          notice(store, "callgraph", "Call graph", "No call graph yet. Run <code>veriflow index</code>."),
+          404,
+        );
       }
-      const selected = c.req.query("fn");
-      const neighbours = selected ? store.callNeighbours(snapshot.id, selected) : { callers: [], callees: [] };
+
+      const nodes = graph.nodes.map((n) => ({
+        id: String(n["id"]),
+        symbol: String(n["symbol"]),
+        path: String(n["path"]),
+        line: Number(n["line"]),
+        module_id: String(n["module_id"]),
+        kind: String(n["kind"]),
+      })) as CallGraphNode[];
+
+      const edges = store.readCallEdges(snapshot.id).map((e) => ({
+        from: String(e["from_node"]),
+        to: String(e["to_node"]),
+        kind: String(e["kind"]),
+        inferred: Boolean(e["inferred"]),
+        rule: e["rule"] ? String(e["rule"]) : undefined,
+        sites: Number(e["sites"]),
+      })) as CallGraphEdge[];
+
+      const entryPoints = (store.readEntryPoints(snapshot.id) as Array<Record<string, unknown>>).map((r) => ({
+        id: String(r["id"]),
+        kind: String(r["kind"]),
+        label: String(r["label"]),
+        path: String(r["path"]),
+      }));
+
+      const modules = (store.readModules(snapshot.id) as unknown as ModuleRow[]).map((m) => ({
+        id: m.id,
+        label: m.label,
+        paths: m.paths,
+      }));
+
       return c.html(
         callGraphPage({
+          chrome: chromeOf(store, "callgraph"),
           project: projectName,
-          nodes: graph.nodes as never,
+          nodes,
+          edges,
+          entryPoints,
+          modules,
           layout: graph.layout as never,
           traffic: graph.traffic as never,
           buckets: graph.buckets as never,
-          selected,
-          callers: neighbours.callers,
-          callees: neighbours.callees,
+          selected: c.req.query("fn"),
+          scopeEntry: c.req.query("entry"),
+          mesh: c.req.query("mesh") === "1",
+          cell: c.req.query("cell"),
+          query: c.req.query("q"),
         }),
       );
     }),
@@ -190,20 +283,28 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
   app.get("/answers/:id/modules", (c) =>
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));
-      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
+      if (!found) return c.html(notice(store, "modules", "Not found", "No such answer."), 404);
       // Labels for the drawing come from the registry of the snapshot the answer was made against,
       // so a module renamed since then still shows the name it had when the claim was made.
       const modules = store.readModules(found.row.snapshot_id) as unknown as ModuleRow[];
-      return c.html(modulesPage(found.answer, found.row, modules));
+      return c.html(
+        modulesPage(
+          chromeOf(store, "modules", { id: found.row.id, title: found.answer.title }),
+          found.answer,
+          found.row,
+          modules,
+        ),
+      );
     }),
   );
 
   app.get("/answers/:id", (c) =>
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));
-      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
+      if (!found) return c.html(notice(store, "flow", "Not found", "No such answer."), 404);
       return c.html(
         flowPage({
+          chrome: chromeOf(store, "flow", { id: found.row.id, title: found.answer.title }),
           ...found,
           selectedStepId: c.req.query("step"),
           selectedBranchId: c.req.query("branch"),
@@ -220,8 +321,14 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
   app.get("/answers/:id/paths", (c) =>
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));
-      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
-      return c.html(pathsPage(found.answer, found.row));
+      if (!found) return c.html(notice(store, "paths", "Not found", "No such answer."), 404);
+      return c.html(
+        pathsPage(
+          chromeOf(store, "paths", { id: found.row.id, title: found.answer.title }),
+          found.answer,
+          found.row,
+        ),
+      );
     }),
   );
 
@@ -231,9 +338,13 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       // `veriflow verify` about the tree as it is right now, not about the tree as it was when
       // somebody last ran the command.
       const found = verifyStoredAnswer(store, root, c.req.param("id"));
-      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
+      if (!found) return c.html(notice(store, "freshness", "Not found", "No such answer."), 404);
       return c.html(
         freshnessPage({
+          chrome: chromeOf(store, "freshness", {
+            id: found.stored.row.id,
+            title: found.stored.answer.title,
+          }),
           row: found.stored.row,
           answer: found.stored.answer,
           verification: found.verification,
@@ -257,7 +368,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       // browser has to agree with `veriflow metrics` about the tree as it is now. A run already
       // taken over this exact tree state is served instead, because it is the same measurement.
       const found = metricsForStoredAnswer(store, root, c.req.param("id"));
-      if (!found) return c.html(page("Not found", "<main><p>No such answer.</p></main>"), 404);
+      if (!found) return c.html(notice(store, "metrics", "Not found", "No such answer."), 404);
       const requested = c.req.query("view");
       const view: MetricsView =
         requested === "functions" || requested === "structure" || requested === "coverage"
@@ -265,6 +376,10 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
           : "health";
       return c.html(
         metricsPage({
+          chrome: chromeOf(store, "metrics", {
+            id: found.stored.row.id,
+            title: found.stored.answer.title,
+          }),
           row: found.stored.row,
           title: found.stored.answer.title,
           metrics: found.metrics,
@@ -282,19 +397,27 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       const view = projectView(store);
       if (!view) {
         return c.html(
-          page("Project", "<main><p>Nothing indexed yet. Run <code>veriflow index</code>.</p></main>"),
+          notice(store, "project", "Project", "Nothing indexed yet. Run <code>veriflow index</code>."),
           404,
         );
       }
-      return c.html(projectPage({ project: projectName, view }));
+      return c.html(projectPage({ chrome: chromeOf(store, "project"), project: projectName, view }));
     }),
   );
 
   app.get("/impact", (c) =>
     withStore((store) => {
       const path = c.req.query("path") ?? "";
-      if (!path) return c.html(page("Impact", "<main><p>Name a file to see what it lands in.</p></main>"), 400);
-      return c.html(impactPage({ project: projectName, impact: impactOf(store, root, path) }));
+      if (!path) {
+        return c.html(notice(store, "impact", "Impact", "Name a file to see what it lands in."), 400);
+      }
+      return c.html(
+        impactPage({
+          chrome: chromeOf(store, "impact"),
+          project: projectName,
+          impact: impactOf(store, root, path),
+        }),
+      );
     }),
   );
 
@@ -351,6 +474,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     const question = c.req.query("q") ?? "";
     const live = runs.current();
     const base = {
+      chrome: withStore((store) => chromeOf(store, "ask")),
       project: projectName,
       liveRunId: live?.runId,
       liveQuestion: live?.question,
@@ -408,6 +532,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       const live = runs.current();
       return c.html(
         askPage({
+          chrome: withStore((store) => chromeOf(store, "ask")),
           project: projectName,
           question,
           error: reason(error),
@@ -423,8 +548,8 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     withStore((store) => {
       const runId = c.req.param("id");
       const view = runView(store, runs, runId);
-      if (!view) return c.html(page("Not found", "<main><p>No such run.</p></main>"), 404);
-      return c.html(runPage({ project: projectName, ...view }));
+      if (!view) return c.html(notice(store, "run", "Not found", "No such run."), 404);
+      return c.html(runPage({ chrome: chromeOf(store, "run"), project: projectName, ...view }));
     }),
   );
 
@@ -553,15 +678,30 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     const absolute = resolve(root, requested);
     const inside = absolute === resolve(root) || absolute.startsWith(resolve(root) + sep);
     if (!inside || isSecretPath(requested)) {
-      return c.html(page("Refused", "<main><p>That path is outside the project or is a secret.</p></main>"), 403);
+      return c.html(
+        withStore((store) => notice(store, "source", "Refused", "That path is outside the project or is a secret.")),
+        403,
+      );
     }
     let text: string;
     try {
       text = readFileSync(absolute, "utf8");
     } catch {
-      return c.html(page("Gone", `<main><p>${requested} is no longer there.</p></main>`), 404);
+      return c.html(
+        withStore((store) => notice(store, "source", "Gone", `${requested.replace(/[<>&]/g, "")} is no longer there.`)),
+        404,
+      );
     }
-    return c.html(sourcePage({ path: requested, line: Number.isFinite(line) ? line : 1, text }));
+    return c.html(
+      withStore((store) =>
+        sourcePage({
+          chrome: chromeOf(store, "source"),
+          path: requested,
+          line: Number.isFinite(line) ? line : 1,
+          text,
+        }),
+      ),
+    );
   });
 
   app.get("/api/answers", (c) =>

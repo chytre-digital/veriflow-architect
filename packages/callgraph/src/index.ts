@@ -151,6 +151,52 @@ export function computeReachability(
   return { reached, depth, moduleInit, depthBoundHit };
 }
 
+/**
+ * What one door reaches inside a graph that has already been built.
+ *
+ * F003 stores the closure of *all* entry points; this narrows that stored graph to one of them
+ * without re-reading the provider, which is what lets the UI filter to a single route. It is the same
+ * traversal as `computeReachability` over a different input — call sites there, stored edges here —
+ * and it keeps the same rule about module initialization: reaching a function reaches its file's top
+ * level, because importing a module runs it.
+ */
+export function closureFrom(
+  roots: readonly string[],
+  edges: ReadonlyArray<Pick<CallEdge, "from" | "to">>,
+  nodes: ReadonlyArray<{ id: string; path: string; kind: string }> = [],
+): Set<string> {
+  const outgoing = new Map<string, string[]>();
+  for (const edge of edges) {
+    const list = outgoing.get(edge.from);
+    if (list) list.push(edge.to);
+    else outgoing.set(edge.from, [edge.to]);
+  }
+
+  const initOfPath = new Map<string, string>();
+  const pathOf = new Map<string, string>();
+  for (const node of nodes) {
+    pathOf.set(node.id, node.path);
+    if (node.kind === "module-init") initOfPath.set(node.path, node.id);
+  }
+
+  const seen = new Set<string>();
+  const queue: string[] = [];
+  const visit = (id: string): void => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    queue.push(id);
+  };
+  for (const root of roots) visit(root);
+
+  while (queue.length > 0) {
+    const at = queue.shift() as string;
+    const init = initOfPath.get(pathOf.get(at) ?? "");
+    if (init) visit(init);
+    for (const next of outgoing.get(at) ?? []) visit(next);
+  }
+  return seen;
+}
+
 export interface BuildOptions extends ReachabilityOptions {
   snapshotId: string;
   entryPoints?: EntryPoint[];
