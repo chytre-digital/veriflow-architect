@@ -58,6 +58,18 @@ features:
     dependsOn: []
     outcome: >-
       init/doctor/status; the tree state recorded by file hash without copying or mutating anything.
+    notes: >-
+      `.veriflowignore` was added after the call graph of this repository came back with two doors,
+      both of them Next.js routes inside the design mockups. There had been one exclusion mechanism
+      and it was not enough in two separate ways: it matched directory names rather than paths, so
+      `artifacts/mockups` could not be said at all, and it applied only to the hash walk, so a
+      directory kept out of the tree state still supplied symbols, modules, entry points and call
+      graph nodes. The file is gitignore syntax, applied by one resolver at every place a path enters
+      VeriFlow — the walk, the provider's evidence, `status`, and the freshness estimate — because two
+      resolvers would eventually disagree about what is in the index. `analysis.exclude` in
+      config.yaml turned out never to have been applied at all: `captureSnapshot` was always called
+      without it. It is documented as superseded and `veriflow doctor` names the entries nothing
+      covers, rather than being quietly wired up into a second mechanism.
   F002:
     title: Code intelligence provider protocol and code-review-graph adapter
     spec: 02-code-intelligence-provider.md

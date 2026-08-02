@@ -495,7 +495,10 @@ export function callGraphPage(input: CallGraphPageInput): string {
 
        <div class="tiles">${tiles}</div>
 
-       <div class="cg-block">
+       ${
+         nodes.length === 0
+           ? ""
+           : `<div class="cg-block">
          <div class="cg-block-head">
            <span class="col-label">Where the ${nodes.length} functions live</span>
            <span class="cg-block-hint">one dot per function, inside its file, inside its module ·
@@ -542,7 +545,8 @@ export function callGraphPage(input: CallGraphPageInput): string {
          </div>
          ${picker}
          ${hierarchy ? `<div class="scroll">${hierarchy}</div>` : ""}
-       </div>
+       </div>`
+       }
 
        ${detail}
 

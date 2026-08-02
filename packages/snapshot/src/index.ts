@@ -3,6 +3,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import type { ChangedFile, FileHash, Snapshot } from "@veriflow/contracts";
+import type { Ignore } from "./ignore.js";
+
+export * from "./ignore.js";
 
 /**
  * Default excludes. Applied even when the project has no ignore file, so a first run on an
@@ -74,6 +77,12 @@ export function readGitFacts(root: string): GitFacts {
 
 export interface HashOptions {
   excludes?: string[];
+  /**
+   * What the project refuses to index, from `.veriflowignore` and `analysis.exclude`. Given one, the
+   * built-in defaults come with it — `loadIgnore` already includes them — so `excludes` is only
+   * consulted when no ignore was resolved at all.
+   */
+  ignore?: Pick<Ignore, "matches">;
   onProgress?: (filesSeen: number) => void;
 }
 
@@ -83,6 +92,7 @@ export interface HashOptions {
  */
 export function hashTree(root: string, options: HashOptions = {}): FileHash[] {
   const excludes = new Set(options.excludes ?? DEFAULT_EXCLUDES);
+  const ignore = options.ignore;
   const out: FileHash[] = [];
   let seen = 0;
 
@@ -97,12 +107,15 @@ export function hashTree(root: string, options: HashOptions = {}): FileHash[] {
       const abs = join(dir, entry.name);
       const rel = relative(root, abs).split(sep).join("/");
       if (entry.isDirectory()) {
-        if (excludes.has(entry.name) || isToolStateDirectory(entry.name)) continue;
+        if (ignore ? ignore.matches(rel, true) : excludes.has(entry.name) || isToolStateDirectory(entry.name)) {
+          continue;
+        }
         walk(abs);
         continue;
       }
       if (!entry.isFile()) continue;
       if (isSecretPath(rel)) continue;
+      if (ignore?.matches(rel)) continue;
       const dot = entry.name.lastIndexOf(".");
       if (dot < 0 || !INDEXABLE.has(entry.name.slice(dot))) continue;
       let buf: Buffer;

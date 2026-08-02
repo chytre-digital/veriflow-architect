@@ -158,6 +158,41 @@ All paths are relative to the project root, normalized to POSIX separators when 
 resolve inside the project. Path traversal and symlink escapes are rejected. No command name is
 executed from a path outside the user's `PATH` or an explicitly configured absolute command.
 
+### What is not indexed
+
+`.veriflowignore` at the project root, in gitignore syntax, is where a project says what it refuses to
+have indexed. It is committed, because it is a statement about the project rather than about one
+machine, and it is not the same list as `.gitignore` — the files it names are usually tracked, they
+are simply not the application.
+
+```gitignore
+/artifacts/          # design mockups: committed, not the product
+/tests/fixtures/     # read as data by the tests, not as code that runs
+**/*.generated.ts
+!src/generated/schema.ts
+```
+
+Supported in full: `#` comments, a bare name matching at any depth, a trailing `/` for directories, a
+leading `/` or any embedded `/` to anchor at the root, `*` inside a segment, `**` across segments, `?`
+for one character, and `!` to re-include — with git's rule that a file inside an excluded directory
+cannot be reopened. Character classes are not supported and a line using them is reported as
+unreadable rather than silently reinterpreted. `node_modules`, build output and dot-directories are
+excluded before any file is read, so a first run on an unfamiliar repository needs no configuration.
+
+One resolver serves every place a path enters VeriFlow, because two would eventually disagree:
+
+| where | what the ignore does |
+|---|---|
+| the snapshot walk | an ignored file is never hashed, so it is not part of the tree state |
+| provider evidence | ignored symbols are not ingested, so they supply no module, entry point or call graph node |
+| call sites | a site in ignored code, or into it, is dropped rather than counted as unresolved — the resolver did not fail, the target is simply outside what was asked for |
+| `veriflow status` and freshness | the same set is re-hashed, or every ignored file would read as newly added |
+
+**`analysis.exclude` in `config.yaml` is superseded and has never been applied.** The walk was called
+without it, so a project that listed a directory there got nothing; wiring it now would create a
+second mechanism that can disagree with the first. `veriflow doctor` names the entries the ignore file
+does not cover so they can be moved, which is the honest handling of config that never did anything.
+
 ## Snapshot model
 
 You give VeriFlow a path to a repository and it indexes what is there. There is no ref selection, no

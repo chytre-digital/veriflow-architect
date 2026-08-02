@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { captureSnapshot, diffHashes } from "@veriflow/snapshot";
+import { captureSnapshot, diffHashes, loadIgnore } from "@veriflow/snapshot";
 import type { Store } from "@veriflow/store";
 
 /**
@@ -212,7 +212,9 @@ export function snapshotDrift(store: Store, root: string, snapshotId: string): F
   if (cached && now - cached.at < WHOLE_SNAPSHOT_TTL_MS) return cached.value;
 
   const recorded = store.readFileHashes(snapshotId);
-  const current = captureSnapshot(root).hashes;
+  // Resolved from the tree rather than remembered from the snapshot: the comparison has to be against
+  // what VeriFlow would index now, and an ignore rule added since is part of that.
+  const current = captureSnapshot(root, { ignore: loadIgnore(root).ignore }).hashes;
   const changes = diffHashes(recorded, current);
   const deleted = new Set(changes.filter((c) => c.kind === "deleted").map((c) => c.path));
 

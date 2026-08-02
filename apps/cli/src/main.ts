@@ -32,7 +32,15 @@ import {
 } from "@veriflow/export";
 import { startServer } from "@veriflow/server";
 import { createInterface } from "node:readline/promises";
-import { captureSnapshot, diffHashes, readGitFacts } from "@veriflow/snapshot";
+import {
+  IGNORE_FILE,
+  applyIgnore,
+  captureSnapshot,
+  diffHashes,
+  loadIgnore,
+  readGitFacts,
+  unappliedExcludes,
+} from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { InitError, ProjectLock, initWorkspace, readConfig, DEFAULT_DOCUMENTATION } from "@veriflow/workspace";
 import type { Snapshot } from "@veriflow/contracts";
@@ -188,11 +196,19 @@ program
     const probe = indexPresent ? provider.probe({ path: root }) : undefined;
     const python = probePython();
     const workspace = existsSync(join(root, ".veriflow", "config.yaml"));
+    const ignoreFile = loadIgnore(root);
+    const ignore = {
+      file: ignoreFile.present,
+      rules: ignoreFile.ignore.declared.map((r) => r.pattern.trim()),
+      malformed: ignoreFile.malformed,
+      /** Config entries the file does not cover. They have never been applied; this says so. */
+      unappliedConfigExcludes: unappliedExcludes(readConfig(root)?.analysis.exclude ?? [], ignoreFile.ignore),
+    };
 
     if (options.json) {
       log(
         JSON.stringify(
-          { contractVersion: 1, root, workspace, git, python, provider: health, probe },
+          { contractVersion: 1, root, workspace, git, python, ignore, provider: health, probe },
           null,
           2,
         ),
@@ -204,6 +220,26 @@ program
     log(`Node                 ✓ ${process.versions.node}`);
     log(`Git                  ${git.isRepository ? `✓ repository${git.branch ? ` on ${git.branch}` : ""}` : "✗ not a repository"}`);
     log(`Workspace            ${workspace ? "✓ .veriflow/config.yaml" : "✗ absent — run: veriflow init"}`);
+    log(
+      `Ignored              ${
+        ignore.rules.length
+          ? `✓ ${ignore.rules.length} rule${ignore.rules.length === 1 ? "" : "s"}${
+              ignore.file ? ` from ${IGNORE_FILE}` : " from config"
+            } — ${ignore.rules.slice(0, 4).join(", ")}${ignore.rules.length > 4 ? ", …" : ""}`
+          : `· nothing beyond the built-in defaults — add ${IGNORE_FILE} to keep a directory out`
+      }`,
+    );
+    for (const bad of ignore.malformed) {
+      log(`                     ✗ ${IGNORE_FILE}:${bad.line} is not a pattern this reads: ${bad.text}`);
+    }
+    if (ignore.unappliedConfigExcludes.length) {
+      log(
+        `                     ! config analysis.exclude lists ${ignore.unappliedConfigExcludes.join(", ")}, ` +
+          `which nothing applies — move ${
+            ignore.unappliedConfigExcludes.length === 1 ? "it" : "them"
+          } into ${IGNORE_FILE}`,
+      );
+    }
     log(`\nCode intelligence`);
     log(`  Python             ${python.available ? `✓ ${python.version}` : "✗ not found — the provider needs Python 3.10+"}`);
     log(`  ${provider.id.padEnd(17)}  ${health.available ? `✓ ${health.version}` : `✗ ${health.reason ?? "not found"}`}`);
@@ -228,12 +264,23 @@ program
   .description("index the project and record the tree state")
   .action(async (pathArg: string | undefined, options: { rebuild?: boolean }) => {
     const ctx = open(pathArg);
-    const provider = createProvider(readConfig(ctx.root)?.index.provider);
+    const config = readConfig(ctx.root);
+    const provider = createProvider(config?.index.provider);
     const health = await provider.isAvailable();
     if (!health.available) fail(`${health.reason}\ninstall: ${provider.installHint}`);
 
     const indexPresent = provider.hasIndex({ path: ctx.root });
     const incremental = indexPresent && !options.rebuild;
+
+    // One list, resolved once, applied to everything this command takes in. The provider indexes the
+    // whole repository — it owns its own index and VeriFlow does not get to prune it — so what makes
+    // an ignore real is that the evidence is filtered on the way into the store, not merely that the
+    // hash walk skipped some directories.
+    const ignoreFile = loadIgnore(ctx.root);
+    const ignore = ignoreFile.ignore;
+    for (const bad of ignoreFile.malformed) {
+      log(`  ${IGNORE_FILE}:${bad.line} could not be read as a pattern — ignored: ${bad.text}`);
+    }
 
     const started = Date.now();
     const stats = incremental
@@ -241,7 +288,10 @@ program
       : await provider.index({ path: ctx.root }, log);
 
     log(`capturing tree state…`);
-    const captured = captureSnapshot(ctx.root, { onProgress: (n) => log(`  hashed ${n} files`) });
+    const captured = captureSnapshot(ctx.root, {
+      ignore,
+      onProgress: (n) => log(`  hashed ${n} files`),
+    });
 
     const snapshot: Snapshot = {
       id: randomUUID(),
@@ -256,8 +306,14 @@ program
     ctx.store.insertFileHashes(snapshot.id, captured.hashes);
 
     log(`ingesting provider evidence…`);
-    const symbols = await provider.symbols({ path: ctx.root });
-    const callSites = await provider.callSites({ path: ctx.root });
+    const allSymbols = await provider.symbols({ path: ctx.root });
+    const allCallSites = await provider.callSites({ path: ctx.root });
+
+    const { symbols, callSites, dropped } = applyIgnore(
+      { symbols: allSymbols, callSites: allCallSites },
+      ignore,
+    );
+
     ctx.store.insertSymbols(snapshot.id, symbols);
     ctx.store.insertCallSites(snapshot.id, callSites);
 
@@ -295,6 +351,14 @@ program
     log(`  provider     ${provider.id} ${health.version} (${incremental ? "incremental" : "full build"})`);
     log(`  graph        ${stats.files} files · ${stats.nodes} nodes · ${stats.edges} edges`);
     log(`  ingested     ${symbols.length} symbols · ${callSites.length} call sites`);
+    if (ignoreFile.ignore.declared.length) {
+      log(
+        `  ignored      ${ignoreFile.ignore.declared.length} rule${ignoreFile.ignore.declared.length === 1 ? "" : "s"}` +
+          `${ignoreFile.present ? ` from ${IGNORE_FILE}` : ""} · ${dropped.symbols} symbol${
+            dropped.symbols === 1 ? "" : "s"
+          } and ${dropped.callSites} call site${dropped.callSites === 1 ? "" : "s"} not ingested`,
+      );
+    }
     log(`  modules      ${modules.length} derived from paths`);
     log(`  entry points ${entryPoints.length} detected`);
     log(`  call graph   ${graph.nodes.length} reachable nodes · ${graph.edges.length} edges · ${graph.traffic.filter((t) => t.backward).length} backward`);
@@ -317,7 +381,9 @@ program
     const ctx = open(pathArg);
     const snapshot = ctx.store.latestSnapshot(ctx.projectId);
     if (!snapshot) fail("no snapshot yet — run: veriflow index");
-    const current = captureSnapshot(ctx.root);
+    // The same resolver the index used. Hashing a different set here would report every ignored file
+    // as newly added, which is a diff against a tree nobody indexed.
+    const current = captureSnapshot(ctx.root, { ignore: loadIgnore(ctx.root).ignore });
     const changed = diffHashes(ctx.store.readFileHashes(snapshot.id), current.hashes);
     const counts = ctx.store.counts(snapshot.id);
 

@@ -1,0 +1,17 @@
+# What VeriFlow will not index in this repository.
+#
+# gitignore syntax: a bare name matches at any depth, a trailing slash means a directory, a leading
+# slash anchors to the root, `*` stays inside a segment, `**` crosses segments, and `!` re-includes.
+# node_modules, build output and dot-directories are excluded already and need no rule here.
+#
+# This is not the same list as .gitignore. These files are committed and belong in the repository —
+# they are simply not the application, and indexing them puts mockup routes in the call graph and
+# mockup folders in the module registry.
+
+# The F001–F006 design mockups: a Next.js app whose only purpose was to draw the screens. Its two
+# route handlers were the only entry points VeriFlow detected in this repository, which made the call
+# graph six functions of example code and nothing of the product.
+/artifacts/
+
+# Fixtures and dumps read as data by the tests, not as code that runs.
+/tests/fixtures/
