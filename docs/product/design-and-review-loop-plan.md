@@ -137,7 +137,7 @@ unstated baseline is not a measurement.
 
 > **Changed during implementation.** This section originally put the snapshot ahead of HEAD, and the
 > first dogfood run showed why that is wrong: measured against an index three commits old, a claim on
-> `apps/cli/src/main.ts:1046` relocated to `:1167` when the line is at `:1126`. The baseline was a
+> line 1046 of the CLI relocated to 1167 when the line was in fact at 1126. The baseline was a
 > tree state neither the author nor the reader ever had. HEAD is where an untracked document was
 > almost certainly written; the snapshot is now the last resort.
 
@@ -203,7 +203,12 @@ no reader who has asked for the history.
 
 ---
 
-## 3 · WP2 — `veriflow impact --diff`
+## 3 · WP2 — `veriflow impact --diff` · **shipped**
+
+> Built on 2026-08-02: `packages/answers/src/diff-impact.ts`, the `impact` CLI verb in both forms,
+> `get_change_impact` on the read surface, and `tests/f013-diff-impact.test.ts` — 21 cases, whole
+> suite 460 green, typecheck clean. **The algorithm below was wrong and was replaced**; see the
+> correction.
 
 **Ships.** `veriflow impact <path>` (CLI parity with a tool that until now only existed over MCP and
 in the browser) and `veriflow impact --diff <ref>`: the changed hunks between `<ref>` and `HEAD`,
@@ -225,11 +230,36 @@ recorded against their own answer's snapshot commit. `git diff <ref>...HEAD` pro
 sound only when the answer's snapshot happens to be that ref, which for six answers taken at
 `5fc5be6` and a review at HEAD it never will be.
 
-So the default relocates first: run the existing `verifyAnswer` to get each citation's position in
-the working tree, then intersect those with the diff's **new-side** ranges. Citations that no longer
-locate are reported separately as *cannot be placed in this diff* rather than being counted as
+> **This paragraph was wrong, and the first real run proved it.** It said: relocate each citation
+> into the working tree, then intersect with the diff's **new-side** ranges. Run against `main-panel`
+> and six months of stored answers, that reported **zero hits against a hundred and eighty hunks** —
+> the single most dangerous answer this command can give.
+>
+> The reason is a contradiction. Relocation matches the hash of the cited line, so any citation it
+> can place is one whose content did *not* change; and a citation whose content *did* change cannot
+> be placed at all. Intersecting on the new side therefore looks for changed lines among exactly the
+> lines that are guaranteed not to have changed.
+>
+> **The intersection belongs on the base-ref side.** A hunk's old-side range is what the change
+> removed or replaced; a citation inside it is evidence that was edited. Citations are put into
+> base-ref coordinates — free when the answer's snapshot *is* the base ref, which is the ordinary
+> case of reviewing against the indexed commit, and a `locate()` into the ref's copy of the file
+> otherwise. Where the line is *now* is reported alongside, because that is what the reader opens.
+> After the fix the same run reports edited, adjacent and deleted evidence, including a citation on
+> `reconcileLessonPayments.ts:97` whose line the change removed outright.
+
+Citations that cannot be placed in the base ref are reported as such rather than counted as
 unaffected — the difference between "this change does not touch that flow" and "we could not tell"
-is the whole value of the command.
+is the whole value of the command. Each hit says what happened to it: `edited`, `deleted`,
+`adjacent` (new code written directly against it), or `file-deleted`.
+
+**Two more things the first run exposed.** `git diff` only sees tracked files, so a file created and
+never added was invisible — a review that silently omits the new files is worse than one that lists
+them without hunks, so untracked files are included as whole-file additions, filtered through the
+same `.veriflowignore` resolver every other path entering VeriFlow goes through. And an answer that
+cites a changed file where no hunk lands on a cited line is reported in a separate `nearby` list
+rather than dropped: the flow runs through code that moved, which is a reason to look and not a
+reason to act, and merging the two lists would make the first one mean less.
 
 Renames are followed with `git diff -M --find-renames`, mapping old path to new before the lookup;
 a citation into a renamed file otherwise vanishes from the impact of the commit that renamed it,
@@ -444,7 +474,7 @@ Q5 stays untouched: closing a question amends no step and adds no claim.
 and that column counts *all* questions. Left alone, this package ships the exact failure the proposal
 names — *"next quarter the open-question count on that answer will still read 4"*. The count must be
 computed from the corrected answer, `openQuestions.filter(q => !q.decision).length`, in the envelope,
-in `get_open_questions` (`read-server.ts:353`), in `listAnswers` output and on the project screen's
+in `get_open_questions` (`packages/mcp-server/src/read-server.ts:383`), in `listAnswers` output and on the project screen's
 aggregated list. Four call sites, all in this package.
 
 ### Files
@@ -603,7 +633,7 @@ gets used far more often, and it is stage 6 of the proposal's own design loop:
 | as-is → built | what actually changed | after, without a proposal |
 
 All three are the same computation. `veriflow diff <a> <b>` already takes two answer ids
-(`apps/cli/src/main.ts:1126`); what this package adds is that the pair may now be an observation and
+(`apps/cli/src/main.ts:1250`); what this package adds is that the pair may now be an observation and
 a proposal, and that the output is framed by which pair it is.
 
 **The matcher is the work.** The proposal calls this "`diffAnswers` unchanged, given a proposal as

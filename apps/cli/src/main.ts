@@ -11,11 +11,15 @@ import { ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
 import { answersFromRun, applySupersede, createAskRun, planAsk, type AskPlan } from "@veriflow/ask";
 import { serveRead, serveRun } from "@veriflow/mcp-server";
 import {
+  CHANGE_IMPACT_METHOD,
   DRIFT_WINDOW,
   THRESHOLDS,
+  changeImpact,
   checkClaims,
   diffAnswers,
+  impactOf,
   loadStoredAnswer,
+  refExists,
   metricsForStoredAnswer,
   thresholdOf,
   verifyStoredAnswer,
@@ -891,6 +895,126 @@ program
         if (r.note) log(`                  ${r.note}`);
       }
       log("");
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ impact */
+
+program
+  .command("impact")
+  .argument("[file]", "repository-relative path — omit when using --diff")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .option("--diff <ref>", "which flows the change between this ref and the working tree lands in")
+  .description("what a change lands in — per file, or per changed hunk against a base ref")
+  .action((fileArg: string | undefined, pathArg: string | undefined, options: { json?: boolean; diff?: string }) => {
+    // `veriflow impact --diff main <project>` puts the project in the first position. A cited file is
+    // never an existing workspace directory, so this is a test rather than a guess — the same one
+    // `verify` makes.
+    let file = fileArg;
+    let path = pathArg;
+    if (file && !path && existsSync(join(resolve(file), ".veriflow", "veriflow.db"))) {
+      path = file;
+      file = undefined;
+    }
+
+    const ctx = open(path);
+
+    if (options.diff) {
+      if (!refExists(ctx.root, options.diff)) {
+        ctx.close();
+        fail(`"${options.diff}" does not resolve to a commit in ${ctx.root}`);
+      }
+      const impact = changeImpact(ctx.store, ctx.root, options.diff);
+
+      if (options.json) {
+        log(JSON.stringify({ contractVersion: 1, method: CHANGE_IMPACT_METHOD, ...impact }, null, 2));
+        ctx.close();
+        return;
+      }
+
+      log(`${impact.ref} → working tree`);
+      log(`  ${impact.changedFiles.length} changed file(s) · ${impact.hunks} hunk(s)` +
+        `${impact.renames.length ? ` · ${impact.renames.length} rename(s)` : ""}`);
+      log(`  ${CHANGE_IMPACT_METHOD}`);
+      log("");
+
+      if (impact.answers.length === 0) {
+        log("  No stored answer cites a line this change touches.");
+        log("  That means nobody has asked about this code, not that nothing depends on it.");
+      }
+      for (const a of impact.answers) {
+        log(
+          `  ${a.id.slice(0, 8)}  ${a.title}` +
+            `${a.status === "superseded" ? "  [superseded]" : ""}  ${a.reviewState}`,
+        );
+        log(`            ${a.hits.length} of ${a.inChangedFiles} citation(s) in changed files land in a changed hunk`);
+        for (const hit of a.hits) {
+          const where =
+            hit.nowLine === undefined
+              ? `${hit.path}:${hit.refLine} (gone)`
+              : hit.nowLine === hit.refLine
+                ? `${hit.path}:${hit.nowLine}`
+                : `${hit.path}:${hit.refLine} → :${hit.nowLine}`;
+          log(
+            `    ${hit.how.padEnd(12)} ${where}  ${hit.subjectKind} ${hit.subjectId}` +
+              `${hit.symbol ? `  ${hit.symbol}` : ""}`,
+          );
+        }
+        for (const u of a.unplaceable) {
+          log(`    unplaceable  ${u.path}:${u.citedLine}`);
+          log(`                 ${u.reason}`);
+        }
+      }
+
+      if (impact.nearby.length > 0) {
+        log(`\n  Cites a changed file, but no changed line (${impact.nearby.length})`);
+        for (const n of impact.nearby) {
+          log(
+            `    ${n.id.slice(0, 8)}  ${n.title}${n.status === "superseded" ? "  [superseded]" : ""}` +
+              `  ${n.citationsInChangedFiles} citation(s)`,
+          );
+        }
+      }
+
+      if (impact.unexplainedFilesTotal > 0) {
+        log(`\n  Changed files no answer cites (${impact.unexplainedFilesTotal})`);
+        for (const p of impact.unexplainedFiles) log(`    ${p}`);
+        if (impact.unexplainedFilesTotal > impact.unexplainedFiles.length) {
+          log(`    … and ${impact.unexplainedFilesTotal - impact.unexplainedFiles.length} more`);
+        }
+      }
+      ctx.close();
+      return;
+    }
+
+    if (!file) {
+      ctx.close();
+      fail("give a repository-relative file, or --diff <ref>");
+    }
+
+    const impact = impactOf(ctx.store, ctx.root, file.split(sep).join("/"));
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, ...impact }, null, 2));
+      ctx.close();
+      return;
+    }
+
+    log(`${impact.path}${impact.module ? `   ${impact.module.label}` : ""}`);
+    if (impact.answers.length === 0) {
+      log("  Nobody has asked about this file. That is not the same as nothing depending on it.");
+    }
+    for (const a of impact.answers) {
+      log(
+        `  ${a.id.slice(0, 8)}  ${a.title}${a.status === "superseded" ? "  [superseded]" : ""}` +
+          `  ${a.reviewState}  ${a.lineState}`,
+      );
+      log(`            ${a.citations} citation(s) at ${a.lines.join(", ")}`);
+    }
+    if (impact.alsoInModule.length > 0) {
+      log("\n  Also cited in the same module");
+      for (const other of impact.alsoInModule) log(`    ${other.path}  ${other.answers} answer(s)`);
     }
     ctx.close();
   });

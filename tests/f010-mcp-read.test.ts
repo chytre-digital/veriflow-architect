@@ -234,6 +234,7 @@ function callsFor(answerId: string): Record<string, Record<string, unknown>> {
     get_reachability: { symbol: "POST" },
     get_project_overview: {},
     get_impact: { path: "src/app/api/bookings/refund/route.ts" },
+    get_change_impact: { ref: "HEAD" },
   };
 }
 
@@ -270,6 +271,11 @@ describe("the read MCP server's tool surface", () => {
 
   it("puts snapshot, freshness and review state on every single response", async () => {
     const { root, answerId } = fixture();
+    // `get_change_impact` needs a ref that resolves; the fixture has no commit of its own.
+    execFileSync("git", ["add", "-A"], { cwd: root });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"], {
+      cwd: root,
+    });
     const client = await connect(root);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     const calls = callsFor(answerId);

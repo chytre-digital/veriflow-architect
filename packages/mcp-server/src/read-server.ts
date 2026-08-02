@@ -4,10 +4,13 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Store } from "@veriflow/store";
 import {
+  CHANGE_IMPACT_METHOD,
   answerEnvelope,
+  changeImpact,
   fileStates,
   fitWholeAnswer,
   impactOf,
+  refExists,
   loadStoredAnswer,
   metricsForStoredAnswer,
   paginate,
@@ -224,6 +227,33 @@ export function createReadServer(options: ReadServerOptions): McpServer {
       inputSchema: { path: z.string().describe("Repository-relative path, as it appears in citations") },
     },
     async ({ path }) => projectOr(() => ({ data: impactOf(store, root, path) })),
+  );
+
+  server.registerTool(
+    "get_change_impact",
+    {
+      title: "Which flows the hunks of a change land in",
+      description:
+        "`get_impact` is per file; this is per changed line. Give it a base ref and it diffs that " +
+        "ref against the working tree, then reports the stored answers whose citations fall inside " +
+        "a changed hunk — with the step each citation belongs to. Citations are relocated into the " +
+        "working tree before being intersected, so the line numbers are where the evidence is now. " +
+        "A citation that can no longer be located is listed as `unplaceable` rather than counted as " +
+        "unaffected: 'this change does not touch that flow' and 'we could not tell' are different " +
+        "answers. Renames are followed. `unexplainedFiles` are changed files no answer cites — " +
+        "nobody has asked about them, which is not the same as nothing depending on them.",
+      inputSchema: {
+        ref: z.string().describe("A base ref: a branch, a tag, or a commit sha"),
+      },
+    },
+    async ({ ref }) => {
+      if (!refExists(root, ref)) {
+        return refuse(`"${ref}" does not resolve to a commit in this repository`);
+      }
+      return projectOr(() => ({
+        data: { method: CHANGE_IMPACT_METHOD, ...changeImpact(store, root, ref) },
+      }));
+    },
   );
 
   server.registerTool(
