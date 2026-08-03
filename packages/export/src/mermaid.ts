@@ -1,4 +1,5 @@
 import type { FlowAnswer, Lane, Step } from "@veriflow/flow-answer";
+import type { DiagramChange } from "@veriflow/diagram";
 
 /**
  * The committed document carries mermaid, not VeriFlow's own SVG. The screen diagram is better, and
@@ -31,7 +32,20 @@ export interface MermaidResult {
   participants: number;
   /** Only the kinds actually drawn, so the legend never explains an arrow that is not there. */
   legend: Array<{ kind: Step["kind"]; arrow: string; legend: string }>;
+  overlay: boolean;
 }
+
+export interface MermaidOptions {
+  stepChanges?: ReadonlyMap<string, DiagramChange>;
+  laneChanges?: ReadonlyMap<string, DiagramChange>;
+}
+
+const CHANGE_PREFIX: Record<DiagramChange, string> = {
+  added: "+ ",
+  removed: "- ",
+  moved: "~ ",
+  unchanged: "",
+};
 
 /**
  * Mermaid identifiers are not free text. The lane id is used as the participant id, so it is
@@ -77,7 +91,7 @@ function label(text: string): string {
  * it: a sequence diagram with every branch in it is a picture of nothing in particular, and the
  * document lists them underneath with the invariant each protects.
  */
-export function renderMermaid(answer: FlowAnswer): MermaidResult {
+export function renderMermaid(answer: FlowAnswer, options: MermaidOptions = {}): MermaidResult {
   const ids = identifiers(answer.lanes);
   const used = new Set<string>();
   for (const step of answer.steps) {
@@ -98,7 +112,11 @@ export function renderMermaid(answer: FlowAnswer): MermaidResult {
   const lines: string[] = ["sequenceDiagram", "    autonumber"];
   for (const lane of answer.lanes) {
     const keyword = lane.kind === "actor" ? "actor" : "participant";
-    const name = label(lane.technology ? `${lane.name} (${lane.technology})` : lane.name);
+    const change = options.laneChanges?.get(lane.id);
+    const state = change === "added" ? " [not built]" : "";
+    const name = label(
+      `${change ? CHANGE_PREFIX[change] : ""}${lane.technology ? `${lane.name} (${lane.technology})` : lane.name}${state}`,
+    );
     lines.push(`    ${keyword} ${ids.get(lane.id)} as ${name}`);
   }
 
@@ -128,7 +146,7 @@ export function renderMermaid(answer: FlowAnswer): MermaidResult {
       kinds.add(step.kind);
       lines.push(
         `    ${ids.get(step.from)}${shape.arrow}${ids.get(step.to)}: ${label(
-          `${PREFIX[step.kind] ?? ""}${step.label}`,
+          `${options.stepChanges?.get(step.id) ? CHANGE_PREFIX[options.stepChanges.get(step.id)!] : ""}${PREFIX[step.kind] ?? ""}${step.label}`,
         )}`,
       );
     }
@@ -137,6 +155,7 @@ export function renderMermaid(answer: FlowAnswer): MermaidResult {
   return {
     text: lines.join("\n"),
     participants: answer.lanes.length,
+    overlay: Boolean(options.stepChanges || options.laneChanges),
     legend: [...kinds]
       .sort()
       .map((kind) => ({ kind, arrow: ARROWS[kind].arrow, legend: ARROWS[kind].legend })),

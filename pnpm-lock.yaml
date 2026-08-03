@@ -191,6 +191,9 @@ importers:
       '@veriflow/answers':
         specifier: workspace:*
         version: link:../answers
+      '@veriflow/diagram':
+        specifier: workspace:*
+        version: link:../diagram
       '@veriflow/flow-answer':
         specifier: workspace:*
         version: link:../flow-answer

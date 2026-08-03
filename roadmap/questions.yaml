@@ -58,7 +58,9 @@ questions:
     status: deferred
     affects: [F005]
     default: "Amending is enough; an added claim would go through the same verifier and be attributed."
-    note: "The MVP needs no correction editing surface, so this can wait."
+    note: >-
+      Confirmed deferred by F014: `decide` resolves an open question as an attributed correction but
+      does not add or amend a flow step. A future correction editor must answer this explicitly.
 
   Q6:
     title: Markdown only, or markdown plus a YAML model?
@@ -71,6 +73,19 @@ questions:
     status: open
     affects: [F005]
     default: "A small inspectable rule set over question shape and matched symbols, always overridable."
+
+  Q12:
+    title: Which existing formats should be importable?
+    status: answered
+    answeredOn: "2026-08-03"
+    affects: [F012]
+    finding: >-
+      F012 does not import a second canonical model. `veriflow check-claims` reads file-and-line
+      claims directly from existing specs, issues, ADRs and architecture documents and checks them
+      against the selected tree state.
+    consequence: >-
+      Existing documents remain canonical in their own format; claim checking needs no import,
+      persisted duplicate or merge story.
 
   Q13:
     title: What is the fallback if the provider's TypeScript resolution disappoints?

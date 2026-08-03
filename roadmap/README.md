@@ -1,9 +1,10 @@
-# MVP roadmap
+# Product roadmap
 
-Ten features in three iterations. The first iteration produces, on a real repository, what the
-[frozen mockup](../artifacts/mockups/README.md) shows: a question in, a verified flow answer out,
-stored locally and browsable. The second makes that answer trustworthy over time and committable. The
-third turns the stored results into an agent surface.
+Seventeen features in five iterations. The first three iterations produce the original MVP: on a
+real repository, what the [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a
+verified flow answer out, stored locally, browsable and available to an agent. Iteration 4 assembles
+many answers into a project view. Iteration 5 closes the design loop from written claim and observed
+flow through proposal, review and a diagram of the change.
 
 Each feature is intended to fit one implementation task and carries its own acceptance and manual
 verification contract.
@@ -45,6 +46,19 @@ Iteration 3 — depth
 
 Iteration 4 — more than one answer
   F011 the project as the union of its answers
+
+Iteration 5 — design against it
+  F012 check claims in specs, issues and ADRs
+    ↓
+  F013 map changed hunks onto stored flows
+    ↓
+  F014 review answers and decide open questions
+    ↓
+  F015 propose a changed flow and compare it with observed or built
+    ↓
+  F016 index the invariants live answers assert
+    ↓
+  F017 draw the proposal as an overlay on the observed architecture
 ```
 
 The order follows the two things the MVP exists to do: **generate an application's architecture**, then
@@ -69,6 +83,12 @@ F008 and F009 depend on F005/F006 only, and can be reordered freely.
 | [F009](09-document-export.md) | Document export | Approved answers become committed markdown with generated mermaid. |
 | [F010](10-mcp-server.md) | VeriFlow MCP server | Any agent designs and reviews against stored, freshness-stamped answers. |
 | [F011](11-project-view.md) | The project as the union of its answers | Shared modules, the modules no answer reaches, and what a change to one file lands in — in the browser and over MCP. |
+| [F012](../docs/product/design-and-review-loop-plan.md) | Claim checking | Hand-written claims are checked against their cited tree state without an agent sweep. |
+| [F013](../docs/product/design-and-review-loop-plan.md) | Diff impact | Changed hunks are mapped onto the exact cited lines of stored flows. |
+| [F014](../docs/product/design-and-review-loop-plan.md) | Review and decide | A person can review an answer and settle its open questions with provenance. |
+| [F015](../docs/product/design-and-review-loop-plan.md) | Proposals and answer diff | An observed flow can become a proposal and be compared conservatively with proposed or built state. |
+| [F016](../docs/product/design-and-review-loop-plan.md) | Invariant index | Live answers' invariants are grouped with freshness and visible exclusions. |
+| [F017](../docs/product/design-and-review-loop-plan.md) | Architecture overlay | Added, removed and moved flow and module structure is drawn in one shareable view. |
 
 ## Exit gate per iteration
 
@@ -88,6 +108,11 @@ averaged, and an approved answer exists as a committed markdown document with a 
 **Iteration 4** is complete when, with several answers stored, the project screen names the modules no
 answer reaches, the shared modules name the flows that meet in them, and an agent asking what a change
 to one file affects is answered from stored citations rather than from a re-read of the code.
+
+**Iteration 5** is complete when a feature's written claims can be checked against the code they cite,
+a change to a base ref names the flows its hunks land in, a person can review an answer and decide its
+open questions, and an observed flow can produce a proposal whose changed steps and proposed modules
+are visible in one diagram before implementation begins.
 
 Automated tests run without a model, an account, or a network. Windows is the primary platform;
 F001–F003 and F005 portable tests also run on one Unix-like runner.
@@ -121,9 +146,8 @@ long-term exploration, is now in scope.
 2. ~~many answers per project~~ — **shipped as [F011](11-project-view.md)**;
 3. declared intent and expected-vs-actual, reviving the superseded catalog specs;
 4. real coverage from a test run, replacing the F008 proxy;
-5. change impact against a base ref at review time, and answer diffing across snapshots — F011
-   answers this per *file*; mapping a changed hunk in a diff onto the flows it lands in is the part
-   still missing;
+5. ~~change impact against a base ref and answer diffing across snapshots~~ — **shipped as F013 and
+   F015**;
 6. corrections and threads in the browser: both are stored and reachable over MCP, neither is
    reachable by clicking. This is F006's own scope, recorded in its `gaps`.
 

@@ -28,6 +28,7 @@ import {
   decideQuestion,
   diffAnswers,
   impactOf,
+  invariantIndex,
   kindOf,
   loadStoredAnswer,
   refExists,
@@ -999,6 +1000,47 @@ program
     ctx.close();
   });
 
+/* ------------------------------------------------------------------ invariants */
+
+program
+  .command("invariants")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("index the invariant strings asserted by standing flow answers")
+  .action((pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const index = invariantIndex(ctx.store, ctx.root);
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, ...index }, null, 2));
+      ctx.close();
+      return;
+    }
+
+    log(
+      `Invariant index — ${index.counts.invariants} invariant${index.counts.invariants === 1 ? "" : "s"}` +
+        ` · ${index.counts.assertions} assertion${index.counts.assertions === 1 ? "" : "s"}`,
+    );
+    log("Grouped stored strings only — nothing is checked, scored, or rolled up into a project state.");
+    if (index.counts.supersededAnswers > 0) {
+      log(
+        `${index.counts.supersededAnswers} superseded answer${index.counts.supersededAnswers === 1 ? "" : "s"}` +
+          ` excluded (${index.counts.supersededAssertions} assertion${index.counts.supersededAssertions === 1 ? "" : "s"}).`,
+      );
+    }
+    if (index.invariants.length === 0) log("\nNo standing answer asserts an invariant yet.");
+    for (const invariant of index.invariants) {
+      log(`\n${invariant.text}`);
+      for (const assertion of invariant.assertions) {
+        const proposed = assertion.answer.kind === "proposed" ? " [proposal]" : "";
+        log(
+          `  ${assertion.answer.id.slice(0, 8)}${proposed} · ${assertion.branch.title}` +
+            ` · ${assertion.freshness.state} (${assertion.freshness.source})`,
+        );
+      }
+    }
+    ctx.close();
+  });
+
 /* ------------------------------------------------------------------ verify */
 
 program
@@ -1604,7 +1646,7 @@ program
   .argument("<answerB>")
   .argument("[path]")
   .option("--json", "machine-readable output")
-  .description("what moved between two answers to the same question, taken at two tree states")
+  .description("compare as-is, proposed and built flow answers")
   .action(async (a: string, b: string, pathArg: string | undefined, options: { json?: boolean }) => {
     const ctx = open(pathArg);
     const load = (id: string) => {
@@ -1628,8 +1670,31 @@ program
       return;
     }
 
+    log(`${diff.pair.label} — ${diff.pair.question}`);
     log(`${diff.from.id.slice(0, 8)} ${diff.from.snapshot.commit ?? "no commit"}  →  ${diff.to.id.slice(0, 8)} ${diff.to.snapshot.commit ?? "no commit"}\n`);
-    log(`Evidence moved (${diff.movedEvidence.length})`);
+    log(`Matched steps (${diff.steps.matched.length})`);
+    for (const match of diff.steps.matched) {
+      const ids = match.from.id === match.to.id ? match.from.id : `${match.from.id} → ${match.to.id}`;
+      const changed = match.changes.length ? ` · changed: ${match.changes.join(", ")}` : "";
+      log(`  ${ids}  confidence ${match.confidence.toFixed(2)} · ${match.matchedBy.join(", ")}${changed}`);
+      if (match.from.label !== match.to.label) log(`           ${match.from.label} → ${match.to.label}`);
+    }
+    log(`\n${diff.pair.onlyFrom} (${diff.steps.onlyFrom.length})`);
+    for (const step of diff.steps.onlyFrom) log(`  ${step.id.padEnd(8)} ${step.label}`);
+    log(`${diff.pair.onlyTo} (${diff.steps.onlyTo.length})`);
+    for (const step of diff.steps.onlyTo) log(`  ${step.id.padEnd(8)} ${step.label}`);
+
+    log(`\nStructure`);
+    for (const lane of diff.structure.lanes.removed) log(`  lane -   ${lane.name} (${lane.kind})`);
+    for (const lane of diff.structure.lanes.added) log(`  lane +   ${lane.name} (${lane.kind})`);
+    for (const module of diff.structure.modules.removed) log(`  module - ${module.label} [${module.id}]`);
+    for (const module of diff.structure.modules.added) {
+      log(`  module + ${module.label} [${module.id}]${module.state === "planned" ? " — planned, does not exist yet" : ""}`);
+    }
+    for (const edge of diff.structure.moduleEdges.removed) log(`  edge -   ${edge.from} → ${edge.to} · ${edge.contract}`);
+    for (const edge of diff.structure.moduleEdges.added) log(`  edge +   ${edge.from} → ${edge.to} · ${edge.contract}`);
+
+    log(`\nEvidence moved (${diff.movedEvidence.length})`);
     for (const m of diff.movedEvidence) {
       log(`  ${m.stepId.padEnd(8)} ${m.path}:${m.fromLine} → :${m.toLine}${m.symbol ? `  ${m.symbol}` : ""}`);
     }

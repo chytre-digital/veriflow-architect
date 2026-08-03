@@ -1,5 +1,6 @@
 import {
   layoutFlow,
+  layoutOverlay,
   layoutModules,
   layoutPaths,
   renderCallMapSvg,
@@ -12,9 +13,11 @@ import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
 import { THRESHOLDS, kindOf, moduleOwning, thresholdOf, undecidedInRow, undecidedQuestions } from "@veriflow/answers";
 import type {
+  AnswerDiff,
   AnswerRow,
   CitationRow,
   Freshness,
+  InvariantIndex,
   QuestionDecision,
   SnapshotFacts,
   Verification,
@@ -270,8 +273,16 @@ svg.flow { display:block; min-width:100%; }
 .lane-external, .lane-gateway { stroke-dasharray:4 3; }
 .lane-name { font-size:11px; fill:var(--ink); font-weight:560; }
 .lane-tech { font-size:9px; fill:var(--quiet); }
+.lane-change { font-size:8px; fill:var(--ok); font-weight:700; letter-spacing:.09em; }
+.lane-head.change-added .lane { stroke:var(--ok); stroke-width:2; fill:var(--ok-soft); }
+.lane-head.change-removed .lane { stroke:var(--danger); stroke-width:1.7; stroke-dasharray:5 3; fill:var(--danger-soft); }
+.lane-head.change-removed { opacity:.72; }
 .arrow { stroke:var(--ink-2); stroke-width:1.4; }
 .head { fill:var(--ink-2); }
+.head.change-added { fill:var(--ok); }
+.head.change-removed { fill:var(--danger); }
+.head.change-moved { fill:var(--warn); }
+.head.change-unchanged { fill:var(--quiet); }
 .step-label { font-size:11.5px; fill:var(--ink); paint-order:stroke; stroke:var(--bg); stroke-width:3px;
   stroke-linejoin:round; }
 .step { cursor:pointer; }
@@ -285,6 +296,14 @@ svg.flow { display:block; min-width:100%; }
 .step.is-dim { opacity:.2; }
 .step.is-branch .arrow { stroke:var(--warn); stroke-width:1.8; }
 .step.is-branch .step-label { fill:var(--warn); font-weight:600; }
+.step.change-added .arrow { stroke:var(--ok); stroke-width:2; }
+.step.change-added .step-label { fill:var(--ok); font-weight:600; }
+.step.change-removed .arrow { stroke:var(--danger); stroke-width:1.8; stroke-dasharray:5 3; }
+.step.change-removed .step-label { fill:var(--danger); text-decoration:line-through; }
+.step.change-removed { opacity:.72; }
+.step.change-moved .arrow { stroke:var(--warn); stroke-width:2; }
+.step.change-moved .step-label { fill:var(--warn); font-weight:600; }
+.step.change-unchanged { opacity:.62; }
 .flow.tone-refused .step.is-branch .arrow { stroke:var(--danger); }
 .flow.tone-refused .step.is-branch .step-label { fill:var(--danger); }
 .flow.tone-recovered .step.is-branch .arrow { stroke:var(--accent); }
@@ -319,6 +338,10 @@ svg.modmap { display:block; }
 .mm-detail { font-size:10px; fill:var(--muted); font-family:var(--mono); }
 .mm-line { stroke:var(--ink-2); stroke-width:1.3; }
 .mm-head { fill:var(--ink-2); }
+.mm-head.change-added { fill:var(--ok); }
+.mm-head.change-removed { fill:var(--danger); }
+.mm-head.change-moved { fill:var(--warn); }
+.mm-head.change-unchanged { fill:var(--quiet); }
 /* The halo is what keeps a label readable where its corridor crosses a line running the other way.
    Corridor allocation stops labels colliding with each other; it cannot stop a vertical run passing
    underneath one, and paint-order costs nothing. */
@@ -327,6 +350,17 @@ svg.modmap { display:block; }
 .mm-edge.is-inferred .mm-line { stroke-dasharray:5 4; }
 .mm-edge.is-backward .mm-line { stroke:var(--danger); stroke-dasharray:6 4; }
 .mm-edge.is-backward .mm-label { fill:var(--danger); }
+.mm-node.change-added .mm-box { stroke:var(--ok); stroke-width:2; fill:var(--ok-soft); }
+.mm-node.change-added .mm-kind { fill:var(--ok); font-weight:700; }
+.mm-node.change-removed .mm-box { stroke:var(--danger); stroke-width:1.7; stroke-dasharray:5 3; fill:var(--danger-soft); }
+.mm-node.change-removed { opacity:.72; }
+.mm-node.change-unchanged { opacity:.72; }
+.mm-edge.change-added .mm-line { stroke:var(--ok); stroke-width:2; }
+.mm-edge.change-added .mm-label { fill:var(--ok); font-weight:600; }
+.mm-edge.change-removed .mm-line { stroke:var(--danger); stroke-width:1.8; stroke-dasharray:5 3; }
+.mm-edge.change-removed .mm-label { fill:var(--danger); text-decoration:line-through; }
+.mm-edge.change-removed { opacity:.72; }
+.mm-edge.change-unchanged { opacity:.62; }
 
 /* -------------------------------------------------------------- call map */
 svg.callmap { display:block; }
@@ -553,6 +587,7 @@ export type NavId =
   | "answers"
   | "ask"
   | "project"
+  | "invariants"
   | "architecture"
   | "callgraph"
   | "flow"
@@ -597,6 +632,7 @@ const ANSWER_VIEWS: Array<{ id: NavId; label: string; hint: string; path: (id: s
 const PROJECT_VIEWS: Array<{ id: NavId; label: string; hint: string; href: string }> = [
   { id: "answers", label: "All answers", hint: "what has been asked", href: "/" },
   { id: "project", label: "Project", hint: "what the answers add up to", href: "/project" },
+  { id: "invariants", label: "Invariants", hint: "what outcomes say they protect", href: "/invariants" },
   { id: "architecture", label: "Architecture", hint: "modules and the traffic between them", href: "/architecture" },
   { id: "callgraph", label: "Call graph", hint: "every function the doors reach", href: "/callgraph" },
 ];
@@ -605,6 +641,7 @@ const NAV_LABEL: Record<NavId, string> = {
   answers: "All answers",
   ask: "Ask",
   project: "Project",
+  invariants: "Invariants",
   architecture: "Architecture",
   callgraph: "Call graph",
   flow: "Flow",
@@ -887,6 +924,13 @@ export interface FlowPageInput {
   snapshot: SnapshotFacts;
   selectedStepId?: string;
   selectedBranchId?: string;
+  overlay?: {
+    id: string;
+    title: string;
+    answer: FlowAnswer;
+    citations: CitationRow[];
+    diff: AnswerDiff;
+  };
   /** Where this answer has been published, if anywhere. An answer that does not know cannot say. */
   exports?: Array<{ targetPath: string; revision: string; exportedAt: string }>;
 }
@@ -911,43 +955,79 @@ function variantChips(answer: FlowAnswer, id: string, selected?: string): string
 export function flowPage(input: FlowPageInput): string {
   const { answer, row, citations, freshness } = input;
 
-  const byStep = new Map<string, { total: number; verified: number }>();
-  for (const c of citations) {
-    if (c.subject_kind !== "step") continue;
-    // An intent citation is not an unverified one. Counted in the total and out of the verified
-    // count, it would draw every proposed step in the amber the diagram uses for evidence that did
-    // not check out — so a proposed step is drawn as a step with evidence, which is what it has.
-    const intent = c.line === null || c.line === undefined;
-    const entry = byStep.get(c.subject_id) ?? { total: 0, verified: 0 };
-    entry.total += 1;
-    if (c.state === "verified" || intent) entry.verified += 1;
-    byStep.set(c.subject_id, entry);
-  }
+  const evidenceMap = (rows: CitationRow[]): Map<string, { total: number; verified: number }> => {
+    const result = new Map<string, { total: number; verified: number }>();
+    for (const c of rows) {
+      if (c.subject_kind !== "step") continue;
+      // Intent evidence is neither missing nor failed: the proposal deliberately points beyond code.
+      const intent = c.line === null || c.line === undefined;
+      const entry = result.get(c.subject_id) ?? { total: 0, verified: 0 };
+      entry.total += 1;
+      if (c.state === "verified" || intent) entry.verified += 1;
+      result.set(c.subject_id, entry);
+    }
+    return result;
+  };
+  const byStep = evidenceMap(citations);
+  const layout = input.overlay
+    ? layoutOverlay(answer, input.overlay.answer, input.overlay.diff.steps, {
+        verifiedByBaseStep: byStep,
+        verifiedByProposalStep: evidenceMap(input.overlay.citations),
+      })
+    : layoutFlow(answer, {
+        verifiedByStep: byStep,
+        ...(input.selectedBranchId ? { branchId: input.selectedBranchId } : {}),
+      });
+  const svg = renderFlowSvg(
+    layout,
+    input.selectedStepId,
+    input.overlay ? { overlayId: input.overlay.id } : {},
+  );
 
-  const layout = layoutFlow(answer, {
-    verifiedByStep: byStep,
-    ...(input.selectedBranchId ? { branchId: input.selectedBranchId } : {}),
-  });
-  const svg = renderFlowSvg(layout, input.selectedStepId);
-
-  const allSteps: Step[] = [...answer.steps, ...answer.branches.flatMap((b) => b.steps)];
+  const allSteps: Step[] = input.overlay
+    ? [
+        ...input.overlay.answer.steps,
+        ...answer.steps,
+        ...answer.branches.flatMap((branch) => branch.steps),
+      ]
+    : [...answer.steps, ...answer.branches.flatMap((branch) => branch.steps)];
   const selected = allSteps.find((s) => s.id === input.selectedStepId);
+  const selectedCitations =
+    input.overlay?.answer.steps.some((step) => step.id === selected?.id) ? input.overlay.citations : citations;
+  const selectedMatch = input.overlay?.diff.steps.matched.find(
+    (match) => match.from.id === selected?.id || match.to.id === selected?.id,
+  );
+  const selectedChange = selectedMatch
+    ? selectedMatch.changes.length > 0
+      ? "moved"
+      : "unchanged"
+    : input.overlay?.diff.steps.onlyTo.some((step) => step.id === selected?.id)
+      ? "added"
+      : input.overlay?.diff.steps.onlyFrom.some((step) => step.id === selected?.id)
+        ? "removed"
+        : undefined;
 
   // The diagram names its columns after the participants; the panel describing a step off that
   // diagram cannot go back to naming them by id.
-  const laneName = new Map(answer.lanes.map((l) => [l.id, l.name]));
+  const laneName = new Map(
+    [...answer.lanes, ...(input.overlay?.answer.lanes ?? [])].map((lane) => [lane.id, lane.name]),
+  );
   const participant = (id: string): string => laneName.get(id) ?? id;
+  const selectedOverlayNote = selectedChange
+    ? `<p class="meta"><span class="pill">${esc(selectedChange)}</span>${selectedMatch ? ` paired at ${Math.round(selectedMatch.confidence * 100)}% confidence · ${esc(selectedMatch.matchedBy.join(", "))}` : " unmatched by the other answer"}</p>`
+    : "";
 
   const panel = selected
     ? `<h3>${esc(selected.label)}</h3>
        <div class="meta">${esc(participant(selected.from))} → ${esc(participant(selected.to))} · ${esc(selected.kind)}</div>
+       ${selectedOverlayNote}
        ${selected.reasoning ? `<p>${esc(selected.reasoning)}</p>` : ""}
        ${
          selected.citations.length
            ? selected.citations
                .map((c) => {
                  const intent = c.line === undefined;
-                 const hit = citations.find(
+                 const hit = selectedCitations.find(
                    (r) =>
                      r.subject_id === selected.id &&
                      r.path === c.path &&
@@ -974,15 +1054,27 @@ export function flowPage(input: FlowPageInput): string {
     : `<h3>Evidence</h3><p class="meta">Select a step to see what it is based on.</p>`;
 
   const phases = new Set(answer.steps.map((s) => s.phaseId)).size;
+  const overlayCounts = input.overlay
+    ? {
+        added: input.overlay.diff.steps.onlyTo.length,
+        removed: input.overlay.diff.steps.onlyFrom.length,
+        moved: input.overlay.diff.steps.matched.filter((match) => match.changes.length > 0).length,
+        paired: input.overlay.diff.steps.matched.length,
+      }
+    : undefined;
 
   return shell(
     input.chrome,
-    answer.title,
+    input.overlay ? `${answer.title} → ${input.overlay.title}` : answer.title,
     `<section class="screen">
        ${screenHead({
          eyebrow: "Answer",
-         title: answer.title,
-         lede: `${
+         title: input.overlay ? `${answer.title} → ${input.overlay.title}` : answer.title,
+         lede: input.overlay
+           ? `<b>Proposed overlay.</b> The stored as-is flow and “${esc(input.overlay.title)}” share one
+              stable layout. Green is added, red is removed, and amber is a paired step whose
+              semantics moved. Proposal-only participants are labelled <b>not built</b>.`
+           : `${
            kindOf(row) === "proposed"
              ? `<b>This is a proposal.</b> It describes the flow as it <i>would</i> be, not as it is —
                 steps whose evidence has no line number are code nobody has written. `
@@ -995,6 +1087,11 @@ export function flowPage(input: FlowPageInput): string {
           open it — the layout is derived from what was stored when the question was answered.`,
          actions: reviewControl(row, freshness),
          meta: `${kindPill(kindOf(row))}${ratioPill(row.verified, row.unverified, Number(row.intent ?? 0))}
+       ${
+         kindOf(row) === "proposed" && row.parent_answer_id
+           ? `<a class="pill" href="/answers/${esc(row.parent_answer_id)}?overlay=${encodeURIComponent(row.id)}" style="text-decoration:none">compare with as-is</a>`
+           : ""
+       }
        <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
        <a class="pill" href="/answers/${row.id}/paths" style="text-decoration:none">${undecidedQuestions(answer)} open</a>
        ${
@@ -1014,7 +1111,15 @@ export function flowPage(input: FlowPageInput): string {
            : ""
        }`,
        })}
-       ${variantChips(answer, row.id, input.selectedBranchId)}
+       ${input.overlay ? "" : variantChips(answer, row.id, input.selectedBranchId)}
+       ${
+         overlayCounts
+           ? `<p class="legend" style="margin:0 0 10px"><span class="pill good">+ ${overlayCounts.added} added</span>
+              <span class="pill bad">− ${overlayCounts.removed} removed</span>
+              <span class="pill warn">~ ${overlayCounts.moved} moved</span>
+              <span class="pill">${overlayCounts.paired} paired by matcher</span></p>`
+           : ""
+       }
        ${
          layout.variant
            ? `<p class="legend" style="margin:0 0 10px">Drawn from <b>${esc(layout.variant.forkLabel)}</b>.
@@ -1023,7 +1128,11 @@ export function flowPage(input: FlowPageInput): string {
        }
        <div class="split">
        <div><div class="scroll">${svg}</div>
-         <p class="legend">Dotted arrow: no citation. Amber label: at least one citation did not verify.
+         <p class="legend">${
+           input.overlay
+             ? "Green: added. Red: removed. Amber: moved. Grey: unchanged. “Not built” marks a proposal-only participant. "
+             : ""
+         }Dotted arrow: no citation. Amber evidence label: at least one citation did not verify.
          Click a step for its evidence.</p></div>
        <aside>${panel}</aside>
      </div></section>`,
@@ -1299,14 +1408,75 @@ function moduleNodes(answer: FlowAnswer, modules: ModuleRow[]): Parameters<typeo
   });
 }
 
+function allModuleNodes(answer: FlowAnswer, modules: ModuleRow[]): Parameters<typeof layoutModules>[0] {
+  const nodes = moduleNodes(answer, modules);
+  const seen = new Set(nodes.map((node) => node.id));
+  for (const lane of answer.lanes.filter((candidate) => candidate.kind === "module")) {
+    const id = lane.moduleId ?? lane.id;
+    if (seen.has(id) || seen.has(lane.id)) continue;
+    seen.add(id);
+    nodes.push({
+      id,
+      label: lane.name,
+      kind: lane.kind,
+      detail: lane.plannedPath ?? lane.moduleId ?? lane.id,
+    });
+  }
+  return nodes;
+}
+
+function moduleOverlayModel(
+  base: FlowAnswer,
+  proposal: FlowAnswer,
+  baseModules: ModuleRow[],
+  proposalModules: ModuleRow[],
+): {
+  nodes: Parameters<typeof layoutModules>[0];
+  edges: Parameters<typeof layoutModules>[1];
+} {
+  const oldNodes = new Map(allModuleNodes(base, baseModules).map((node) => [node.id, node]));
+  const newNodes = new Map(allModuleNodes(proposal, proposalModules).map((node) => [node.id, node]));
+  const nodeIds = [...oldNodes.keys(), ...[...newNodes.keys()].filter((id) => !oldNodes.has(id))];
+  const nodes = nodeIds.map((id) => {
+    const before = oldNodes.get(id);
+    const after = newNodes.get(id);
+    const source = after ?? before!;
+    return {
+      ...source,
+      change: before && after ? ("unchanged" as const) : after ? ("added" as const) : ("removed" as const),
+      ...(after && !before ? { notBuilt: true } : {}),
+    };
+  });
+
+  const keyOf = (edge: FlowAnswer["moduleEdges"][number]): string =>
+    `${edge.from}>${edge.to}:${edge.kind}:${edge.contract.trim().toLocaleLowerCase("en")}`;
+  const oldEdges = new Map(base.moduleEdges.map((edge) => [keyOf(edge), edge]));
+  const newEdges = new Map(proposal.moduleEdges.map((edge) => [keyOf(edge), edge]));
+  const edgeKeys = [...oldEdges.keys(), ...[...newEdges.keys()].filter((key) => !oldEdges.has(key))];
+  const edges = edgeKeys.map((key) => {
+    const before = oldEdges.get(key);
+    const after = newEdges.get(key);
+    const source = after ?? before!;
+    return {
+      ...source,
+      change: before && after ? ("unchanged" as const) : after ? ("added" as const) : ("removed" as const),
+    };
+  });
+  return { nodes, edges };
+}
+
 export function modulesPage(
   chrome: Chrome,
   answer: FlowAnswer,
   row: AnswerRow,
   modules: ModuleRow[] = [],
+  overlay?: { id: string; title: string; answer: FlowAnswer; modules: ModuleRow[] },
 ): string {
-  const nodes = moduleNodes(answer, modules);
-  const layout = layoutModules(nodes, answer.moduleEdges);
+  const model = overlay
+    ? moduleOverlayModel(answer, overlay.answer, modules, overlay.modules)
+    : { nodes: moduleNodes(answer, modules), edges: answer.moduleEdges };
+  const nodes = model.nodes;
+  const layout = layoutModules(nodes, model.edges);
   const svg = renderModulesSvg(layout);
   const backward = layout.edges.filter((e) => e.backward);
 
@@ -1350,15 +1520,18 @@ export function modulesPage(
 
   return shell(
     chrome,
-    `${answer.title} — modules`,
+    `${overlay ? `${answer.title} → ${overlay.title}` : answer.title} — modules`,
     `<section class="screen">
        ${screenHead({
          eyebrow: "Modules",
-         title: "Who takes part, and what may cross",
-         lede: `The participants this answer declared, with the contract written on every edge. A dashed
-           edge is inferred rather than proven, and it says which rule inferred it.`,
+         title: overlay ? `${answer.title} → ${overlay.title}` : "Who takes part, and what may cross",
+         lede: overlay
+           ? `One module map for the as-is answer and its proposal. Green participants and contracts are
+              added, red ones are removed, and proposal-only modules are explicitly marked not built.`
+           : `The participants this answer declared, with the contract written on every edge. A dashed
+              edge is inferred rather than proven, and it says which rule inferred it.`,
          meta: `<span class="pill">${layout.nodes.length} participant${layout.nodes.length === 1 ? "" : "s"}</span>
-       <span class="pill">${answer.moduleEdges.length} edge${answer.moduleEdges.length === 1 ? "" : "s"} with a contract</span>
+       <span class="pill">${layout.edges.length} edge${layout.edges.length === 1 ? "" : "s"} with a contract</span>
        <span class="pill">${answer.externalSystems.length} external system${answer.externalSystems.length === 1 ? "" : "s"}</span>
        ${
          backward.length
@@ -1367,7 +1540,9 @@ export function modulesPage(
        }`,
        })}
        <div class="scroll">${svg}</div>
-       <p class="legend">Layers come from the dependency direction. A red dashed edge on the right runs
+       <p class="legend">${
+         overlay ? "Green: added. Red: removed. Grey: unchanged. “Not built” is proposal-only. " : ""
+       }Layers come from the dependency direction. A red dashed edge on the right runs
        back up a layer. A dashed edge is inferred, not proven. Hover any edge for the full contract.</p>
        <div style="max-width:1000px">
          <h2 class="section">What crosses each module edge</h2>${edges}
@@ -2052,6 +2227,68 @@ export function projectPage(input: ProjectPageInput): string {
 
        <h2 class="section">Open questions across every flow</h2>${questions}
      </section>`,
+  );
+}
+
+export interface InvariantsPageInput {
+  chrome: Chrome;
+  index: InvariantIndex;
+}
+
+/** The stored invariant strings, with provenance; an index rather than a findings screen. */
+export function invariantsPage(input: InvariantsPageInput): string {
+  const { counts, invariants } = input.index;
+  const cards = invariants.length
+    ? `<div class="list">${invariants
+        .map(
+          (invariant) => `<div class="card"><h2>${esc(invariant.text)}</h2>
+            <div class="meta">${invariant.assertions.length} assertion${
+              invariant.assertions.length === 1 ? "" : "s"
+            } · grouped as <code>${esc(invariant.normalizedText)}</code></div>
+            <div style="margin-top:10px">${invariant.assertions
+              .map(
+                (assertion) => `<div class="ev">
+                  <a href="/answers/${esc(assertion.answer.id)}">${esc(assertion.answer.title)}</a>
+                  ${assertion.answer.kind === "proposed" ? `<span class="pill warn">proposal</span>` : ""}
+                  ${assertion.answer.reviewState === "reviewed" ? `<span class="pill good">reviewed</span>` : `<span class="pill">unreviewed</span>`}
+                  ${freshnessPill(assertion.freshness)}
+                  <div class="why">${esc(assertion.branch.title)} · ${esc(assertion.branch.tone)} · branch <code>${esc(
+                    assertion.branch.id,
+                  )}</code></div>
+                </div>`,
+              )
+              .join("")}</div>
+          </div>`,
+        )
+        .join("")}</div>`
+    : `<p class="meta">No standing answer asserts an invariant yet.</p>`;
+
+  return shell(
+    input.chrome,
+    "Invariants",
+    `<section class="screen">
+      ${screenHead({
+        eyebrow: "Project",
+        title: "Invariants named across flows",
+        lede: `${counts.assertions} branch assertion${counts.assertions === 1 ? "" : "s"} grouped into
+          ${counts.invariants} stored invariant${counts.invariants === 1 ? "" : "s"} across
+          ${counts.answersWithInvariants} standing answer${counts.answersWithInvariants === 1 ? "" : "s"}.`,
+      })}
+      <div class="tally">
+        <div><b>${counts.invariants}</b><span>normalized invariant${counts.invariants === 1 ? "" : "s"}</span></div>
+        <div><b>${counts.assertions}</b><span>branch assertion${counts.assertions === 1 ? "" : "s"}</span></div>
+        <div><b>${counts.answersWithInvariants}</b><span>standing answer${counts.answersWithInvariants === 1 ? "" : "s"}</span></div>
+        <div><b>${counts.supersededAnswers}</b><span>superseded answer${counts.supersededAnswers === 1 ? "" : "s"} excluded</span></div>
+      </div>
+      <p class="meta" style="max-width:760px;margin:0 0 22px">This is an index over stored strings.
+        VeriFlow does not check them against code, score them, or combine their freshness into a
+        project state. Freshness stays beside the answer that made each assertion.${
+          counts.supersededAssertions
+            ? ` The excluded answers carried ${counts.supersededAssertions} assertion${counts.supersededAssertions === 1 ? "" : "s"}.`
+            : ""
+        }</p>
+      ${cards}
+    </section>`,
   );
 }
 

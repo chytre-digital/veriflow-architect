@@ -1,13 +1,13 @@
 ---
-status: proposal
+status: shipped
 owner: TODO
-last-reviewed: 2026-08-02
+last-reviewed: 2026-08-03
 ---
 
 # Implementation plan — the design and review half
 
-> Sequences [design-and-review-loop.md](design-and-review-loop.md) into seven work packages.
-> Nothing here is in `roadmap.yaml` yet; §9 says exactly what promoting it would cost.
+> Sequences [design-and-review-loop.md](design-and-review-loop.md) into eight work packages.
+> The packages are shipped as milestone M5 in `roadmap.yaml`; §9 records the promotion cost.
 >
 > The order is not the proposal's order. Three of its six gaps are cheaper than it estimates, one
 > is built on a mechanism that does not exist, and the schema migration it mentions in a single
@@ -623,8 +623,9 @@ attribution is the only thing this feature stores that the answer body does not.
 > CLI list marks the proposal and prints `1/1 verified - 1 intent`, `verify` reports the intent
 > citation outside the totals rather than as a missing one, `impact` on the planned path says *this
 > proposal would put code here* instead of *stale*, `metrics` measures the one file that exists, and
-> the exported document opens with **This is a proposal, not a description.** `veriflow diff` between
-> the two runs without WP7a and reports nothing, which is the honest answer until the matcher exists.
+> the exported document opens with **This is a proposal, not a description.** At WP6 ship time,
+> `veriflow diff` between the two runs had no matcher and therefore reported nothing; WP7a below now
+> supplies that comparison.
 
 **Ships.** `veriflow propose <answerId> "<what should change>"` — an F004 session seeded with the
 parent answer, producing a second answer with `kind = 'proposed'`, whose citations may be `intent`:
@@ -809,9 +810,15 @@ template does with a citation that has no line.
 
 ---
 
-## 8 · WP7 — the answer diff, and the invariant index
+## 8 · WP7 — the answer diff, and the invariant index · **shipped**
 
-### 7a · the answer diff, in both directions
+### 7a · the answer diff, in both directions · **shipped**
+
+> Built on 2026-08-03: the conservative step matcher and the shared diff in
+> `packages/answers/src/answer-diff.ts`, the pair-aware terminal and JSON output on `veriflow diff`,
+> and `tests/f015-answer-diff.test.ts` — 4 focused cases, whole suite 532 green, typecheck clean. The
+> matcher leaves close alternatives unmatched instead of presenting a guessed pairing as fact; no
+> schema change was needed.
 
 **Two pairs, not one.** The first draft of this section specced only *proposal versus built* — the
 backward-looking question, *did we build what we planned?* The forward-looking one is the pair that
@@ -824,15 +831,14 @@ gets used far more often, and it is stage 6 of the proposal's own design loop:
 | as-is → built | what actually changed | after, without a proposal |
 
 All three are the same computation. `veriflow diff <a> <b>` already takes two answer ids
-(`apps/cli/src/main.ts:1327`); what this package adds is that the pair may now be an observation and
+(`apps/cli/src/main.ts:1603`); what this package adds is that the pair may now be an observation and
 a proposal, and that the output is framed by which pair it is.
 
-**The matcher is the work.** The proposal calls this "`diffAnswers` unchanged, given a proposal as
-the left-hand side". It is not, and the reason is one line: `diffAnswers` pairs steps by identity,
-`before.get(id)` / `after.get(id)`, at `packages/answers/src/verification.ts:413-425`. That is
+**The matcher is the work.** The proposal called this "`diffAnswers` unchanged, given a proposal as
+the left-hand side". It was not: before WP7a, `diffAnswers` paired steps only by identity. That was
 correct for its designed subject — the same question re-answered by `ask --supersedes`, where step
-ids carry over. Two independent runs share no step ids, so every step would report as lost and every
-step as gained.
+ids carry over. Two independent runs share no step ids, so every step would have reported as lost
+and every step as gained.
 
 So 7a is a **step matcher**, and the diff behind it is genuinely reused. Matching on lane, phase
 ordinal, position and label similarity, with the pairing shown and its confidence stated, because a
@@ -846,7 +852,13 @@ the architectural summary of a feature before anyone writes a task for it.
 
 Needs WP6. ~300 lines and its own tests over hand-built pairs.
 
-### 7b · `veriflow invariants` and `get_invariants`
+### 7b · `veriflow invariants` and `get_invariants` · **shipped**
+
+> Built on 2026-08-03: `packages/answers/src/invariants.ts`, `veriflow invariants` in text and JSON
+> forms, the paged read-only `get_invariants` MCP tool, and `/invariants` in the project navigation.
+> `tests/f016-invariants.test.ts` covers normalization without semantic guessing, per-assertion
+> freshness, visible exclusions, MCP, CLI and browser — 5 cases, whole suite 537 green, typecheck
+> clean. No schema change was needed.
 
 Read-only, no schema, and independent of everything above — it could ship any time WP1–WP3 could. It
 is placed last for the reason §6 G6 gives: it is the item most likely to drift toward the findings
@@ -858,7 +870,8 @@ return the answers and branches asserting each, with each one's freshness. No ch
 health number — §10, kept. `main-panel/docs/architecture/invariants.md` is the hand-written version
 of the same idea and is the obvious thing to compare the output against on day one.
 
-~150 lines, `packages/answers/src/invariants.ts`, one MCP tool, one page.
+Built as one shared read model, one MCP tool and one project page; every surface reads the same
+grouping and exclusion counts.
 
 ### Acceptance (both)
 
@@ -874,11 +887,18 @@ of the same idea and is the obvious thing to compare the output against on day o
 
 ---
 
-## 9 · WP8 — the diff drawn on the diagram
+## 9 · WP8 — the diff drawn on the diagram · **shipped**
+
+> Built on 2026-08-03: a pure shortest-common-supersequence overlay in `@veriflow/diagram`, coloured
+> flow and module-map states, shareable `/answers/:id?overlay=<proposalId>` and
+> `/answers/:id/modules?overlay=<proposalId>` views, and automatic parent overlays in proposal
+> exports. `tests/f017-overlay.test.ts` covers the four change states, proposal-only lanes/modules,
+> determinism, self-overlay, both browser routes, and Mermaid's textual fallback — 6 focused cases,
+> whole suite 543 green, typecheck clean.
 
 **Ships.** The as-is flow diagram with the proposed change drawn onto it: steps added, steps removed,
 steps whose evidence moved, lanes and modules that do not exist yet — one picture instead of two
-pictures and a list. `veriflow open` gains `/flow/:id?overlay=<proposalId>`, `renderFlowSvg` gains
+pictures and a list. `veriflow open` gains `/answers/:id?overlay=<proposalId>`, `renderFlowSvg` gains
 the change states, and `veriflow export --doc` marks changes in the generated mermaid.
 
 This is the package that answers the question as it is usually asked — *analyse the current flow,
@@ -923,7 +943,7 @@ it is giving you.
 |---|---|
 | `packages/diagram/src/index.ts` | `change` on `Arrow` and `LaneBox`; `layoutOverlay`; `renderFlowSvg` styling |
 | `packages/diagram/src/modules.ts` | proposed nodes and proposed edges on the module map |
-| `packages/export/src/mermaid.ts` | change prefixes and a legend, with the limitation stated |
+| `packages/export/src/{mermaid,markdown,index}.ts` | change prefixes, legend, limitation, automatic parent lookup |
 | `apps/server/src/views.ts` | `?overlay=<proposalId>`, the legend, the pairing confidence |
 | `tests/f017-overlay.test.ts` | new |
 
@@ -950,10 +970,11 @@ it is giving you.
 
 ---
 
-## 10 · Promoting this to the roadmap
+## 10 · Promoted to the roadmap · **shipped**
 
-The eight packages map onto six features and one amendment. Nothing below exists in `roadmap.yaml`
-yet, and adding it is the commitment step, not part of the plan.
+The eight packages map onto six features and one amendment. On 2026-08-03 the commitment step added
+`M5-design` and F012–F017 to `roadmap.yaml`; the plan and the machine-readable roadmap now describe
+the same shipped work.
 
 | WP | Roadmap identity |
 |---|---|

@@ -5,7 +5,9 @@ import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import {
   decisionsOf,
+  diffAnswers,
   impactOf,
+  invariantIndex,
   loadStoredAnswer,
   metricsForStoredAnswer,
   projectView,
@@ -28,6 +30,7 @@ import {
   architecturePage,
   askPage,
   impactPage,
+  invariantsPage,
   projectPage,
   flowPage,
   freshnessPage,
@@ -285,6 +288,11 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));
       if (!found) return c.html(notice(store, "modules", "Not found", "No such answer."), 404);
+      const overlayId = c.req.query("overlay");
+      const overlay = overlayId ? loadAnswer(store, root, overlayId) : undefined;
+      if (overlayId && !overlay) {
+        return c.html(notice(store, "modules", "Overlay not found", "The requested overlay answer does not exist."), 404);
+      }
       // Labels for the drawing come from the registry of the snapshot the answer was made against,
       // so a module renamed since then still shows the name it had when the claim was made.
       const modules = store.readModules(found.row.snapshot_id) as unknown as ModuleRow[];
@@ -294,6 +302,14 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
           found.answer,
           found.row,
           modules,
+          overlay
+            ? {
+                id: overlay.row.id,
+                title: overlay.answer.title,
+                answer: overlay.answer,
+                modules: store.readModules(overlay.row.snapshot_id) as unknown as ModuleRow[],
+              }
+            : undefined,
         ),
       );
     }),
@@ -303,12 +319,45 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));
       if (!found) return c.html(notice(store, "flow", "Not found", "No such answer."), 404);
+      const overlayId = c.req.query("overlay");
+      const overlay = overlayId ? loadAnswer(store, root, overlayId) : undefined;
+      if (overlayId && !overlay) {
+        return c.html(
+          notice(store, "flow", "Overlay not found", "The requested overlay answer does not exist."),
+          404,
+        );
+      }
       return c.html(
         flowPage({
           chrome: chromeOf(store, "flow", { id: found.row.id, title: found.answer.title }),
           ...found,
           selectedStepId: c.req.query("step"),
-          selectedBranchId: c.req.query("branch"),
+          ...(!overlay ? { selectedBranchId: c.req.query("branch") } : {}),
+          ...(overlay
+            ? {
+                overlay: {
+                  id: overlay.row.id,
+                  title: overlay.answer.title,
+                  answer: overlay.answer,
+                  citations: overlay.citations,
+                  diff: diffAnswers(
+                    store,
+                    {
+                      id: found.row.id,
+                      title: found.answer.title,
+                      snapshotId: found.row.snapshot_id,
+                      answer: found.answer,
+                    },
+                    {
+                      id: overlay.row.id,
+                      title: overlay.answer.title,
+                      snapshotId: overlay.row.snapshot_id,
+                      answer: overlay.answer,
+                    },
+                  ),
+                },
+              }
+            : {}),
           exports: store.listExports(found.row.id).map((e) => ({
             targetPath: String(e["target_path"]),
             revision: String(e["revision"]),
@@ -445,6 +494,17 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       }
       return c.html(projectPage({ chrome: chromeOf(store, "project"), project: projectName, view }));
     }),
+  );
+
+  app.get("/invariants", (c) =>
+    withStore((store) =>
+      c.html(
+        invariantsPage({
+          chrome: chromeOf(store, "invariants"),
+          index: invariantIndex(store, root),
+        }),
+      ),
+    ),
   );
 
   app.get("/impact", (c) =>

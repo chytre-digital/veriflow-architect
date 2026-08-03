@@ -264,7 +264,7 @@ rather than assume, and a client upgrade must not silently degrade a run to unpa
 Open: which minimum client versions VeriFlow claims to support, and whether an unsupported version blocks
 the run or falls back with a warning.
 
-### Q5 — May a correction add a step, or only amend one?
+### Q5 — May a correction add a step, or only amend one? — **confirmed deferred by F014**
 
 Corrections are an attributed layer ([D13](#d13--human-corrections-are-an-attributed-layer-and-are-not-mvp-critical)),
 but their reach is deliberately unanswered, because the MVP does not need the editing surface at all.
@@ -273,9 +273,9 @@ but their reach is deliberately unanswered, because the MVP does not need the ed
 through the same verifier as an agent claim and is attributed to its human author — which makes this a
 smaller question than it looks.
 
-**Why it can wait:** in the MVP an agent that lacks evidence has tools to go and find it, and records an
-open question when it genuinely cannot. The hole a manual "add step" would fill should be rare, and if it
-turns out not to be, that is information about the agent's toolset rather than about the editor.
+F014's `decide` verb settles an open question as an attributed correction and deliberately does not
+rewrite or add a flow step. The future correction editor still has to decide how far a human edit may
+reach; M5 neither guesses nor silently expands that boundary.
 
 ### Q6 — Does an approved answer also get a machine-readable file in the repository?
 
@@ -324,10 +324,11 @@ languages. Nothing in VeriFlow's own contracts is TypeScript-specific, and it mu
 `main-panel` currently holds ignored `.veriflow/.env.local` and `.veriflow/cli.ts`; VeriFlow must never read,
 expose, move, delete, or unignore either.
 
-### Q12 — Which existing formats should be importable?
+### Q12 — Which existing formats should be importable? — **answered 2026-08-03 by F012**
 
-**Working default:** none in the MVP. Later candidates are the target's existing `docs/architecture` drafts
-as evidence, and its `specs/` content as scenarios once a specification slice exists.
+No import is needed for the first useful integration. `veriflow check-claims` reads claims directly
+from existing specs, issues, ADRs and architecture documents and checks their anchors against the tree.
+Those documents remain canonical in their own formats; VeriFlow stores no duplicate document model.
 
 ### Q13 — What is the fallback if the provider's TypeScript resolution disappoints? — **answered 2026-07-30, no fallback needed**
 
@@ -367,7 +368,7 @@ contribute the flag upstream and depend on that version.
 Q14 read graph.db directly for call-site lines, or ship without them?   <- blocks F003 bucketing
 Q3  explicit incremental update, or the provider's watch daemon?
 Q4  minimum supported client versions, and block or warn?
-Q5  may a correction add a step, or only amend an existing one?         (deferred)
+Q5  may a correction add a step, or only amend an existing one?         (confirmed deferred by F014)
 Q6  markdown only, or markdown plus a YAML model?
 Q8  how strict is the flow/location classifier, and does it rewrite the question?
 ```

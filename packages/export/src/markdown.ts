@@ -1,6 +1,7 @@
 import type { Freshness, QuestionDecision, SnapshotFacts, StoredCitation } from "@veriflow/answers";
 import type { AnswerKind, FlowAnswer } from "@veriflow/flow-answer";
 import { proposedModulesOf } from "@veriflow/flow-answer";
+import { buildFlowOverlay, type OverlayMatching } from "@veriflow/diagram";
 import { renderMermaid } from "./mermaid.js";
 
 /**
@@ -27,6 +28,8 @@ export interface DocumentInput {
   frontmatter: Record<string, string>;
   /** What the reader should run to check this document against the code. */
   command?: string;
+  /** The observed parent and matcher output when a proposal should be reviewed as one overlay. */
+  overlay?: { base: FlowAnswer; matching: OverlayMatching };
 }
 
 export interface Document {
@@ -43,7 +46,13 @@ const FRESHNESS_RULE: Record<string, string> = {
 
 export function renderDocument(input: DocumentInput): Document {
   const { answer } = input;
-  const diagram = renderMermaid(answer);
+  const overlay = input.overlay ? buildFlowOverlay(input.overlay.base, answer, input.overlay.matching) : undefined;
+  const diagram = overlay
+    ? renderMermaid(overlay.answer, {
+        stepChanges: overlay.stepChanges,
+        laneChanges: overlay.laneChanges,
+      })
+    : renderMermaid(answer);
   const out: string[] = [];
 
   /* ----------------------------------------------------------- frontmatter */
@@ -116,6 +125,20 @@ export function renderDocument(input: DocumentInput): Document {
 
   out.push("## The flow", "");
   out.push("```mermaid", diagram.text, "```", "");
+  if (diagram.overlay) {
+    out.push(
+      "> Mermaid cannot carry VeriFlow's overlay colours. Text markers preserve the change meaning:",
+      "> `+` added, `-` removed, `~` moved; unchanged labels have no prefix. `[not built]` marks a proposal-only participant.",
+      "",
+      "| marker | change |",
+      "|---|---|",
+      "| `+` | added by the proposal |",
+      "| `-` | removed by the proposal |",
+      "| `~` | paired by the matcher, but changed |",
+      "| *(none)* | unchanged |",
+      "",
+    );
+  }
   if (diagram.legend.length > 0) {
     out.push("| arrow | meaning |", "|---|---|");
     for (const item of diagram.legend) out.push(`| \`${item.arrow}\` | ${item.legend} |`);

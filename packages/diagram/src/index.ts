@@ -6,6 +6,27 @@ import type { Branch, FlowAnswer, Lane, Step } from "@veriflow/flow-answer";
 import type { LabelBox } from "./modules.js";
 import { blockWidth, fitText, wrapText } from "./text.js";
 
+export type DiagramChange = "added" | "removed" | "moved" | "unchanged";
+
+/** Matcher output consumed by the diagram package without depending on storage or answer services. */
+export interface OverlayMatching {
+  matched: ReadonlyArray<{
+    from: { id: string };
+    to: { id: string };
+    changes: ReadonlyArray<string>;
+  }>;
+  onlyFrom: ReadonlyArray<{ id: string }>;
+  onlyTo: ReadonlyArray<{ id: string }>;
+}
+
+/** A union answer plus the provenance needed by every overlay renderer. */
+export interface FlowOverlay {
+  answer: FlowAnswer;
+  stepChanges: ReadonlyMap<string, DiagramChange>;
+  laneChanges: ReadonlyMap<string, DiagramChange>;
+  stepIdentity: ReadonlyMap<string, { displayId: string; fromId?: string; toId?: string }>;
+}
+
 /**
  * A deterministic sequence-diagram layout, computed as data before anything is drawn.
  *
@@ -24,6 +45,9 @@ export interface LaneBox {
   headerY: number;
   width: number;
   height: number;
+  change?: DiagramChange;
+  /** A proposal-only participant: intentionally visible even though no code exists for it yet. */
+  notBuilt?: boolean;
 }
 
 export interface PhaseBand {
@@ -61,6 +85,9 @@ export interface Arrow {
   branch: boolean;
   /** A happy-path step the selected variant never reaches — drawn, but faded. */
   dimmed: boolean;
+  change?: DiagramChange;
+  fromStepId?: string;
+  toStepId?: string;
 }
 
 export interface VariantHeader {
@@ -94,6 +121,13 @@ export interface LayoutOptions {
   verifiedByStep?: Map<string, { total: number; verified: number }>;
   /** Draw this alternative outcome against the steps that still ran. Omit for the happy path. */
   branchId?: string;
+  /** Overlay diagrams keep proposal-only participants visible even before a step uses them. */
+  includeUnusedLanes?: boolean;
+}
+
+export interface OverlayLayoutOptions extends Omit<LayoutOptions, "verifiedByStep" | "branchId"> {
+  verifiedByBaseStep?: Map<string, { total: number; verified: number }>;
+  verifiedByProposalStep?: Map<string, { total: number; verified: number }>;
 }
 
 const DEFAULTS = {
@@ -157,6 +191,208 @@ function placeSteps(answer: FlowAnswer, branch: Branch | undefined): Placed[] {
   return placed;
 }
 
+const overlayKey = (value: string): string =>
+  value
+    .normalize("NFKD")
+    .toLocaleLowerCase("en")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+function laneIdentity(lane: Lane): string {
+  if (lane.moduleId) return `module:${lane.moduleId}`;
+  if (lane.plannedPath) return `path:${overlayKey(lane.plannedPath)}`;
+  return `${lane.kind}:${overlayKey(lane.name) || overlayKey(lane.id)}`;
+}
+
+/**
+ * Builds the shortest common supersequence of the two matched step streams. Both original orders are
+ * preserved where their matched order agrees, so removed arrows are not sorted away from their
+ * context. Crossed matches cannot preserve both orders; they are emitted once, deterministically.
+ */
+function mergeStepTokens(base: string[], proposal: string[]): string[] {
+  const rows = base.length + 1;
+  const cols = proposal.length + 1;
+  const lcs = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
+  for (let i = base.length - 1; i >= 0; i -= 1) {
+    for (let j = proposal.length - 1; j >= 0; j -= 1) {
+      lcs[i]![j] =
+        base[i] === proposal[j]
+          ? 1 + lcs[i + 1]![j + 1]!
+          : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+    }
+  }
+  const merged: string[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < base.length || j < proposal.length) {
+    if (i >= base.length) merged.push(proposal[j++]!);
+    else if (j >= proposal.length) merged.push(base[i++]!);
+    else if (base[i] === proposal[j]) {
+      merged.push(base[i++]!);
+      j += 1;
+    } else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) merged.push(base[i++]!);
+    else merged.push(proposal[j++]!);
+  }
+  const seen = new Set<string>();
+  return merged.filter((token) => {
+    if (seen.has(token)) return false;
+    seen.add(token);
+    return true;
+  });
+}
+
+/** Creates the shared union model used by SVG and non-colour exports. */
+export function buildFlowOverlay(
+  base: FlowAnswer,
+  proposal: FlowAnswer,
+  matching: OverlayMatching,
+): FlowOverlay {
+  // Lane identity can deliberately repeat: two participants may live in one module. Pair one to one
+  // (preferring a stable id and then a stable name) instead of collapsing them in a Map.
+  const remainingProposal = new Set(proposal.lanes.map((_, index) => index));
+  const lanePairs: Array<{ from?: Lane; to?: Lane }> = base.lanes.map((from) => {
+    const candidates = [...remainingProposal]
+      .filter((index) => laneIdentity(proposal.lanes[index]!) === laneIdentity(from))
+      .sort((left, right) => {
+        const a = proposal.lanes[left]!;
+        const b = proposal.lanes[right]!;
+        const score = (lane: Lane): number => (lane.id === from.id ? 2 : 0) + (lane.name === from.name ? 1 : 0);
+        return score(b) - score(a) || left - right;
+      });
+    const index = candidates[0];
+    if (index === undefined) return { from };
+    remainingProposal.delete(index);
+    return { from, to: proposal.lanes[index]! };
+  });
+  for (const index of remainingProposal) lanePairs.push({ to: proposal.lanes[index]! });
+  const laneChanges = new Map<string, DiagramChange>();
+  const baseLaneIds = new Map<string, string>();
+  const proposalLaneIds = new Map<string, string>();
+  const lanes: Lane[] = lanePairs.map(({ from, to }, index) => {
+    const id = `overlay-lane-${index + 1}`;
+    if (from) baseLaneIds.set(from.id, id);
+    if (to) proposalLaneIds.set(to.id, id);
+    laneChanges.set(id, from && to ? "unchanged" : to ? "added" : "removed");
+    const source = to ?? from!;
+    return { ...source, id };
+  });
+
+  const baseSteps = new Map(base.steps.map((step) => [step.id, step]));
+  const proposalSteps = new Map(proposal.steps.map((step) => [step.id, step]));
+  const relevantMatches = matching.matched.filter(
+    (match) => baseSteps.has(match.from.id) && proposalSteps.has(match.to.id),
+  );
+  const matchByBase = new Map(relevantMatches.map((match, index) => [match.from.id, { match, index }]));
+  const matchByProposal = new Map(relevantMatches.map((match, index) => [match.to.id, { match, index }]));
+  const baseTokens = base.steps.map((step, index) => {
+    const paired = matchByBase.get(step.id);
+    return paired ? `match:${paired.index}` : `base:${index}`;
+  });
+  const proposalTokens = proposal.steps.map((step, index) => {
+    const paired = matchByProposal.get(step.id);
+    return paired ? `match:${paired.index}` : `proposal:${index}`;
+  });
+
+  const phaseOrdinals = new Map<string, number>();
+  for (const phase of base.phases) phaseOrdinals.set(`base:${phase.id}`, phase.ordinal);
+  for (const phase of proposal.phases) phaseOrdinals.set(`proposal:${phase.id}`, phase.ordinal);
+  const phaseCount = Math.max(base.phases.length, proposal.phases.length, 1);
+  const phases = Array.from({ length: phaseCount }, (_, ordinal) => ({
+    id: `overlay-phase-${ordinal}`,
+    title:
+      proposal.phases.find((phase) => phase.ordinal === ordinal)?.title ??
+      base.phases.find((phase) => phase.ordinal === ordinal)?.title ??
+      `Phase ${ordinal + 1}`,
+    ordinal,
+  }));
+
+  const stepChanges = new Map<string, DiagramChange>();
+  const stepIdentity = new Map<string, { displayId: string; fromId?: string; toId?: string }>();
+  const steps: Step[] = mergeStepTokens(baseTokens, proposalTokens).map((token, index) => {
+    let source: Step;
+    let fromId: string | undefined;
+    let toId: string | undefined;
+    let change: DiagramChange;
+    let proposalSide = false;
+    if (token.startsWith("match:")) {
+      const match = relevantMatches[Number(token.slice(6))]!;
+      source = proposalSteps.get(match.to.id)!;
+      fromId = match.from.id;
+      toId = match.to.id;
+      change = match.changes.length > 0 ? "moved" : "unchanged";
+      proposalSide = true;
+    } else if (token.startsWith("proposal:")) {
+      source = proposal.steps[Number(token.slice(9))]!;
+      toId = source.id;
+      change = "added";
+      proposalSide = true;
+    } else {
+      source = base.steps[Number(token.slice(5))]!;
+      fromId = source.id;
+      change = "removed";
+    }
+    const id = `overlay-step-${index + 1}`;
+    const ordinal =
+      phaseOrdinals.get(`${proposalSide ? "proposal" : "base"}:${source.phaseId}`) ?? 0;
+    stepChanges.set(id, change);
+    stepIdentity.set(id, {
+      displayId: toId ?? fromId ?? source.id,
+      ...(fromId ? { fromId } : {}),
+      ...(toId ? { toId } : {}),
+    });
+    return {
+      ...source,
+      id,
+      phaseId: `overlay-phase-${Math.min(ordinal, phaseCount - 1)}`,
+      from: (proposalSide ? proposalLaneIds : baseLaneIds).get(source.from) ?? source.from,
+      to: (proposalSide ? proposalLaneIds : baseLaneIds).get(source.to) ?? source.to,
+    };
+  });
+
+  return {
+    answer: { ...proposal, lanes, phases, steps, branches: [] },
+    stepChanges,
+    laneChanges,
+    stepIdentity,
+  };
+}
+
+export function layoutOverlay(
+  base: FlowAnswer,
+  proposal: FlowAnswer,
+  matching: OverlayMatching,
+  options: OverlayLayoutOptions = {},
+): DiagramLayout {
+  const overlay = buildFlowOverlay(base, proposal, matching);
+  const verifiedByStep = new Map<string, { total: number; verified: number }>();
+  for (const [id, identity] of overlay.stepIdentity) {
+    const evidence = identity.toId
+      ? options.verifiedByProposalStep?.get(identity.toId)
+      : identity.fromId
+        ? options.verifiedByBaseStep?.get(identity.fromId)
+        : undefined;
+    if (evidence) verifiedByStep.set(id, evidence);
+  }
+  const layout = layoutFlow(overlay.answer, { ...options, verifiedByStep, includeUnusedLanes: true });
+  return {
+    ...layout,
+    lanes: layout.lanes.map((lane) => ({
+      ...lane,
+      change: overlay.laneChanges.get(lane.id),
+      notBuilt: overlay.laneChanges.get(lane.id) === "added",
+    })),
+    arrows: layout.arrows.map((arrow) => {
+      const identity = overlay.stepIdentity.get(arrow.stepId);
+      return {
+        ...arrow,
+        change: overlay.stepChanges.get(arrow.stepId),
+        ...(identity?.fromId ? { fromStepId: identity.fromId } : {}),
+        ...(identity?.toId ? { toStepId: identity.toId } : {}),
+      };
+    }),
+  };
+}
+
 export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): DiagramLayout {
   const o = { ...DEFAULTS, ...options };
   const branch = options.branchId ? answer.branches.find((b) => b.id === options.branchId) : undefined;
@@ -169,7 +405,7 @@ export function layoutFlow(answer: FlowAnswer, options: LayoutOptions = {}): Dia
     used.add(step.from);
     used.add(step.to);
   }
-  const lanes = answer.lanes.filter((lane) => used.has(lane.id));
+  const lanes = options.includeUnusedLanes ? answer.lanes : answer.lanes.filter((lane) => used.has(lane.id));
 
   const laneX = new Map<string, number>();
   const laneBoxes: LaneBox[] = lanes.map((lane, i) => {
@@ -299,20 +535,34 @@ function escapeXml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export interface RenderFlowOptions {
+  /** Proposal answer id retained while a reader selects an arrow in an overlay. */
+  overlayId?: string;
+}
+
 /** Renders the computed layout. Nothing is decided here — the geometry already exists. */
-export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): string {
+export function renderFlowSvg(
+  layout: DiagramLayout,
+  selectedStepId?: string,
+  options: RenderFlowOptions = {},
+): string {
   const parts: string[] = [];
   const tone = layout.variant ? ` tone-${layout.variant.tone}` : "";
   // Selecting a step must not drop the variant the reader is looking at.
-  const keepQuery = (stepId: string): string =>
-    layout.variant
-      ? `?branch=${encodeURIComponent(layout.variant.id)}&amp;step=${encodeURIComponent(stepId)}`
-      : `?step=${encodeURIComponent(stepId)}`;
+  const keepQuery = (stepId: string): string => {
+    const params = new URLSearchParams();
+    if (layout.variant) params.set("branch", layout.variant.id);
+    if (options.overlayId) params.set("overlay", options.overlayId);
+    params.set("step", stepId);
+    return `?${params.toString().replace(/&/g, "&amp;")}`;
+  };
   parts.push(
     `<svg viewBox="0 0 ${layout.width} ${layout.height}" width="${layout.width}" height="${layout.height}" class="flow${tone}" xmlns="http://www.w3.org/2000/svg">`,
   );
+  const markerDef = (id: string, change?: DiagramChange): string =>
+    `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head${change ? ` change-${change}` : ""}"/></marker>`;
   parts.push(
-    `<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker></defs>`,
+    `<defs>${markerDef("head")}${markerDef("head-added", "added")}${markerDef("head-removed", "removed")}${markerDef("head-moved", "moved")}${markerDef("head-unchanged", "unchanged")}</defs>`,
   );
 
   for (const band of layout.phases) {
@@ -324,7 +574,8 @@ export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): s
     parts.push(
       `<line class="lifeline" x1="${lane.x}" y1="${lane.headerY + lane.height}" x2="${lane.x}" y2="${layout.height - 8}"/>`,
     );
-    parts.push(`<g class="lane-head">`);
+    const change = lane.change ? ` change-${lane.change}` : "";
+    parts.push(`<g class="lane-head${change}">`);
     parts.push(
       `<rect class="lane lane-${lane.kind}" x="${lane.x - lane.width / 2}" y="${lane.headerY}" width="${lane.width}" height="${lane.height}" rx="8"/>`,
     );
@@ -343,6 +594,11 @@ export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): s
         )}</text>`,
       );
     }
+    if (lane.notBuilt) {
+      parts.push(
+        `<text class="lane-change" x="${lane.x}" y="${lane.headerY + lane.height - 7}" text-anchor="middle">NOT BUILT</text>`,
+      );
+    }
     // The header is cut to the box, so the untruncated name has to be reachable somewhere.
     parts.push(`<title>${escapeXml(lane.technology ? `${lane.name}\n${lane.technology}` : lane.name)}</title>`);
     parts.push(`</g>`);
@@ -351,25 +607,30 @@ export function renderFlowSvg(layout: DiagramLayout, selectedStepId?: string): s
   for (const arrow of layout.arrows) {
     const style = ARROW_STYLE[arrow.kind];
     const dash = style.dash ? ` stroke-dasharray="${style.dash}"` : "";
-    const selected = arrow.stepId === selectedStepId ? " is-selected" : "";
+    const selected =
+      arrow.stepId === selectedStepId || arrow.fromStepId === selectedStepId || arrow.toStepId === selectedStepId
+        ? " is-selected"
+        : "";
     const unverified = arrow.citations > 0 && arrow.verified < arrow.citations ? " is-unverified" : "";
     const bare = arrow.citations === 0 ? " is-bare" : "";
     const branch = arrow.branch ? " is-branch" : "";
     const dimmed = arrow.dimmed ? " is-dim" : "";
-    const href = keepQuery(arrow.stepId);
+    const change = arrow.change ? ` change-${arrow.change}` : "";
+    const href = keepQuery(arrow.toStepId ?? arrow.fromStepId ?? arrow.stepId);
+    const head = arrow.change ? `head-${arrow.change}` : "head";
 
-    parts.push(`<a href="${href}" class="step${selected}${unverified}${bare}${branch}${dimmed}">`);
+    parts.push(`<a href="${href}" class="step${selected}${unverified}${bare}${branch}${dimmed}${change}">`);
     // A label wrapped to three lines is still not the whole sentence when the sentence is long, so
     // the full text stays one hover away rather than being lost to the ellipsis.
     parts.push(`<title>${escapeXml(arrow.label)}</title>`);
     if (arrow.self) {
       const x = arrow.fromX;
       parts.push(
-        `<path class="arrow" d="M${x},${arrow.y} h${SELF_LOOP_W} v${SELF_LOOP_H} h-${SELF_LOOP_W}" fill="none" marker-end="url(#head)"${dash}/>`,
+        `<path class="arrow" d="M${x},${arrow.y} h${SELF_LOOP_W} v${SELF_LOOP_H} h-${SELF_LOOP_W}" fill="none" marker-end="url(#${head})"${dash}/>`,
       );
     } else {
       parts.push(
-        `<line class="arrow" x1="${arrow.fromX}" y1="${arrow.y}" x2="${arrow.toX}" y2="${arrow.y}" marker-end="url(#head)"${dash}/>`,
+        `<line class="arrow" x1="${arrow.fromX}" y1="${arrow.y}" x2="${arrow.toX}" y2="${arrow.y}" marker-end="url(#${head})"${dash}/>`,
       );
     }
     parts.push(label(arrow));

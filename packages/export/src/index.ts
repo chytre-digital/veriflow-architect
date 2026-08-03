@@ -1,4 +1,4 @@
-import { decisionsOf, loadStoredAnswer, type StoredAnswer } from "@veriflow/answers";
+import { decisionsOf, diffAnswers, loadStoredAnswer, type StoredAnswer } from "@veriflow/answers";
 import type { Store } from "@veriflow/store";
 import { renderDocument, slugify, type Document } from "./markdown.js";
 import { ExportError } from "./mermaid.js";
@@ -62,6 +62,25 @@ export function defaultTargetPath(settings: DocumentationSettings, title: string
 export function prepareAnswerExport(store: Store, root: string, options: PrepareOptions): PreparedExport {
   const stored = loadStoredAnswer(store, root, options.answerId);
   if (!stored) throw new ExportError(`no stored answer with id or prefix "${options.answerId}"`);
+  const parentId = stored.row.parent_answer_id ?? stored.answer.parentAnswerId;
+  const parent = stored.kind === "proposed" && parentId ? loadStoredAnswer(store, root, parentId) : undefined;
+  const overlayDiff = parent
+    ? diffAnswers(
+        store,
+        {
+          id: parent.row.id,
+          title: parent.answer.title,
+          snapshotId: parent.row.snapshot_id,
+          answer: parent.answer,
+        },
+        {
+          id: stored.row.id,
+          title: stored.answer.title,
+          snapshotId: stored.row.snapshot_id,
+          answer: stored.answer,
+        },
+      )
+    : undefined;
 
   const targetPath = options.targetPath ?? defaultTargetPath(options.documentation, stored.answer.title);
   const document = renderDocument({
@@ -73,6 +92,7 @@ export function prepareAnswerExport(store: Store, root: string, options: Prepare
     freshness: stored.freshness,
     kind: stored.kind,
     decisions: decisionsOf(stored.corrections),
+    ...(parent && overlayDiff ? { overlay: { base: parent.answer, matching: overlayDiff.steps } } : {}),
     frontmatter: { ...options.documentation.frontmatter, ...options.frontmatter },
   });
 

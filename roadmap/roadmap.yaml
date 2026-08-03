@@ -48,6 +48,14 @@ iterations:
       With several answers stored, the project screen names the modules no answer reaches, the
       shared modules name the flows that meet in them, and an agent asking what a change to one
       file affects is answered from stored citations rather than from a re-read of the code.
+  - id: M5-design
+    name: Design against it
+    features: [F012, F013, F014, F015, F016, F017]
+    done: >-
+      A feature's written claims can be checked against the code they cite; a diff against a base
+      ref names the stored flows its hunks land in; a person can review an answer and decide its
+      open questions; and an observed flow can produce a proposed successor whose changed steps,
+      lanes, modules and contracts are visible in one reviewable overlay before implementation.
 
 features:
   F001:
@@ -219,6 +227,66 @@ features:
       same answer is shown in impact and labelled, because a file about to change deserves the
       answer that used to describe it. Reach is a citation count and says so where it is displayed —
       citing a file in a module is not explaining the module.
+  F012:
+    title: Claim checking over hand-written documents
+    spec: ../docs/product/design-and-review-loop-plan.md
+    iteration: M5-design
+    status: shipped
+    dependsOn: [F001, F007]
+    outcome: >-
+      `veriflow check-claims` extracts file-and-line claims from specs, issues and ADRs and reports
+      whether each still resolves, using the same anchors and freshness ladder as stored answers.
+    notes: "Implemented by WP1; checks are tree-state reads and are deliberately not persisted."
+  F013:
+    title: Change impact against a base ref
+    spec: ../docs/product/design-and-review-loop-plan.md
+    iteration: M5-design
+    status: shipped
+    dependsOn: [F007, F011]
+    outcome: >-
+      `veriflow impact --diff` maps changed hunks, not only changed files, onto the cited lines of
+      stored flows and states what an empty result does and does not prove.
+    notes: "Implemented by WP2; no schema change and no PR bot."
+  F014:
+    title: Review and decision verbs
+    spec: ../docs/product/design-and-review-loop-plan.md
+    iteration: M5-design
+    status: shipped
+    dependsOn: [F005, F006, F010]
+    outcome: >-
+      A person can mark an answer reviewed with provenance and can decide an open question without
+      rewriting the immutable submitted answer; every read surface serves the result immediately.
+    notes: "Implemented by WP3, WP4 and WP5, including the schema migration runner."
+  F015:
+    title: Proposed flows, proposed modules, and the answer diff
+    spec: ../docs/product/design-and-review-loop-plan.md
+    iteration: M5-design
+    status: shipped
+    dependsOn: [F004, F005, F006, F009, F014]
+    outcome: >-
+      `veriflow propose` stores how a reviewed flow should change, including code and modules that do
+      not exist yet, and one conservative matcher compares observed, proposed and built answers.
+    notes: "Implemented by WP6 and WP7a; intent citations are counted separately from code evidence."
+  F016:
+    title: Invariant index
+    spec: ../docs/product/design-and-review-loop-plan.md
+    iteration: M5-design
+    status: shipped
+    dependsOn: [F005, F007, F010, F011]
+    outcome: >-
+      The CLI, browser and MCP group the invariants asserted by live answers, with freshness and
+      visible exclusions, without pretending to check or score them.
+    notes: "Implemented by WP7b; read-only and schema-free."
+  F017:
+    title: The proposed change drawn on the diagram
+    spec: ../docs/product/design-and-review-loop-plan.md
+    iteration: M5-design
+    status: shipped
+    dependsOn: [F006, F009, F015]
+    outcome: >-
+      A shareable overlay draws added, removed, moved and unchanged flow steps, lanes, modules and
+      contracts; proposal-only architecture is labelled not built and exports carry a text fallback.
+    notes: "Implemented by WP8; browser SVG is coloured and Mermaid uses explicit textual markers."
 
 blocking:
   - question: Q2

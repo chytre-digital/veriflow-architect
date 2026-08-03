@@ -24,6 +24,8 @@
 
 import { blockWidth, fitText, wrapText } from "./text.js";
 
+export type ModuleChange = "added" | "removed" | "moved" | "unchanged";
+
 export interface ModuleNodeInput {
   id: string;
   label: string;
@@ -31,6 +33,8 @@ export interface ModuleNodeInput {
   kind?: string;
   /** A path, normally. Shown small under the label. */
   detail?: string;
+  change?: ModuleChange;
+  notBuilt?: boolean;
 }
 
 export interface ModuleEdgeInput {
@@ -45,6 +49,7 @@ export interface ModuleEdgeInput {
    * about which edges are the violations. Left unset, the layout works it out itself.
    */
   backward?: boolean;
+  change?: ModuleChange;
 }
 
 export interface ModuleNodeBox {
@@ -61,6 +66,8 @@ export interface ModuleNodeBox {
   nameLines: string[];
   /** The paths under it, likewise. Empty when the participant is not a folder. */
   detailLines: string[];
+  change?: ModuleChange;
+  notBuilt?: boolean;
 }
 
 export interface Segment {
@@ -99,6 +106,7 @@ export interface ModuleEdgeShape {
   labelAnchor: "start" | "middle";
   /** The space the label occupies. Corridor assignment reserved exactly this. */
   labelBox: LabelBox;
+  change?: ModuleChange;
 }
 
 export interface ModulesLayout {
@@ -238,7 +246,10 @@ interface Plan {
 export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInput[]): ModulesLayout {
   const order = new Map<string, number>();
   const declared = new Map<string, ModuleNodeInput>();
-  for (const node of nodesIn) declared.set(node.id, node);
+  for (const node of nodesIn) {
+    declared.set(node.id, node);
+    if (!order.has(node.id)) order.set(node.id, order.size);
+  }
   for (const edge of edgesIn) {
     if (!order.has(edge.from)) order.set(edge.from, order.size);
     if (!order.has(edge.to)) order.set(edge.to, order.size);
@@ -381,6 +392,8 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
         height: nodeHeight(nameLines.length, detailLines.length),
         nameLines,
         detailLines,
+        ...(source?.change ? { change: source.change } : {}),
+        ...(source?.notBuilt ? { notBuilt: true } : {}),
       };
       boxes.set(id, box);
       nodes.push(box);
@@ -702,6 +715,7 @@ export function layoutModules(nodesIn: ModuleNodeInput[], edgesIn: ModuleEdgeInp
         width: plan.labelW,
         height: plan.labelH,
       },
+      ...(input.change ? { change: input.change } : {}),
     });
   }
 
@@ -800,9 +814,11 @@ function round(value: number): number {
 /* -------------------------------------------------------------------------- */
 
 export function renderModulesSvg(layout: ModulesLayout): string {
+  const marker = (id: string, change?: ModuleChange): string =>
+    `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mm-head${change ? ` change-${change}` : ""}"/></marker>`;
   const parts: string[] = [
     `<svg viewBox="0 0 ${layout.width} ${layout.height}" width="${layout.width}" height="${layout.height}" class="modmap" xmlns="http://www.w3.org/2000/svg">`,
-    `<defs><marker id="mhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mm-head"/></marker></defs>`,
+    `<defs>${marker("mhead")}${marker("mhead-added", "added")}${marker("mhead-removed", "removed")}${marker("mhead-moved", "moved")}${marker("mhead-unchanged", "unchanged")}</defs>`,
   ];
 
   // Three passes, and the order is the point: corridor allocation keeps labels off each other, but
@@ -810,13 +826,20 @@ export function renderModulesSvg(layout: ModulesLayout): string {
   // then the boxes, then every label last means a label is never struck through by an edge drawn
   // after it — which is what a single interleaved pass was doing.
   const classOf = (edge: ModuleEdgeShape): string =>
-    ["mm-edge", edge.backward ? "is-backward" : "", edge.inferred ? "is-inferred" : "", edge.self ? "is-self" : ""]
+    [
+      "mm-edge",
+      edge.backward ? "is-backward" : "",
+      edge.inferred ? "is-inferred" : "",
+      edge.self ? "is-self" : "",
+      edge.change ? `change-${edge.change}` : "",
+    ]
       .filter(Boolean)
       .join(" ");
 
   for (const edge of layout.edges) {
+    const head = edge.change ? `mhead-${edge.change}` : "mhead";
     parts.push(
-      `<g class="${classOf(edge)}"><path class="mm-line" d="${edge.d}" fill="none" marker-end="url(#mhead)"/>`,
+      `<g class="${classOf(edge)}"><path class="mm-line" d="${edge.d}" fill="none" marker-end="url(#${head})"/>`,
       `<title>${esc(`${edge.from} → ${edge.to} · ${edge.kind}${edge.inferred ? " · inferred" : ""}${
         edge.backward ? " · back up a layer" : ""
       }\n${edge.contract}`)}</title></g>`,
@@ -826,10 +849,10 @@ export function renderModulesSvg(layout: ModulesLayout): string {
   for (const node of layout.nodes) {
     const x = node.x + 12;
     parts.push(
-      `<g class="mm-node kind-${esc(node.kind)}">`,
+      `<g class="mm-node kind-${esc(node.kind)}${node.change ? ` change-${node.change}` : ""}">`,
       `<rect class="mm-box" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="8"/>`,
       `<text class="mm-kind" x="${x}" y="${node.y + NODE_KIND_BASE}">${esc(
-        fitText(node.kind.toUpperCase(), NODE_KIND_SIZE, NODE_TEXT_W),
+        fitText(`${node.kind.toUpperCase()}${node.notBuilt ? " · NOT BUILT" : ""}`, NODE_KIND_SIZE, NODE_TEXT_W),
       )}</text>`,
     );
     for (const [i, line] of node.nameLines.entries()) {

@@ -412,3 +412,77 @@ features:
       - "project screen states its method and its exclusions;"
       - "source view links to the file's impact;"
       - "`get_project_overview` and `get_impact` over a real MCP client."
+  F012:
+    title: "Claim checking over hand-written documents"
+    spec: "../docs/product/design-and-review-loop-plan.md"
+    acceptance:
+      - "`veriflow check claims` extracts cited claims from specifications, issues, and ADRs without requiring a stored answer."
+      - "Line, symbol, and content-hash anchors resolve against the indexed snapshot; ambiguous shorthand is returned as ambiguous rather than guessed."
+      - "Each claim reports its state and evidence fingerprint, including explicit stale and deleted states."
+      - "Checking is read-only: it persists no answer, edits no document, and starts no agent."
+    tests:
+      - "claim extraction and all three anchor forms;"
+      - "ambiguous shorthand, stale evidence, and deleted evidence;"
+      - "read-only and no-agent assertions."
+  F013:
+    title: "Changed hunks mapped to affected flows"
+    spec: "../docs/product/design-and-review-loop-plan.md"
+    acceptance:
+      - "`veriflow impact --diff` maps changed hunks to flows and returns the exact cited or reached lines that caused each match."
+      - "Every affected flow carries an explicit line state; an empty result says only that no stored answer maps to the diff."
+      - "Diff impact reads the working tree without mutating Git, source files, answers, or snapshots."
+    tests:
+      - "direct citations, reached callers, moved lines, and an unrelated diff;"
+      - "honest empty-result wording and line-state rendering;"
+      - "Git and repository immutability assertions."
+  F014:
+    title: "Human review and decision ledger"
+    spec: "../docs/product/design-and-review-loop-plan.md"
+    acceptance:
+      - "A review records reviewer, timestamp, answer revision, evidence fingerprint, verdict, and optional note."
+      - "A decision is attributed and preserves the proposal or open question it resolves."
+      - "Review and decision counts agree across the CLI, browser, export, and MCP envelopes."
+      - "The MCP surface remains read-only; review and decision writes are explicit human actions outside MCP."
+    tests:
+      - "review provenance and evidence-fingerprint invalidation;"
+      - "decision attribution and linkage;"
+      - "cross-surface count parity and MCP write-tool absence."
+  F015:
+    title: "Proposed architecture and answer comparison"
+    spec: "../docs/product/design-and-review-loop-plan.md"
+    acceptance:
+      - "A proposed answer is a child of its baseline and declares its design intent."
+      - "Proposed paths and modules remain visibly proposed and never increase current-code coverage."
+      - "Answer comparison classifies matched and unmatched steps conservatively and reports confidence plus the matching reasons."
+      - "The same deterministic comparison powers CLI, browser, and MCP output."
+    tests:
+      - "proposal lineage, intent, proposed paths, and proposed modules;"
+      - "coverage exclusion for proposal-only architecture;"
+      - "exact, evidence-assisted, and conservative semantic step matching;"
+      - "low-confidence and unmatched steps across all read surfaces."
+  F016:
+    title: "Cross-flow invariant index"
+    spec: "../docs/product/design-and-review-loop-plan.md"
+    acceptance:
+      - "The invariant index groups normalized invariant text across live, non-superseded answers while preserving every source flow."
+      - "Each group exposes freshness and evidence state, and the number of excluded superseded answers is visible."
+      - "The index does not claim semantic proof, score correctness, or silently merge materially different invariants."
+      - "CLI, browser, and MCP return the same deterministic grouping."
+    tests:
+      - "normalization, grouping, source preservation, and deterministic ordering;"
+      - "freshness propagation and visible superseded exclusions;"
+      - "near-miss invariants that must remain separate;"
+      - "CLI, browser, and MCP parity."
+  F017:
+    title: "Current-versus-proposed architecture overlay"
+    spec: "../docs/product/design-and-review-loop-plan.md"
+    acceptance:
+      - "The overlay classifies steps and modules as added, removed, moved, or unchanged from one deterministic answer comparison."
+      - "Proposal-only elements are labelled as not built and cannot be mistaken for indexed current code."
+      - "Stable geometry keeps unchanged elements in place and gives the same inputs byte-identical overlay data."
+      - "Overlay URLs are shareable, and a textual Mermaid fallback communicates the same change states."
+    tests:
+      - "all four change states for steps and modules;"
+      - "proposal-only labelling and selected-step match confidence;"
+      - "geometry and payload determinism;"
+      - "shareable browser URLs, MCP payload, and Mermaid text fallback."

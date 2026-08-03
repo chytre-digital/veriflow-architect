@@ -11,6 +11,7 @@ import {
   fileStates,
   fitWholeAnswer,
   impactOf,
+  invariantIndex,
   kindOf,
   refExists,
   loadStoredAnswer,
@@ -240,6 +241,28 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         // rather than merely unlikely — but returning empty beats asserting.
         void snapshotId;
         return { data: view ?? { modules: [], counts: {}, externals: [], openQuestions: [], answers: [] } };
+      }),
+  );
+
+  server.registerTool(
+    "get_invariants",
+    {
+      title: "Invariant strings asserted across standing flows",
+      description:
+        "An index over `branches[].invariant` in standing answers, grouped by normalized text. " +
+        "Every assertion retains its answer, branch and that answer's own freshness. Superseded " +
+        "answers are excluded and counted. This does not check an invariant against code, score " +
+        "it, or combine freshness into a project health value.",
+      inputSchema: { cursor: z.string().optional() },
+    },
+    async ({ cursor }) =>
+      projectOr(() => {
+        const index = invariantIndex(store, root);
+        const page = paginateWithin(index.invariants, pageSize, cursor, budget);
+        return {
+          data: { counts: index.counts, invariants: page.items },
+          truncated: page.truncated,
+        };
       }),
   );
 

@@ -6,6 +6,7 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@veriflow/answers": "workspace:*",
+    "@veriflow/diagram": "workspace:*",
     "@veriflow/flow-answer": "workspace:*",
     "@veriflow/store": "workspace:*"
   }

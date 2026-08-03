@@ -99,16 +99,18 @@ you came for.
    at all**, and where flows meet. Start here when you do not yet know which flow you are in. A
    module marked `unreached` is not a module nothing depends on; it is a module nobody has asked
    about, so nothing stored can vouch for a change there.
-1. `get_impact` with the file path you are about to edit → which flows cite it, **which lines each
+1. `get_invariants` → the outcome guarantees named across standing flows, with the answer, branch
+   and freshness behind every assertion. It is a normalized string index, not a checker or score.
+2. `get_impact` with the file path you are about to edit → which flows cite it, **which lines each
    one depends on**, and whether any of them has been superseded. `search_answers` still works and
    searches titles and bodies too, but for a path this is the sharper question.
-2. `get_flow_paths` on each hit → every alternative outcome and **the invariant it protects**. This
+3. `get_flow_paths` on each hit → every alternative outcome and **the invariant it protects**. This
    is the list your change must not break.
-3. `get_flow_modules` → the module contract the symbol sits behind, by stable id. An edge marked
+4. `get_flow_modules` → the module contract the symbol sits behind, by stable id. An edge marked
    `inferred` was deduced by the named rule, not observed at a call site.
-4. `get_callers` → who calls it, from the graph rather than from a grep. An ambiguous name returns
+5. `get_callers` → who calls it, from the graph rather than from a grep. An ambiguous name returns
    every candidate instead of picking one.
-5. `get_open_questions` → what the run already knew it could not settle. Do not re-derive these; they
+6. `get_open_questions` → what the run already knew it could not settle. Do not re-derive these; they
    are open because the repository does not answer them.
 
 Check `freshness.state` before step 2. On `drifted` or worse, the invariants are still the best
@@ -148,6 +150,7 @@ record of intent, but the code they describe has moved — re-verify the citatio
 | `get_coverage_gaps` | Alternative outcomes no test names — a proxy over identifiers, labelled as one. |
 | `search_answers` | Title, body, or cited path. |
 | `get_project_overview` | What every answer adds up to: modules more than one flow runs through, modules no answer reaches, externals across flows, every open question in one place. Superseded answers are excluded and counted. |
+| `get_invariants` | Invariant strings grouped across standing answers, with each asserting answer, branch and its own freshness. Superseded answers are excluded and counted; nothing is checked or scored. |
 | `get_impact` | Every answer citing one file, the lines each depends on, its review state, and whether it was superseded — plus the other cited files in the same module. |
 | `get_architecture` | Module registry, entry points, measured traffic, flows per module. |
 | `get_call_graph` | The stored graph, or one entry point's closure. |
