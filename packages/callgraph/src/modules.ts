@@ -59,6 +59,34 @@ export function moduleIdFromPath(root: string): string {
   return root.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
 }
 
+/**
+ * The module root a file belongs to, and the rule that says so. Undefined when no rule matches — a
+ * file at the repository root belongs to no module, and saying otherwise would invent one.
+ *
+ * Lifted out of `deriveModules` because F015 needs the same answer for a path that does not exist
+ * yet. A proposal's headline change is often a module nobody has written, so its id has to be
+ * computable before the files land and identical afterwards; two copies of this loop would
+ * eventually disagree about who owns a path, which is the failure the registry's own comment warns
+ * about.
+ */
+export function moduleRootForPath(path: string): { root: string; source: ModuleSource } | undefined {
+  for (const rule of RULES) {
+    const hit = rule.match(path);
+    if (hit) return { root: hit, source: rule.source };
+  }
+  return undefined;
+}
+
+/**
+ * The registry id a file's module has, or would have. `src/modules/invoicing/issue.ts` resolves to
+ * `src-modules-invoicing` before the file exists and after it, by the same two functions
+ * `deriveModules` uses — so a proposed module becomes real without anything being re-pointed.
+ */
+export function moduleIdForPath(path: string): string | undefined {
+  const root = moduleRootForPath(path);
+  return root ? moduleIdFromPath(root.root) : undefined;
+}
+
 export function labelFromPath(root: string): string {
   const last = root.split("/").filter(Boolean).pop() ?? root;
   return last.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -78,17 +106,9 @@ export function deriveModules(symbols: SymbolRecord[], options: DeriveOptions = 
 
   for (const symbol of symbols) {
     if (!symbol.path) continue;
-    let root: string | undefined;
-    let source: ModuleSource = "top-level-directory";
-    for (const rule of RULES) {
-      const hit = rule.match(symbol.path);
-      if (hit) {
-        root = hit;
-        source = rule.source;
-        break;
-      }
-    }
-    if (!root) continue;
+    const matched = moduleRootForPath(symbol.path);
+    if (!matched) continue;
+    const { root, source } = matched;
 
     let entry = byRoot.get(root);
     if (!entry) {

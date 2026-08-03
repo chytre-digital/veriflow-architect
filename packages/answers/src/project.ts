@@ -1,8 +1,9 @@
-import type { FlowAnswer } from "@veriflow/flow-answer";
-import { FlowAnswerSchema } from "@veriflow/flow-answer";
+import type { AnswerKind, FlowAnswer, ProposedModule } from "@veriflow/flow-answer";
+import { FlowAnswerSchema, proposedModulesOf } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
 import { applyCorrections, type Correction } from "./corrections.js";
 import { fileStates } from "./freshness.js";
+import { kindOf } from "./read.js";
 
 /**
  * One project, read as the union of every answer stored about it.
@@ -63,6 +64,17 @@ export interface ProjectOpenQuestion {
   blocking: boolean;
 }
 
+/**
+ * A module a proposal would add, and who proposed it.
+ *
+ * Listed apart from `modules` rather than mixed into them, because the registry is a measurement of
+ * the repository and this is not in the repository. Putting a box nobody has built into the coverage
+ * counts would let a module look explained by code that does not exist.
+ */
+export interface ProposedModuleReach extends ProposedModule {
+  answers: Array<{ id: string; title: string; citations: number }>;
+}
+
 export interface ProjectView {
   snapshotId: string;
   modules: ModuleCoverage[];
@@ -74,14 +86,24 @@ export interface ProjectView {
     answers: number;
     /** Excluded from every count above, and named here so the exclusion is visible. */
     supersededAnswers: number;
+    /**
+     * Also excluded from the coverage counts, and for the same kind of reason: a proposal describes
+     * code nobody has written, so counting it would make a module look explained by a plan.
+     */
+    proposedAnswers: number;
+    /** Modules named only by a proposal. Not in `modules`, because the registry does not have them. */
+    proposedModules: number;
   };
   externals: ExternalReach[];
   openQuestions: ProjectOpenQuestion[];
+  /** Modules that would exist if the proposals were built, each labelled with what proposed it. */
+  proposedModules: ProposedModuleReach[];
   answers: Array<{
     id: string;
     title: string;
     reviewState: string;
     status: string;
+    kind: AnswerKind;
     createdAt: string;
     /** Modules this answer's citations land in, most-cited first. */
     modules: Array<{ id: string; label: string; citations: number }>;
@@ -115,13 +137,23 @@ export function projectView(store: Store): ProjectView | undefined {
   const answerSummaries: ProjectView["answers"] = [];
   const externals = new Map<string, ExternalReach>();
   const openQuestions: ProjectOpenQuestion[] = [];
+  const proposedModules = new Map<string, ProposedModuleReach>();
+  const known = new Set(modules.map((m) => m.id));
+  let proposedAnswers = 0;
 
   for (const row of live) {
     const id = String(row["id"]);
     const title = String(row["title"]);
+    const kind = kindOf(row);
+    const proposal = kind === "proposed";
+    if (proposal) proposedAnswers += 1;
 
     const counts = new Map<string, number>();
     for (const citation of store.readAnswerCitations(id)) {
+      // A proposal is not coverage, and an intent citation is not evidence about a file. Both are
+      // excluded from the counts and both are shown — see `proposedModules` and the `kind` below.
+      if (proposal) continue;
+      if (citation["line"] === null || citation["line"] === undefined) continue;
       const owner = moduleOwning(String(citation["path"]), modules);
       if (!owner) continue;
       counts.set(owner.id, (counts.get(owner.id) ?? 0) + 1);
@@ -137,6 +169,7 @@ export function projectView(store: Store): ProjectView | undefined {
       title,
       reviewState: String(row["review_state"]),
       status: String(row["status"]),
+      kind,
       createdAt: String(row["created_at"]),
       modules: [...counts]
         .map(([moduleId, citations]) => ({
@@ -149,6 +182,19 @@ export function projectView(store: Store): ProjectView | undefined {
 
     const answer = readBody(store, id);
     if (!answer) continue;
+
+    if (proposal) {
+      for (const module of proposedModulesOf(answer, known)) {
+        // A proposal may perfectly well add steps to a module that already exists. That is not a
+        // proposed module — the registry has it, and drawing it as new would put a box on the map
+        // that is already there.
+        if (module.existsInRegistry) continue;
+        const entry = proposedModules.get(module.id) ?? { ...module, answers: [] };
+        entry.citations = Math.max(entry.citations, module.citations);
+        entry.answers.push({ id, title, citations: module.citations });
+        proposedModules.set(module.id, entry);
+      }
+    }
 
     for (const system of answer.externalSystems) {
       const reach = externals.get(system.name) ?? { name: system.name, boundaries: [] };
@@ -189,9 +235,12 @@ export function projectView(store: Store): ProjectView | undefined {
       unreached: coverage.filter((m) => m.reach === "unreached").length,
       answers: live.length,
       supersededAnswers: all.length - live.length,
+      proposedAnswers,
+      proposedModules: proposedModules.size,
     },
     externals: [...externals.values()].sort((a, b) => b.boundaries.length - a.boundaries.length || (a.name < b.name ? -1 : 1)),
     openQuestions: openQuestions.sort((a, b) => Number(b.blocking) - Number(a.blocking)),
+    proposedModules: [...proposedModules.values()].sort((a, b) => (a.id < b.id ? -1 : 1)),
     answers: answerSummaries,
   };
 }
@@ -205,6 +254,14 @@ export interface Impact {
     citations: number;
     reviewState: string;
     status: string;
+    /**
+     * `proposed` means this answer does not describe what the file does — it describes what somebody
+     * wants it to do. Shown and labelled rather than hidden, like a superseded answer: when a file is
+     * about to change, "there is a proposal about this" is a reason to look.
+     */
+    kind: AnswerKind;
+    /** Of `citations`, how many name code that does not exist at this path yet. */
+    intentCitations: number;
     /** The cited lines in this file, so the reader sees what the flow actually depends on. */
     lines: number[];
     /**
@@ -265,6 +322,8 @@ export function impactOf(store: Store, root: string, path: string): Impact {
       citations: Number(row["citations"]),
       reviewState: String(row["review_state"]),
       status: String(stored?.["status"] ?? "current"),
+      kind: kindOf(row),
+      intentCitations: Number(row["intent_citations"] ?? 0),
       lines: [...new Set(lines)].sort((a, b) => a - b),
       lineState,
     };
@@ -276,6 +335,9 @@ export function impactOf(store: Store, root: string, path: string): Impact {
       for (const citation of store.readAnswerCitations(String(row["id"]))) {
         const cited = String(citation["path"]);
         if (cited === path) continue;
+        // A planned path is not a file in this module — it is a file nobody has written. The blast
+        // radius of a change is measured over code that exists.
+        if (citation["line"] === null || citation["line"] === undefined) continue;
         if (moduleOwning(cited, modules)?.id !== owner.id) continue;
         alsoInModule.set(cited, (alsoInModule.get(cited) ?? 0) + 1);
       }

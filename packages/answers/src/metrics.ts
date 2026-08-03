@@ -9,6 +9,7 @@ import {
 } from "@veriflow/metrics";
 import type { Store } from "@veriflow/store";
 import { loadStoredAnswer, type StoredAnswer } from "./read.js";
+import { observedCitations } from "./verification.js";
 
 /**
  * F008's numbers for a stored answer, read the same way every surface reads freshness: compute over
@@ -27,6 +28,14 @@ export interface AnswerMetrics {
   source: "computed" | "stored";
   computedAt: string;
   durationMs: number;
+  /**
+   * Citations excluded from the scope because the code they name does not exist yet.
+   *
+   * Metrics cover observed citations only, and say so. Debt, coupling and duplication are measured
+   * over files; a proposal's planned paths are not files, and counting them would either crash the
+   * scope or — worse — report a module that has not been written as having no debt.
+   */
+  intentCitationsExcluded: number;
 }
 
 export interface AnswerMetricsOptions extends MetricsOptions {
@@ -48,7 +57,12 @@ export function metricsForStoredAnswer(
   if (!stored) return undefined;
 
   const depth = options.depth ?? DEFAULT_DEPTH;
-  const citations = stored.citations.map((c) => ({ path: c.path, line: c.line, symbol: c.symbol }));
+  const citations = observedCitations(stored.citations).map((c) => ({
+    path: c.path,
+    line: c.line,
+    symbol: c.symbol,
+  }));
+  const intentCitationsExcluded = stored.citations.length - citations.length;
   // The scope is derived from the store and the file system, never from file contents, so working
   // out whether a stored run still applies costs a hash of the flow's own files rather than a run.
   const scope = flowScope(store, root, { snapshotId: stored.row.snapshot_id, citations }, depth);
@@ -67,6 +81,7 @@ export function metricsForStoredAnswer(
           source: "stored",
           computedAt: String(previous["computed_at"]),
           durationMs: Number(previous["duration_ms"]),
+          intentCitationsExcluded,
         };
       }
     } catch {
@@ -84,7 +99,14 @@ export function metricsForStoredAnswer(
 
   // Deliberately not written here. The CLI stores the result; a read surface that quietly wrote to
   // the database would stop being one.
-  return { stored, metrics, source: "computed", computedAt: new Date().toISOString(), durationMs: Date.now() - started };
+  return {
+    stored,
+    metrics,
+    source: "computed",
+    computedAt: new Date().toISOString(),
+    durationMs: Date.now() - started,
+    intentCitationsExcluded,
+  };
 }
 
 /**

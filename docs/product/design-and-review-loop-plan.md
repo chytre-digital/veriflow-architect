@@ -55,6 +55,7 @@ flowchart LR
 
     WP1 --> WP2 --> WP3 --> WP4 --> WP5 --> WP6 --> WP7A --> WP8
     WP4 -.-> WP3
+    WP4 -.-> WP6
     WP7B -.-> WP7A
 
     classDef free stroke-dasharray: 0, stroke-width: 2px
@@ -606,10 +607,24 @@ attribution is the only thing this feature stores that the answer body does not.
 
 ---
 
-## 7 · WP6 — proposals
+## 7 · WP6 — proposals · **shipped**
 
-The feature the proposal is actually about, and the only package here measured in weeks. It needs
-WP4, and it touches almost every package, which is why it is sixth rather than first.
+> Built on 2026-08-03: `moduleRootForPath`/`moduleIdForPath` (`packages/callgraph/src/modules.ts:72`
+> and `:85`), the optional-`line` citation and `AnswerKindSchema`
+> (`packages/flow-answer/src/contract.ts:20` and `:138`), `packages/flow-answer/src/intent.ts`,
+> `citation.no_anchor` / `citation.intent_on_observed` / `lane.proposed_without_path` in
+> `validate.ts`, `state: "intent"` in `verify.ts`, `get_parent_flow` and `kind` on
+> `submit_flow_answer` in `run-server.ts`, `buildProposalPrompt`, the `propose` CLI verb, and
+> `tests/f015-proposals.test.ts` — 34 cases, whole suite 528 green, typecheck clean. No migration was
+> needed: WP4 had already added `answers.kind`, `answers.intent`, `answer_citations.module_id`,
+> `answer_citations.planned_path` and the nullable `line`, all of them inert until now.
+>
+> **Exercised end to end.** An observed answer and a proposal over it, in a scratch workspace: the
+> CLI list marks the proposal and prints `1/1 verified - 1 intent`, `verify` reports the intent
+> citation outside the totals rather than as a missing one, `impact` on the planned path says *this
+> proposal would put code here* instead of *stale*, `metrics` measures the one file that exists, and
+> the exported document opens with **This is a proposal, not a description.** `veriflow diff` between
+> the two runs without WP7a and reports nothing, which is the honest answer until the matcher exists.
 
 **Ships.** `veriflow propose <answerId> "<what should change>"` — an F004 session seeded with the
 parent answer, producing a second answer with `kind = 'proposed'`, whose citations may be `intent`:
@@ -617,10 +632,28 @@ anchored to a module id and a planned path rather than to a line that does not e
 
 ### Scope
 
-- `answers.kind` = `observed | proposed`, from WP4; `parent_answer_id` already threads it.
-- `CitationState` (`packages/flow-answer/src/verify.ts:5`) gains `intent`.
-- `CitationSchema` gains optional `moduleId` and `plannedPath`, with a refinement: a citation carries
-  either a line or a module id, never neither.
+- `answers.kind` = `observed | proposed`, from WP4; `parent_answer_id` already threads it. It threads
+  two different relationships now — a proposal's parent is the flow it *changes*, a re-answer's
+  parent is the flow it *replaces* — so `list_flow_answers` names them apart (`proposesChangeTo`
+  versus `supersedes`) rather than serving one word for two facts.
+- `CitationState` (`packages/flow-answer/src/verify.ts:11`) gains `intent`.
+- `CitationSchema` gains optional `moduleId` and `plannedPath`, and `line` becomes optional: a
+  citation carries either a line or a module id, never neither.
+
+  > **Changed during implementation.** This section said "with a refinement". It is a diagnostic
+  > instead — `citation.no_anchor` in `validate.ts` — for two reasons. A Zod refinement turns
+  > `CitationSchema` into a `ZodEffects`, and that schema is handed straight to the MCP SDK as
+  > `submit_flow_answer`'s input contract, where the flattening the tool description depends on is
+  > not something to gamble on. And the fault belongs with `branch.no_invariant` and
+  > `external.no_boundary`: those are structural faults with codes an agent can act on, and a
+  > citation pointing at nothing is exactly the same kind of thing. A refinement would have reported
+  > it as `answer.malformed` with a Zod path.
+- A second diagnostic the section did not ask for and the contract needs: **`citation.intent_on_observed`**.
+  Without it, `kind` is a label anybody can contradict — an observed answer carrying a lineless
+  citation claims code exists that does not, which is the failure this whole package is built to
+  prevent. And a third, `lane.proposed_without_path`: a lane that says it is proposed and does not say
+  where it would live has nothing to derive an id from, so it would draw a box no future re-index
+  could ever match.
 - **A proposed module is a first-class thing** — see below. `LaneSchema.moduleId` may name a module
   the registry does not have yet, and the lane says so.
 
@@ -642,6 +675,17 @@ being re-pointed.** Implementation is exposing the rule matcher — `moduleRootF
 lines out of `deriveModules` — so both callers share one derivation, for the reason the registry
 already gives about two rules disagreeing about who owns a path.
 
+The test that guards it derives the id from the planned path, then writes the file, then runs
+`deriveModules` over a symbol in it and asserts the two ids equal. If those ever come apart, the
+proposal's module and the built module are two boxes on one map and every intent citation has to be
+re-pointed by hand on the day the feature ships — which is precisely the cost this avoids.
+
+**Deriving it, rather than asking for it.** An agent cannot run the rule matcher in its head, so
+`resolveIntent` (`packages/flow-answer/src/intent.ts:61`) fills in `moduleId` and `plannedPath` from
+the path *before* validation, and the answer that is validated is the answer that gets stored. The
+prompt therefore asks for the path the agent would actually create —
+`src/modules/invoicing/issue.ts`, not "the new invoicing module" — because the path is the identity.
+
 A proposed module is then a derived id, a planned path, and a `proposed: true` flag on the lane. It
 appears on the module map as a node the registry does not have, drawn as proposed (WP8), and it is
 excluded from coverage exactly as a superseded answer is — a module nobody has built explains
@@ -657,26 +701,71 @@ nothing.
 - `packages/ask` gains the proposal prompt: same FlowAnswer contract, the parent answer as evidence,
   the instruction that a step with no code yet cites its module.
 
+### How the parent reaches the agent, and what that decides
+
+The section above said "an F004 session seeded with the parent answer" without saying how. Pasting
+the parent into the prompt was the obvious route and the wrong one: an answer is capped at 512 KB and
+the prompt is not paged.
+
+So the run server gains **one tool on a design run and none on any other** —
+`get_parent_flow`, registered only when `RunServerOptions.parentAnswerId` is set, serving the
+corrected parent through `loadStoredAnswer` and `fitWholeAnswer` with the same byte budget the read
+surface uses, and its freshness alongside, because designing against a flow whose evidence has
+already moved is worth knowing before the first step is written. A tool that answers *there isn't
+one* on every ordinary run is a tool the agent has to learn to stop calling.
+
+That parameter then does a second job, and it is the one that keeps `kind` honest. **A proposal
+requires a parent, and the run decides whether there is one.** `veriflow propose` passes `--parent`;
+`veriflow ask` does not; so a run started by `ask` refuses `kind: "proposed"` before validation, with
+a message naming the verb to use instead. §10's rule is that the boundary is the tool list rather
+than the prompt — this is the same rule applied to what the tool list will accept.
+
 ### Everything downstream that assumes a citation resolves to a file
 
 Each of these needs an explicit decision, and each is a place where a proposal would otherwise be
 measured as a broken observation:
 
-| Site | What it must do |
-|---|---|
-| `freshness.ts` `fileStates` | exclude intent citations from the file set |
-| `verification.ts` `entryPathsOf` | an intent entry step contributes no path |
-| `verification.ts` `verifyAnswer` | intent citations are not re-located |
-| `answers/metrics.ts` | metrics cover observed citations only, and say so |
-| `project.ts` `impactOf` | a proposal is not coverage; it is shown and labelled, like a superseded answer |
-| `export` | a proposal exports with its intent citations marked as intent |
-| browser + `list_flow_answers` | `kind` on every listing, never inferred from the ratio |
+| Site | What it must do | Where it landed |
+|---|---|---|
+| `read.ts` `loadStoredAnswer` | exclude intent citations from the hashed file set | `observedCitations` before `fileStates` (`read.ts:119`) |
+| `verification.ts` `entryPathsOf` | an intent entry step contributes no path | `verification.ts:155` |
+| `verification.ts` `verifyAnswer` | intent citations are not re-located | partitioned out; `Verification.intent` counts them |
+| `answers/metrics.ts` | metrics cover observed citations only, and say so | `intentCitationsExcluded` on `AnswerMetrics` |
+| `project.ts` `projectView` | a proposal is not coverage | excluded from `perModule`; `counts.proposedAnswers` names the exclusion |
+| `project.ts` `impactOf` | a proposal is shown and labelled, like a superseded answer | `kind` and `intentCitations` per row |
+| `export` | a proposal exports with its intent citations marked as intent | the banner, the `*(intent)*` cell, the reference table |
+| browser + `list_flow_answers` | `kind` on every listing, never inferred from the ratio | plus on the envelope itself |
+
+**Six more the section did not list, and they divide by how they were found.**
+
+Three the compiler named the moment `line` became optional: `diffAnswers`, which pairs citations by
+line number and would have crashed; `diff-impact.ts`, which relocates a citation into a base ref and
+would have searched a commit for a line that never existed; and `metrics/coverage.ts`, which asks the
+symbol index what is at `path:line`.
+
+Three it could not, because nothing about them is a type error. `answersPerModule` on the read
+surface counted a planned path as evidence about a module. The browser's per-step evidence tally
+would have drawn every proposed step in the amber it reserves for citations that failed to verify.
+And `impactOf`'s `lineState` reported a file nobody has written as `stale` — which the CLI printed as
+*stale* next to a proposal, and which reads as *deleted*. That is the group worth keeping in mind:
+they did not fail, they answered confidently and wrongly, and only running the thing found them.
+
+**The envelope carries `kind`.** The section put it on listings only. It is on every answer-scoped
+`ToolResponseEnvelope` too, beside `review` and `freshness`, for the reason those are: an agent that
+mistakes a proposal for an observation has been told the code does something it does not do, and the
+only other signal available — a low verified ratio — means something else entirely and is usually
+absent, because a well-researched proposal has a high one.
 
 ### Files
 
-Roughly: `flow-answer/contract.ts`, `flow-answer/verify.ts`, `flow-answer/validate.ts`,
-`answers/{read,freshness,verification,metrics,project}.ts`, `mcp-server/{run,read}-server.ts`,
-`ask/`, `export/`, `apps/server/src/views.ts`, `apps/cli/src/main.ts`, `tests/f015-proposals.test.ts`.
+`callgraph/modules.ts`, `flow-answer/{contract,intent,validate,verify}.ts`,
+`answers/{read,verification,metrics,project,diff-impact}.ts`, `metrics/coverage.ts`,
+`store/index.ts`, `mcp-server/{run,read}-server.ts`, `ask/{prompt,start}.ts`, `export/{index,markdown}.ts`,
+`apps/server/src/views.ts`, `apps/cli/src/main.ts`, `tests/f015-proposals.test.ts`.
+
+`@veriflow/flow-answer` gains a dependency on `@veriflow/callgraph`, which is where the module rule
+lives. No cycle — callgraph depends on `contracts` alone — and the alternative was a second copy of
+the rule matcher, which is the thing the registry's own comment warns against.
 
 ### Acceptance
 
@@ -709,6 +798,14 @@ Roughly: `flow-answer/contract.ts`, `flow-answer/verify.ts`, `flow-answer/valida
 - export round-trip preserving intent;
 - parent threading, and `ask --supersedes` turning a built proposal into an ordinary answer;
 - the review path: proposed → reviewed, read back as accepted.
+
+Plus seven the section did not ask for and the implementation earned: a proposed lane with nowhere to
+derive an id from, refused; an answer stored before `kind` existed parsing as the observation it is;
+the ratio reading 1 rather than 0 when an answer is *entirely* plan; no file opened for an intent
+citation even when a file happens to be at that path — asserted by recording every read; a proposal
+whose first phase contains an intent step not reading as `broken`; a proposal refused from a run with
+no parent flow; and the exported document containing no `undefined`, which is what a `path:line`
+template does with a citation that has no line.
 
 ---
 

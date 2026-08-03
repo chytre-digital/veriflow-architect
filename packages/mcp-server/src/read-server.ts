@@ -11,6 +11,7 @@ import {
   fileStates,
   fitWholeAnswer,
   impactOf,
+  kindOf,
   refExists,
   loadStoredAnswer,
   metricsForStoredAnswer,
@@ -64,8 +65,16 @@ const INSTRUCTIONS = [
   "that code has changed since), `review` (whether a human has checked it), then `data`.",
   "",
   "Read the labels before you rely on the content:",
+  "- kind `observed` means the answer describes the code as it is. `proposed` means it describes a",
+  "  change somebody wants and nobody has made — do not read it as a description of the code. It is",
+  "  stated on every answer-scoped envelope and on every listing, and is never inferable from the",
+  "  numbers.",
+  "- on a proposal, a citation with state `intent` names code that does not exist yet: it has no",
+  "  line, only the module it would live in. Intent citations are never counted as unverified, and",
+  "  the verified ratio's denominator leaves them out.",
   "- review.state `unreviewed` means no person has ever confirmed this answer. It is still served,",
   "  because withholding it would hide what is known — but say so when you build on it.",
+  "  A reviewed proposal is an accepted one; there is no third review state.",
   "- review.state `machine-derived` means nobody authors this data; it is measured from the repository.",
   "- freshness.state is a ladder: `fresh` nothing it cites changed; `drifted` something changed and",
   "  every citation still locates; `stale` at least one citation no longer locates; `broken` the",
@@ -133,22 +142,26 @@ export function createReadServer(options: ReadServerOptions): McpServer {
     {
       title: "List stored flow answers",
       description:
-        "Every answered flow question, newest first, each with its own review state and freshness. " +
-        "Unreviewed drafts are included — no person has confirmed them. Start here.",
+        "Every answered flow question, newest first, each with its own kind, review state and " +
+        "freshness. Unreviewed drafts are included — no person has confirmed them. `kind` says " +
+        "whether an entry describes the code (`observed`) or a change nobody has made (`proposed`); " +
+        "filter on it rather than guessing from the citation counts. Start here.",
       inputSchema: {
         filter: z.string().optional().describe("Substring of the title"),
         reviewState: z.enum(["unreviewed", "reviewed"]).optional(),
+        kind: z.enum(["observed", "proposed"]).optional().describe("Observations, or proposals"),
         cursor: z.string().optional(),
       },
     },
-    async ({ filter, reviewState, cursor }) => {
+    async ({ filter, reviewState, kind, cursor }) => {
       const snapshotId = latestSnapshot();
       if (!snapshotId) return refuse("nothing indexed yet — run `veriflow index` in the project first");
 
       const rows = store
         .listAnswers()
         .filter((a) => !filter || String(a["title"]).toLowerCase().includes(filter.toLowerCase()))
-        .filter((a) => !reviewState || a["review_state"] === reviewState);
+        .filter((a) => !reviewState || a["review_state"] === reviewState)
+        .filter((a) => !kind || kindOf(a) === kind);
 
       const page = paginate(rows, Math.min(pageSize, ANSWER_PAGE), cursor);
       const answers = page.items.map((a) => {
@@ -157,12 +170,22 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         // to be the same number the detail shows, and that needs the first phase and any stored
         // verification, neither of which a citation row carries.
         const stored = loadStoredAnswer(store, root, id);
+        const kindOfRow = kindOf(a);
         return {
           id,
           title: a["title"],
           snapshotId: a["snapshot_id"],
           status: a["status"],
-          ...(a["parent_answer_id"] ? { supersedes: a["parent_answer_id"] } : {}),
+          // Stated on every row. A proposal read as an observation is a description of code that
+          // does not exist, and the verified ratio is not a signal that would give it away.
+          kind: kindOfRow,
+          // The same column threads both relationships, and they are not the same fact: a proposal
+          // changes its parent, a re-answer replaces it.
+          ...(a["parent_answer_id"]
+            ? kindOfRow === "proposed"
+              ? { proposesChangeTo: a["parent_answer_id"] }
+              : { supersedes: a["parent_answer_id"] }
+            : {}),
           review: {
             state: a["review_state"],
             // Undecided, like every other count in the product. The whole answer is already loaded,
@@ -173,6 +196,8 @@ export function createReadServer(options: ReadServerOptions): McpServer {
           citations: {
             verified: a["verified"],
             unverified: a["unverified"],
+            // Never folded into `unverified`: code that has not been written did not fail a check.
+            intent: Number(a["intent"] ?? 0),
           },
           // Per answer, because "which of these can I still trust" is the question a list is for.
           freshness: stored?.freshness,
@@ -199,8 +224,11 @@ export function createReadServer(options: ReadServerOptions): McpServer {
       description:
         "The project read as the union of its stored answers: which modules more than one flow runs " +
         "through, which modules no answer reaches at all, the external systems named across flows, " +
-        "and every open question in one place. Superseded answers are excluded and counted, so a " +
-        "module cannot look unexplained because a row was quietly dropped. `reach` is a citation " +
+        "and every open question in one place. Superseded answers and proposals are excluded from " +
+        "the coverage counts and counted separately, so a module cannot look unexplained because a " +
+        "row was quietly dropped, nor explained by code nobody has written. `proposedModules` are " +
+        "the modules the stored proposals would add — they are not in `modules`, because the " +
+        "registry is measured from the repository and they are not in it. `reach` is a citation " +
         "count, never a judgement that a module is understood. Ask this before designing a change: " +
         "it says which flows a module belongs to, and where nothing has been asked yet.",
       inputSchema: {},
@@ -225,10 +253,10 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         "`drifted` it has and the lines are where they were rather than where they are, `stale` the " +
         "file is gone. On `drifted` call get_freshness to find out where each line moved to; on " +
         "`fresh` you do not need to. This answers the review question 'what does this change affect' " +
-        "from what has been verified rather than from a guess. Superseded answers are included and " +
-        "labelled: when a file is about to change, an answer that used to describe it is a reason " +
-        "to look. An empty list means nothing anyone has asked about depends on it, not that " +
-        "nothing does.",
+        "from what has been verified rather than from a guess. Superseded answers and proposals are " +
+        "included and labelled with `kind` and `status`: when a file is about to change, an answer " +
+        "that used to describe it and a proposal that wants to change it are both reasons to look. " +
+        "An empty list means nothing anyone has asked about depends on it, not that nothing does.",
       inputSchema: { path: z.string().describe("Repository-relative path, as it appears in citations") },
     },
     async ({ path }) => projectOr(() => ({ data: impactOf(store, root, path) })),
@@ -645,6 +673,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         return {
           id,
           title: a["title"],
+          kind: kindOf(a),
           review: { state: a["review_state"], openQuestions: undecidedInRow(a) },
           matchedTitle: String(a["title"]).toLowerCase().includes(needle),
           matchedCitedPaths: matchingPaths,
@@ -977,10 +1006,13 @@ function answersPerModule(store: Store, snapshotId: string): Array<Record<string
   return store.listAnswers().map((a) => {
     const counts: Record<string, number> = {};
     for (const citation of store.readAnswerCitations(String(a["id"]))) {
+      // An intent citation names a path a proposal would put code at. It is not evidence that a
+      // module does anything, so it does not count toward what an answer says about one.
+      if (citation["line"] === null || citation["line"] === undefined) continue;
       const owner = owning(String(citation["path"]), modules);
       if (owner) counts[owner] = (counts[owner] ?? 0) + 1;
     }
-    return { answerId: a["id"], title: a["title"], citationsByModule: counts };
+    return { answerId: a["id"], title: a["title"], kind: kindOf(a), citationsByModule: counts };
   });
 }
 

@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentSession, type AgentClientAdapter, type RunSink } from "@veriflow/agent-session";
-import { undecidedInRow } from "@veriflow/answers";
+import { kindOf, undecidedInRow } from "@veriflow/answers";
+import type { AnswerKind } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
 import type { AskPlan } from "./plan.js";
-import { buildFlowPrompt } from "./prompt.js";
+import { buildFlowPrompt, buildProposalPrompt } from "./prompt.js";
 
 /**
  * Where VeriFlow itself lives — not where the analysed project lives.
@@ -33,6 +34,12 @@ export interface AskRunOptions {
   timeoutMs?: number;
   /** Overrides the resolved CLI entry point; a test points this at a stub. */
   cliEntry?: string;
+  /**
+   * The observed answer this run proposes a change to. Set by `veriflow propose` and by nothing
+   * else — it is what turns an ordinary run into a design run, on both sides: the prompt starts from
+   * the parent flow, and the run's MCP server will accept `kind: "proposed"` because of it.
+   */
+  proposal?: { parentAnswerId: string; parentTitle: string; change: string };
 }
 
 export interface AskRun {
@@ -52,10 +59,13 @@ export function createAskRun(options: AskRunOptions): AskRun {
   const runId = randomUUID();
   store.createQuestion(questionId, options.projectId, plan.question);
 
+  const proposal = options.proposal;
   const session = new AgentSession({
     client: options.client,
     cwd: options.root,
-    prompt: buildFlowPrompt(plan.question, plan.chosen?.label),
+    prompt: proposal
+      ? buildProposalPrompt(proposal.parentTitle, proposal.change)
+      : buildFlowPrompt(plan.question, plan.chosen?.label),
     questionId,
     snapshotId: plan.snapshot.id,
     runId,
@@ -77,6 +87,7 @@ export function createAskRun(options: AskRunOptions): AskRun {
           questionId,
           "--snapshot",
           plan.snapshot.id,
+          ...(proposal ? ["--parent", proposal.parentAnswerId] : []),
         ],
       },
     },
@@ -100,6 +111,9 @@ export interface RunAnswerSummary {
   title: string;
   verified: number;
   unverified: number;
+  /** Citations naming code that does not exist yet. Never folded into `unverified`. */
+  intent: number;
+  kind: AnswerKind;
   /** Undecided, not submitted — the same number every other surface calls "open". */
   openQuestions: number;
 }
@@ -114,6 +128,8 @@ export function answersFromRun(store: Store, runId: string): RunAnswerSummary[] 
       title: String(a["title"]),
       verified: Number(a["verified"]),
       unverified: Number(a["unverified"]),
+      intent: Number(a["intent"] ?? 0),
+      kind: kindOf(a),
       openQuestions: undecidedInRow(a),
     }));
 }

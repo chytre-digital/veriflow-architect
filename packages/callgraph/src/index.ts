@@ -16,7 +16,16 @@ import { inferCallbackEdges, inferPortEdges, type InferenceOptions, type SourceR
 import { declaredEntries, resolveDeclaredEntries, type DeclaredEntry } from "./manifests.js";
 import { publicNames } from "./exports.js";
 
-export { deriveModules, moduleForPath, moduleIdFromPath, labelFromPath, layerRank, LAYER_ORDER } from "./modules.js";
+export {
+  deriveModules,
+  moduleForPath,
+  moduleIdForPath,
+  moduleIdFromPath,
+  moduleRootForPath,
+  labelFromPath,
+  layerRank,
+  LAYER_ORDER,
+} from "./modules.js";
 export { inferPortEdges, inferCallbackEdges, type SourceReader, type InferenceOptions } from "./infer.js";
 export {
   declaredEntries,

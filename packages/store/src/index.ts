@@ -819,20 +819,27 @@ export class Store {
     runId: string;
     snapshotId: string;
     parentAnswerId?: string;
+    /** `observed` or `proposed`. Defaulted here as well as in SQL, so an old caller is unchanged. */
+    kind?: string;
     title: string;
     verified: number;
     unverified: number;
+    /** Citations naming code that does not exist yet. Never part of `unverified`. */
+    intent?: number;
     openQuestions: number;
     body: unknown;
     citations: Array<{
       subjectKind: string;
       subjectId: string;
       path: string;
-      line: number;
+      /** Null on an intent citation: there is nothing at this path to have a line. */
+      line?: number | null;
       symbol?: string;
       state: string;
       lineHash?: string;
       reason?: string;
+      moduleId?: string;
+      plannedPath?: string;
     }>;
   }): void {
     this.db.exec("BEGIN");
@@ -841,8 +848,8 @@ export class Store {
         .prepare(
           `INSERT INTO answers
            (id, question_id, run_id, snapshot_id, parent_answer_id, contract_version, title, status,
-            review_state, verified, unverified, open_questions, body_json, created_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, 'draft', 'unreviewed', ?, ?, ?, ?, ?)`,
+            review_state, kind, verified, unverified, intent, open_questions, body_json, created_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, 'draft', 'unreviewed', ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           answer.id,
@@ -851,16 +858,19 @@ export class Store {
           answer.snapshotId,
           answer.parentAnswerId ?? null,
           answer.title,
+          answer.kind ?? "observed",
           answer.verified,
           answer.unverified,
+          answer.intent ?? 0,
           answer.openQuestions,
           JSON.stringify(answer.body),
           new Date().toISOString(),
         );
       const stmt = this.db.prepare(
         `INSERT INTO answer_citations
-         (answer_id, seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (answer_id, seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason,
+          module_id, planned_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       answer.citations.forEach((c, i) => {
         stmt.run(
@@ -869,11 +879,13 @@ export class Store {
           c.subjectKind,
           c.subjectId,
           c.path,
-          c.line,
+          c.line ?? null,
           c.symbol ?? null,
           c.state,
           c.lineHash ?? null,
           c.reason ?? null,
+          c.moduleId ?? null,
+          c.plannedPath ?? null,
         );
       });
       this.db.exec("COMMIT");
@@ -893,7 +905,7 @@ export class Store {
     return this.db
       .prepare(
         `SELECT id, question_id, run_id, snapshot_id, parent_answer_id, title, status, review_state,
-                verified, unverified, open_questions, ${DECIDED_QUESTIONS}, created_at
+                kind, verified, unverified, intent, open_questions, ${DECIDED_QUESTIONS}, created_at
          FROM answers a ORDER BY created_at DESC`,
       )
       .all() as Array<Record<string, unknown>>;
@@ -924,7 +936,8 @@ export class Store {
   readAnswerCitations(answerId: string): Array<Record<string, unknown>> {
     return this.db
       .prepare(
-        `SELECT seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason
+        `SELECT seq, subject_kind, subject_id, path, line, symbol, state, line_hash, reason,
+                module_id, planned_path
          FROM answer_citations WHERE answer_id = ? ORDER BY seq`,
       )
       .all(answerId) as Array<Record<string, unknown>>;
@@ -1295,8 +1308,8 @@ export class Store {
     const like = `%${query}%`;
     return this.db
       .prepare(
-        `SELECT DISTINCT a.id, a.title, a.snapshot_id, a.review_state, a.verified, a.unverified,
-                a.open_questions, ${DECIDED_QUESTIONS}, a.created_at
+        `SELECT DISTINCT a.id, a.title, a.snapshot_id, a.review_state, a.kind, a.verified,
+                a.unverified, a.intent, a.open_questions, ${DECIDED_QUESTIONS}, a.created_at
          FROM answers a LEFT JOIN answer_citations c ON c.answer_id = a.id
          WHERE a.title LIKE ? OR c.path LIKE ? OR a.body_json LIKE ?
          ORDER BY a.created_at DESC LIMIT 50`,
@@ -1308,7 +1321,11 @@ export class Store {
   answersCitingPath(path: string): Array<Record<string, unknown>> {
     return this.db
       .prepare(
-        `SELECT a.id, a.title, a.review_state, a.open_questions, COUNT(*) AS citations
+        // `intent_citations` is counted apart from the total, because a proposal citing a path is
+        // saying it intends to put code there — which is worth knowing before you change that file,
+        // and is not the same statement as an answer describing what the file does now.
+        `SELECT a.id, a.title, a.review_state, a.kind, a.open_questions, COUNT(*) AS citations,
+                SUM(CASE WHEN c.line IS NULL THEN 1 ELSE 0 END) AS intent_citations
          FROM answer_citations c JOIN answers a ON a.id = c.answer_id
          WHERE c.path = ? GROUP BY a.id ORDER BY citations DESC`,
       )

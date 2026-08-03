@@ -114,8 +114,15 @@ export function pathCoverage(answer: FlowAnswer, tests: TestIndex, symbols?: Sym
 
   return answer.branches.map((branch) => {
     const counts = new Map<string, number>();
-    const citationsOf = (steps: ReadonlyArray<{ citations: ReadonlyArray<{ path: string; line: number; symbol?: string }> }>) =>
-      steps.flatMap((s) => s.citations);
+    // Only citations that name a line. A proposal's intent citations point at code nobody has
+    // written, and there is no test naming an identifier that does not exist — counting them would
+    // report a planned outcome as an untested one, which is a finding about the future.
+    const citationsOf = (
+      steps: ReadonlyArray<{ citations: ReadonlyArray<{ path: string; line?: number; symbol?: string }> }>,
+    ): Array<{ path: string; line: number; symbol?: string }> =>
+      steps.flatMap((s) =>
+        s.citations.filter((c): c is { path: string; line: number; symbol?: string } => c.line !== undefined),
+      );
 
     const own = citationsOf(branch.steps);
     for (const citation of own) {
@@ -137,7 +144,8 @@ export function pathCoverage(answer: FlowAnswer, tests: TestIndex, symbols?: Sym
     // nearest honest identifier, and the note says that is what happened.
     let fromFork = false;
     if (counts.size === 0) {
-      for (const citation of stepById.get(branch.forkStepId)?.citations ?? []) {
+      const fork = stepById.get(branch.forkStepId);
+      for (const citation of fork ? citationsOf([fork]) : []) {
         const name = citation.symbol ?? symbols?.at(citation.path, citation.line);
         if (!name) continue;
         fromFork = true;

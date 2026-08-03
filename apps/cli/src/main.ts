@@ -8,7 +8,15 @@ import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } f
 import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
 import { ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
-import { answersFromRun, applySupersede, createAskRun, planAsk, type AskPlan } from "@veriflow/ask";
+import {
+  answersFromRun,
+  applySupersede,
+  createAskRun,
+  planAsk,
+  type AskPlan,
+  type RunAnswerSummary,
+} from "@veriflow/ask";
+import { proposedModulesOf } from "@veriflow/flow-answer";
 import { serveRead, serveRun } from "@veriflow/mcp-server";
 import {
   CHANGE_IMPACT_METHOD,
@@ -20,6 +28,7 @@ import {
   decideQuestion,
   diffAnswers,
   impactOf,
+  kindOf,
   loadStoredAnswer,
   refExists,
   metricsForStoredAnswer,
@@ -581,8 +590,12 @@ program
   .requiredOption("--run <id>")
   .requiredOption("--question <id>")
   .requiredOption("--snapshot <id>")
+  .option("--parent <answerId>", "the observed answer this run proposes a change to (veriflow propose)")
   .description("MCP server exposed to the agent for one run (launched by veriflow ask)")
-  .action(async (pathArg: string | undefined, options: { run: string; question: string; snapshot: string }) => {
+  .action(async (
+    pathArg: string | undefined,
+    options: { run: string; question: string; snapshot: string; parent?: string },
+  ) => {
     // No lock and no banner: this process is a child of the agent and speaks MCP on stdio, so any
     // stray stdout would corrupt the protocol.
     await serveRun({
@@ -590,6 +603,7 @@ program
       runId: options.run,
       questionId: options.question,
       snapshotId: options.snapshot,
+      ...(options.parent ? { parentAnswerId: options.parent } : {}),
     });
   });
 
@@ -754,13 +768,7 @@ program
     log(`  ${result.events.length} events stored; replay with: veriflow transcript ${result.runId}`);
 
     const answers = answersFromRun(ctx.store, result.runId);
-    for (const answer of answers) {
-      log(`  answer ${answer.id.slice(0, 8)} - ${answer.title}`);
-      log(
-        `    ${answer.verified}/${answer.verified + answer.unverified} citations verified - ` +
-          `${answer.openQuestions} open question(s)`,
-      );
-    }
+    for (const answer of answers) reportAnswer(answer);
     if (answers.length === 0) log(`  No answer was submitted.`);
 
     const supersede = applySupersede(ctx.store, superseded, answers);
@@ -770,6 +778,176 @@ program
     }
     ctx.close();
   });
+
+/**
+ * What a run left behind, printed the same way whether it was an ordinary run or a design run.
+ *
+ * The intent count is beside the ratio rather than inside it. A proposal that is nine tenths plan is
+ * not an answer that is nine tenths wrong, and a line reading `2/40 verified` would say exactly that.
+ */
+function reportAnswer(answer: RunAnswerSummary): void {
+  const checkable = answer.verified + answer.unverified;
+  log(`  ${answer.kind === "proposed" ? "proposal" : "answer"} ${answer.id.slice(0, 8)} - ${answer.title}`);
+  log(
+    `    ${answer.verified}/${checkable} citations verified` +
+      (answer.intent ? ` - ${answer.intent} intent (code that does not exist yet)` : "") +
+      ` - ${answer.openQuestions} open question(s)`,
+  );
+}
+
+/* ------------------------------------------------------------------ propose */
+
+program
+  .command("propose")
+  .argument("<answerId>", "the observed answer whose flow should change")
+  .argument("<change>", "what should change, in a sentence")
+  .argument("[path]")
+  .option("--client <id>", "agent client", "claude-code")
+  .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--timeout <ms>", "run timeout in milliseconds", "900000")
+  .description("design a change to a stored flow — a second answer describing what it would become")
+  .action(async (
+    answerArg: string,
+    change: string,
+    pathArg: string | undefined,
+    options: { client: string; clientCommand?: string; timeout: string },
+  ) => {
+    const ctx = open(pathArg);
+
+    // Resolved before anything is spent. A proposal is a change to a flow that exists, so the flow
+    // has to exist — and the run's own MCP server refuses `kind: "proposed"` without this id.
+    const parent = loadStoredAnswer(ctx.store, ctx.root, answerArg);
+    if (!parent) {
+      ctx.close();
+      fail(`no stored answer with id or prefix "${answerArg}" - run: veriflow answers`);
+    }
+    if (parent.kind === "proposed") {
+      ctx.close();
+      fail(
+        `${parent.row.id.slice(0, 8)} is already a proposal. Propose against the observed flow it ` +
+          `changes, or build it and re-answer with: veriflow ask "..." --supersedes ${parent.row.id.slice(0, 8)}`,
+      );
+    }
+    if (!change.trim()) {
+      ctx.close();
+      fail("say what should change");
+    }
+
+    // The question a proposal answers is a question, and it is stored as one — so a design run has a
+    // transcript, a question row and an answer exactly like every other run.
+    const question = `Proposed change to "${parent.answer.title}": ${change.trim()}`;
+    let plan: AskPlan;
+    try {
+      plan = planAsk(ctx.store, ctx.projectId, question);
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    const client =
+      options.client === "codex"
+        ? new CodexAdapter(options.clientCommand)
+        : new ClaudeCodeAdapter(options.clientCommand);
+    const capabilities = await client.probe();
+    if (!capabilities) {
+      ctx.close();
+      fail(
+        `agent client "${options.client}" is not available on this machine - ` +
+          `if it is installed, give the executable directly with --client-command <path>`,
+      );
+    }
+
+    log(`Proposing against ${parent.row.id.slice(0, 8)} - ${parent.answer.title}`);
+    // The parent's freshness is stated before the run, not after it: designing against a flow whose
+    // evidence has already moved is worth knowing while it still costs nothing to stop.
+    log(`  ${parent.freshness.state.toUpperCase()}  ${thresholdOf(parent.freshness.state)}`);
+    log(`  ${parent.citations.length} citation(s) on the parent, ${parent.row.review_state}`);
+    log(``);
+    log(`${capabilities.id} ${capabilities.version} - ${capabilities.transport}`);
+    log(`snapshot ${plan.snapshot.id.slice(0, 8)}${plan.snapshot.dirty ? " (dirty tree)" : ""}`);
+    log(``);
+
+    const { runId, session } = createAskRun({
+      root: ctx.root,
+      store: ctx.store,
+      projectId: ctx.projectId,
+      plan,
+      client,
+      timeoutMs: Number(options.timeout),
+      proposal: {
+        parentAnswerId: parent.row.id,
+        parentTitle: parent.answer.title,
+        change: change.trim(),
+      },
+      sink: {
+        onEvent(event) {
+          const payload = event.payload as Record<string, unknown>;
+          switch (event.channel) {
+            case "assistant":
+              if (typeof payload["text"] === "string") log(payload["text"] as string);
+              break;
+            case "tool-call":
+              log(`  -> ${String(payload["name"])}`);
+              break;
+            case "stderr":
+              log(`  ! ${String(payload["text"])}`);
+              break;
+            default:
+              break;
+          }
+        },
+      },
+    });
+
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const answered = new Set<string>();
+    const poller = setInterval(() => {
+      for (const pending of ctx.store.pendingQuestions(runId)) {
+        if (answered.has(pending.id)) continue;
+        answered.add(pending.id);
+        void (async () => {
+          log(``);
+          log(`? ${pending.question}`);
+          if (pending.options?.length) log(`  options: ${pending.options.join(" | ")}`);
+          const value = await rl.question("> ");
+          ctx.store.answerQuestion(runId, pending.id, value);
+        })();
+      }
+    }, 300);
+
+    process.once("SIGINT", () => {
+      void session.cancel("interrupted");
+    });
+
+    const result = await session.run();
+    clearInterval(poller);
+    rl.close();
+
+    log(``);
+    log(`Run ${result.runId.slice(0, 8)} - ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
+
+    const answers = answersFromRun(ctx.store, result.runId);
+    for (const answer of answers) {
+      reportAnswer(answer);
+      const stored = loadStoredAnswer(ctx.store, ctx.root, answer.id);
+      const proposed = stored ? proposedModulesOf(stored.answer, moduleIdsOf(ctx.store)) : [];
+      for (const module of proposed.filter((m) => !m.existsInRegistry)) {
+        log(`    would add module ${module.id}  (${module.root}) - ${module.citations} intent citation(s)`);
+      }
+      log(`    read it:  veriflow open ${ctx.root}   ·   compare:  veriflow diff ${parent.row.id.slice(0, 8)} ${answer.id.slice(0, 8)}`);
+    }
+    if (answers.length === 0) log(`  No proposal was submitted.`);
+
+    // Deliberately not superseding the parent. The observed flow is still what the code does, and it
+    // stays the answer every other surface serves until somebody builds the change.
+    ctx.close();
+  });
+
+/** The registry's ids at the newest snapshot, so a proposal's module can be told from an existing one. */
+function moduleIdsOf(store: Store): string[] {
+  const snapshot = store.latestSnapshotAny();
+  return snapshot ? store.readModules(snapshot.id).map((m) => String(m["id"])) : [];
+}
 
 program
   .command("transcript")
@@ -805,10 +983,16 @@ program
       for (const a of answers) {
         const total = Number(a["verified"]) + Number(a["unverified"]);
         const decided = Number(a["decided_questions"] ?? 0);
-        log(`${String(a["id"]).slice(0, 8)}  ${a["title"]}`);
+        const intent = Number(a["intent"] ?? 0);
+        // A proposal is labelled on the line, never left to be inferred from a low ratio. `reviewed`
+        // on a proposal means accepted — there is no third review state, on purpose.
+        const proposed = kindOf(a) === "proposed";
+        log(`${String(a["id"]).slice(0, 8)}  ${proposed ? "[proposal] " : ""}${a["title"]}`);
         log(
-          `          ${a["verified"]}/${total} verified - ${undecidedInRow(a)} open` +
-            `${decided ? ` (${decided} decided)` : ""} - ${a["review_state"]}`,
+          `          ${a["verified"]}/${total} verified` +
+            `${intent ? ` - ${intent} intent` : ""} - ${undecidedInRow(a)} open` +
+            `${decided ? ` (${decided} decided)` : ""} - ` +
+            `${proposed && a["review_state"] === "reviewed" ? "reviewed (accepted)" : a["review_state"]}`,
         );
       }
     }
@@ -890,7 +1074,7 @@ program
     }
 
     for (const { stored, verification: v } of done) {
-      log(`${stored.row.id.slice(0, 8)}  ${stored.answer.title}`);
+      log(`${stored.row.id.slice(0, 8)}  ${stored.kind === "proposed" ? "[proposal] " : ""}${stored.answer.title}`);
       log(`  ${v.state.toUpperCase().padEnd(8)} ${thresholdOf(v.state)}`);
       log(
         `  ${v.citedFilesChanged} of ${v.citedFiles} cited files changed` +
@@ -902,6 +1086,11 @@ program
         `  ${v.total} citations: ${v.resolved} resolved · ${v.drifted} drifted · ` +
           `${v.missing} missing · ${v.fileMissing} in files that are gone   (${v.durationMs} ms)`,
       );
+      // Outside the totals above, and said so. Nothing was checked, because there is nothing yet to
+      // check — reporting these as missing would call a plan a broken answer.
+      if (v.intent > 0) {
+        log(`  ${v.intent} intent citation(s) not checked — they name code that does not exist yet`);
+      }
       for (const r of v.results.filter((x) => x.outcome !== "resolved")) {
         const where = r.toLine ? `${r.path}:${r.fromLine} → :${r.toLine}` : `${r.path}:${r.fromLine}`;
         log(
@@ -1159,11 +1348,21 @@ program
       log("  Nobody has asked about this file. That is not the same as nothing depending on it.");
     }
     for (const a of impact.answers) {
+      // `lineState` measures a file against the snapshot that cited it. A proposal whose citations
+      // here are all intent has no lines to be current and no file to have gone: printing `stale`
+      // would report a file nobody has written as one that was deleted.
+      const allIntent = a.intentCitations === a.citations;
       log(
-        `  ${a.id.slice(0, 8)}  ${a.title}${a.status === "superseded" ? "  [superseded]" : ""}` +
-          `  ${a.reviewState}  ${a.lineState}`,
+        `  ${a.id.slice(0, 8)}  ${a.kind === "proposed" ? "[proposal] " : ""}${a.title}` +
+          `${a.status === "superseded" ? "  [superseded]" : ""}  ${a.reviewState}` +
+          `${allIntent ? "" : `  ${a.lineState}`}`,
       );
-      log(`            ${a.citations} citation(s) at ${a.lines.join(", ")}`);
+      log(
+        allIntent
+          ? `            ${a.citations} intent citation(s) — this proposal would put code here`
+          : `            ${a.citations} citation(s) at ${a.lines.join(", ")}` +
+              (a.intentCitations ? ` · ${a.intentCitations} intent` : ""),
+      );
     }
     if (impact.alsoInModule.length > 0) {
       log("\n  Also cited in the same module");

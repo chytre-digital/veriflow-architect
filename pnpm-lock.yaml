@@ -156,6 +156,9 @@ importers:
       '@veriflow/agent-session':
         specifier: workspace:*
         version: link:../agent-session
+      '@veriflow/answers':
+        specifier: workspace:*
+        version: link:../answers
       '@veriflow/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -197,6 +200,9 @@ importers:
 
   packages/flow-answer:
     dependencies:
+      '@veriflow/callgraph':
+        specifier: workspace:*
+        version: link:../callgraph
       '@veriflow/contracts':
         specifier: workspace:*
         version: link:../contracts

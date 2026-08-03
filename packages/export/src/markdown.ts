@@ -1,5 +1,6 @@
 import type { Freshness, QuestionDecision, SnapshotFacts, StoredCitation } from "@veriflow/answers";
-import type { FlowAnswer } from "@veriflow/flow-answer";
+import type { AnswerKind, FlowAnswer } from "@veriflow/flow-answer";
+import { proposedModulesOf } from "@veriflow/flow-answer";
 import { renderMermaid } from "./mermaid.js";
 
 /**
@@ -15,6 +16,8 @@ export interface DocumentInput {
   citations: readonly StoredCitation[];
   snapshot: SnapshotFacts;
   freshness: Freshness;
+  /** Overrides the body's own `kind`. Falls back to it, then to `observed`. */
+  kind?: AnswerKind;
   /**
    * Who settled which question, by question id. The decision itself is already on the answer — this
    * is the attribution beside it, which lives on the correction row rather than in the body.
@@ -65,6 +68,25 @@ export function renderDocument(input: DocumentInput): Document {
     `> re-export rather than editing this file: an export refuses to overwrite changes it did not make.`,
     "",
   );
+
+  // Said once, at the top, in the place a reader cannot skip. A document that describes a change
+  // somebody wants and reads like a description of the code is the most expensive kind of wrong.
+  const kind: AnswerKind = input.kind ?? answer.kind ?? "observed";
+  if (kind === "proposed") {
+    const proposed = proposedModulesOf(answer).filter((m) => !m.existsInRegistry);
+    out.push(
+      `> **This is a proposal, not a description.** It says what the flow *should* do, not what the`,
+      `> code does today. References with no line number name code that has not been written.`,
+      ...(proposed.length
+        ? [
+            `> It would add ${proposed.length} module${proposed.length === 1 ? "" : "s"} the repository does`,
+            `> not have: ${proposed.map((m) => `\`${m.root}\``).join(", ")}.`,
+          ]
+        : []),
+      "",
+    );
+  }
+
   out.push(`**Question asked** — ${input.question}`, "");
 
   const f = input.freshness;
@@ -222,9 +244,9 @@ export function renderDocument(input: DocumentInput): Document {
   /* ------------------------------------------------------------ references */
 
   out.push("## References", "");
-  const seen = new Map<string, { path: string; line: number; symbol?: string; state: string }>();
+  const seen = new Map<string, { path: string; line: number | null; symbol?: string; state: string }>();
   for (const citation of input.citations) {
-    const key = `${citation.path}:${citation.line}`;
+    const key = `${citation.path}:${citation.line ?? "intent"}`;
     if (seen.has(key)) continue;
     seen.set(key, {
       path: citation.path,
@@ -234,8 +256,9 @@ export function renderDocument(input: DocumentInput): Document {
     });
   }
   const references = [...seen.values()].sort((a, b) =>
-    a.path === b.path ? a.line - b.line : a.path < b.path ? -1 : 1,
+    a.path === b.path ? (a.line ?? 0) - (b.line ?? 0) : a.path < b.path ? -1 : 1,
   );
+  const intent = references.filter((r) => r.line === null || r.line === undefined).length;
   if (references.length === 0) {
     out.push("This answer carries no citation.", "");
   } else {
@@ -244,11 +267,22 @@ export function renderDocument(input: DocumentInput): Document {
       `whether it verified when the answer was submitted. Paths are repository-relative.`,
       "",
     );
+    if (intent > 0) {
+      // Stated rather than left to be inferred from a blank line number. A reader who takes an
+      // intent reference for an observed one has been told the code does something it does not do.
+      out.push(
+        `${intent} of them ${intent === 1 ? "is" : "are"} an **intent** reference: a path this proposal`,
+        `would put code at, which does not exist yet and therefore verified against nothing.`,
+        "",
+      );
+    }
     out.push("| Reference | Symbol | At submit time |", "|---|---|---|");
     for (const reference of references) {
-      out.push(
-        `| \`${reference.path}:${reference.line}\` | ${reference.symbol ? `\`${reference.symbol}\`` : "—"} | ${reference.state} |`,
-      );
+      const where =
+        reference.line === null || reference.line === undefined
+          ? `\`${reference.path}\` *(no line — not written yet)*`
+          : `\`${reference.path}:${reference.line}\``;
+      out.push(`| ${where} | ${reference.symbol ? `\`${reference.symbol}\`` : "—"} | ${reference.state} |`);
     }
     out.push("");
   }
@@ -268,9 +302,20 @@ function cell(text: string): string {
   return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
 }
 
-function refs(citations: ReadonlyArray<{ path: string; line: number }>): string {
+/**
+ * A citation with no line is a claim about code that does not exist yet, and the document says so
+ * in the cell rather than printing `path:undefined`. The marker is the same word the envelope, the
+ * CLI and the browser use, so a reader who has seen one has seen them all.
+ */
+function refs(citations: ReadonlyArray<{ path: string; line?: number; plannedPath?: string }>): string {
   if (citations.length === 0) return "—";
-  return citations.map((c) => `\`${c.path}:${c.line}\``).join("<br>");
+  return citations
+    .map((c) =>
+      c.line === undefined
+        ? `\`${c.plannedPath ?? c.path}\` *(intent)*`
+        : `\`${c.path}:${c.line}\``,
+    )
+    .join("<br>");
 }
 
 /** `A booking is refunded` → `a-booking-is-refunded`. The file name an export defaults to. */

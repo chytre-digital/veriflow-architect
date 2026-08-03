@@ -4,5 +4,9 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@veriflow/contracts": "workspace:*", "zod": "^3.24.1" }
+  "dependencies": {
+    "@veriflow/callgraph": "workspace:*",
+    "@veriflow/contracts": "workspace:*",
+    "zod": "^3.24.1"
+  }
 }

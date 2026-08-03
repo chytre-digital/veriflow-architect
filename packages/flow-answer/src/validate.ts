@@ -1,9 +1,12 @@
 import {
   FlowAnswerSchema,
+  isIntentCitation,
+  type Citation,
   type Diagnostic,
   type FlowAnswer,
   type Step,
 } from "./contract.js";
+import { intentModuleOf } from "./intent.js";
 
 export const MAX_ANSWER_BYTES = 512 * 1024;
 
@@ -69,7 +72,43 @@ export function validateStructure(input: unknown): ValidationResult {
   const phaseIds = new Set(answer.phases.map((p) => p.id));
   const stepIds = new Set(answer.steps.map((s) => s.id));
 
+  /**
+   * A citation carries either a line or a module, never neither.
+   *
+   * This is a structural fault rather than a label, and the distinction matters: an unverified
+   * citation is evidence that did not check out, which is worth serving with a warning. A citation
+   * with no line and no module points at nothing at all — there is no claim in it to label.
+   *
+   * The second half is the rule that keeps `kind` meaning something. An observed answer describes
+   * code that exists; a citation with no line inside one is either a mistake or a proposal filed
+   * under the wrong heading, and both are better refused at submit than stored as an observation
+   * nothing can ever verify.
+   */
+  const checkCitation = (citation: Citation, where: string): void => {
+    if (!isIntentCitation(citation)) return;
+    if (answer.kind !== "proposed") {
+      diagnostics.push({
+        code: "citation.intent_on_observed",
+        message:
+          `${citation.path} is cited without a line on an observed answer — a citation with no line ` +
+          `describes code that does not exist yet, which only a proposal can claim`,
+        at: where,
+      });
+      return;
+    }
+    if (!intentModuleOf(citation)) {
+      diagnostics.push({
+        code: "citation.no_anchor",
+        message:
+          `${citation.path} is cited with neither a line nor a module id, and no module root can be ` +
+          `derived from that path — give a line, a moduleId, or a plannedPath inside a module`,
+        at: where,
+      });
+    }
+  };
+
   const checkStep = (step: Step, where: string): void => {
+    step.citations.forEach((citation, i) => checkCitation(citation, `${where}.citations.${i}`));
     if (!laneIds.has(step.from)) {
       diagnostics.push({ code: "step.unknown_lane", message: `step ${step.id} comes from undeclared lane ${step.from}`, at: where });
     }
@@ -100,6 +139,26 @@ export function validateStructure(input: unknown): ValidationResult {
         code: "module_edge.inferred_without_rule",
         message: `inferred edge ${edge.from} -> ${edge.to} names no rule`,
         at: `moduleEdges.${i}`,
+      });
+    }
+    edge.citations.forEach((c, j) => checkCitation(c, `moduleEdges.${i}.citations.${j}`));
+  });
+
+  answer.externalSystems.forEach((system, i) => {
+    system.citations.forEach((c, j) => checkCitation(c, `externalSystems.${i}.citations.${j}`));
+  });
+
+  // A proposed module's id is derived from its planned path by the registry's own function. A lane
+  // that says it is proposed and does not say where it would live has nothing to derive an id from,
+  // so it would draw a box on the module map that no future re-index could ever match.
+  answer.lanes.forEach((lane, i) => {
+    if (lane.proposed && !lane.plannedPath && !lane.moduleId) {
+      diagnostics.push({
+        code: "lane.proposed_without_path",
+        message:
+          `lane ${lane.id} is marked proposed but names neither a plannedPath nor a moduleId — a ` +
+          `module that does not exist yet is identified by the path it would live at`,
+        at: `lanes.${i}`,
       });
     }
   });

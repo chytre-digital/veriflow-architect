@@ -51,11 +51,17 @@ export interface Verification {
   /** Supporting metadata only. Never drives the state. */
   commitsSince?: number;
   dirtyAtCapture: boolean;
+  /** Citations re-located. Intent citations are not among them — see `intent`. */
   total: number;
   resolved: number;
   drifted: number;
   missing: number;
   fileMissing: number;
+  /**
+   * Citations naming code that does not exist yet, counted and then left alone. They are not in
+   * `total`, so no ratio taken over this record can read a plan as a failure.
+   */
+  intent: number;
   state: FreshnessState;
   /** Files whose content is byte-identical to the snapshot, so their citations were not re-searched. */
   skippedUnchangedFiles: number;
@@ -89,11 +95,35 @@ export interface StoredCitation {
   subject_kind: string;
   subject_id: string;
   path: string;
-  line: number;
+  /** Null on an intent citation — code that does not exist yet has no line to have been cited. */
+  line: number | null;
   symbol: string | null;
   state: string;
   line_hash: string | null;
   reason: string | null;
+  module_id?: string | null;
+  planned_path?: string | null;
+}
+
+/**
+ * A citation there is nothing to verify against, because the code it names has not been written.
+ *
+ * Everything in this file that reads the tree filters on this first. Re-locating an intent citation
+ * would look for a line in a file that does not exist and report `file-missing` — which would make
+ * every proposal read as the most broken answer in the database.
+ */
+export function isIntentStored(citation: Pick<StoredCitation, "line">): boolean {
+  return citation.line === null || citation.line === undefined;
+}
+
+export function observedCitations<T extends Pick<StoredCitation, "line">>(
+  citations: readonly T[],
+): Array<T & { line: number }> {
+  return citations.filter((c): c is T & { line: number } => !isIntentStored(c));
+}
+
+export function intentCitations<T extends Pick<StoredCitation, "line">>(citations: readonly T[]): T[] {
+  return citations.filter((c) => isIntentStored(c));
 }
 
 /**
@@ -117,11 +147,18 @@ export function entryStepIds(answer: FlowAnswer): Set<string> {
   return new Set(answer.steps.filter((s) => firstPhases.has(s.phaseId)).map((s) => s.id));
 }
 
+/**
+ * An intent entry step contributes no path. A flow's way in cannot be `broken` by a file that was
+ * never written — the first phase of a proposal is a plan, and measuring it as a lost entry point
+ * would report every proposal as an application that is no longer there.
+ */
 export function entryPathsOf(answer: FlowAnswer, citations: readonly StoredCitation[]): string[] {
   const entry = entryStepIds(answer);
   return [
     ...new Set(
-      citations.filter((c) => c.subject_kind === "step" && entry.has(c.subject_id)).map((c) => c.path),
+      citations
+        .filter((c) => !isIntentStored(c) && c.subject_kind === "step" && entry.has(c.subject_id))
+        .map((c) => c.path),
     ),
   ];
 }
@@ -164,7 +201,7 @@ export function locate(
 }
 
 function verifyCitation(
-  citation: StoredCitation,
+  citation: StoredCitation & { line: number },
   state: FileState,
   lines: readonly string[] | undefined,
   entry: boolean,
@@ -298,7 +335,11 @@ export function verifyAnswer(
 ): Verification {
   const started = Date.now();
   const driftWindow = options.driftWindow ?? DRIFT_WINDOW;
-  const citations = [...input.citations];
+  // Intent citations are set aside before anything is hashed or read. They are counted on the record
+  // rather than dropped, because "nine of these claims are about code that does not exist yet" is
+  // the single most important thing to know about a proposal's freshness.
+  const intent = intentCitations(input.citations).length;
+  const citations = observedCitations(input.citations);
   const entrySteps = entryStepIds(input.answer);
 
   const states = new Map(
@@ -345,6 +386,7 @@ export function verifyAnswer(
     drifted: results.filter((r) => r.outcome === "drifted").length,
     missing: results.filter((r) => r.outcome === "missing").length,
     fileMissing: results.filter((r) => r.outcome === "file-missing").length,
+    intent,
     state: classify(results, changedFiles),
     skippedUnchangedFiles: options.full
       ? 0
@@ -423,7 +465,10 @@ export function diffAnswers(store: Store, from: DiffSide, to: DiffSide): AnswerD
     // Named symbols pair first, then whatever is left pairs in order within the same file. Matching
     // every unnamed citation against the first one that shares a path would report four different
     // lines as having all moved to the same place, which is not a diff, it is a coincidence.
-    const unclaimed = [...newStep.citations];
+    //
+    // Intent citations are out of this entirely: "the evidence moved" is a statement about two line
+    // numbers, and a plan has neither. What a proposal changed is WP7a's subject, not this one's.
+    const unclaimed = newStep.citations.filter((c) => c.line !== undefined);
     const take = (predicate: (c: (typeof unclaimed)[number]) => boolean) => {
       const index = unclaimed.findIndex(predicate);
       return index < 0 ? undefined : unclaimed.splice(index, 1)[0];
@@ -432,6 +477,7 @@ export function diffAnswers(store: Store, from: DiffSide, to: DiffSide): AnswerD
     const pairs: Array<[(typeof oldStep.citations)[number], (typeof unclaimed)[number] | undefined]> = [];
     const deferred: Array<(typeof oldStep.citations)[number]> = [];
     for (const citation of oldStep.citations) {
+      if (citation.line === undefined) continue;
       if (!citation.symbol) {
         deferred.push(citation);
         continue;
@@ -443,7 +489,8 @@ export function diffAnswers(store: Store, from: DiffSide, to: DiffSide): AnswerD
     }
 
     for (const [oldCitation, match] of pairs) {
-      if (!match || match.line === oldCitation.line) continue;
+      if (!match || match.line === undefined || oldCitation.line === undefined) continue;
+      if (match.line === oldCitation.line) continue;
       movedEvidence.push({
         stepId: id,
         label: newStep.label,

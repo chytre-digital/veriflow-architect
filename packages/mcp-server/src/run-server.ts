@@ -5,8 +5,10 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Store } from "@veriflow/store";
+import { fitWholeAnswer, loadStoredAnswer } from "@veriflow/answers";
 import { isSecretPath } from "@veriflow/snapshot";
 import {
+  AnswerKindSchema,
   BranchSchema,
   ExternalSystemSchema,
   FlowAnswerSchema,
@@ -15,6 +17,9 @@ import {
   OpenQuestionSchema,
   PhaseSchema,
   StepSchema,
+  isIntentCitation,
+  proposedModulesOf,
+  resolveIntent,
   validateStructure,
   verifyCitations,
 } from "@veriflow/flow-answer";
@@ -32,6 +37,15 @@ export interface RunServerOptions {
   runId: string;
   questionId: string;
   snapshotId: string;
+  /**
+   * The observed answer a proposal is being written against, set by `veriflow propose`.
+   *
+   * Its presence is what makes this run a design run: it adds one read tool for the parent flow, and
+   * it is the only way `submit_flow_answer` will accept `kind: "proposed"` — a proposal with no
+   * parent is a description of a flow nobody has established, which is an ordinary answer wearing
+   * the wrong label.
+   */
+  parentAnswerId?: string;
   /** How long an ask_user call waits for a person before giving up. */
   answerTimeoutMs?: number;
   pollMs?: number;
@@ -40,6 +54,8 @@ export interface RunServerOptions {
 const ANSWER_TIMEOUT_MS = 15 * 60 * 1000;
 const POLL_MS = 300;
 const MAX_EXCERPT_LINES = 200;
+/** Roughly twelve thousand tokens, the same budget the read surface gives a whole answer. */
+const PARENT_BUDGET = 48_000;
 
 export function createRunServer(options: RunServerOptions): McpServer {
   const store = new Store({ file: join(options.root, ".veriflow", "veriflow.db") });
@@ -153,6 +169,39 @@ export function createRunServer(options: RunServerOptions): McpServer {
     },
   );
 
+  // Only on a design run. On an ordinary run there is no parent flow, and a tool that answers
+  // "there isn't one" on every call is a tool the agent has to learn to stop calling.
+  if (options.parentAnswerId) {
+    server.registerTool(
+      "get_parent_flow",
+      {
+        title: "The flow this proposal changes",
+        description:
+          "The observed answer you are proposing a change to: its lanes, phases, ordered steps with " +
+          "their citations, alternative outcomes and open questions. This is what the code does " +
+          "today — start from it, and say what would differ. Human corrections are already applied.",
+        inputSchema: {},
+      },
+      async () => {
+        const parent = loadStoredAnswer(store, options.root, options.parentAnswerId!);
+        if (!parent) return ok({ error: `parent answer ${options.parentAnswerId} is no longer stored` });
+        const fitted = fitWholeAnswer(
+          {
+            id: parent.row.id,
+            kind: parent.kind,
+            reviewState: parent.row.review_state,
+            answer: parent.answer,
+            citations: parent.citations,
+          },
+          PARENT_BUDGET,
+        );
+        // The freshness travels with it: proposing a change against a flow whose evidence has already
+        // moved is a thing worth knowing before the first step is written.
+        return ok({ freshness: parent.freshness, snapshot: parent.snapshot, ...fitted.data, ...(fitted.truncated ? { truncated: fitted.truncated } : {}) });
+      },
+    );
+  }
+
   server.registerTool(
     "ask_user",
     {
@@ -201,13 +250,24 @@ export function createRunServer(options: RunServerOptions): McpServer {
       description:
         "Submit the structured answer. Structural faults are rejected with codes you can act on. " +
         "Citations are NOT a gate: each is labelled verified or unverified and the answer keeps its " +
-        "verified ratio, so an honest gap is better than a removed claim.",
+        "verified ratio, so an honest gap is better than a removed claim. " +
+        "On a design run, set kind='proposed' and cite code that does not exist yet by giving a " +
+        "citation a path with NO line — its module is derived from the path.",
       // The input schema IS the contract. A single opaque `answer` argument tells the agent nothing
       // about what to fill in — and produced six rejected submissions in a row on the first real run
       // before this was flattened.
       inputSchema: {
+        kind: AnswerKindSchema.optional().describe(
+          "'observed' (default) describes the code as it is. 'proposed' describes a change that has " +
+            "not been made; only a design run started by `veriflow propose` may submit one",
+        ),
         title: z.string().describe("What this flow is, in a few words"),
-        lanes: z.array(LaneSchema).describe("The participants: actors, modules, stores, gateways, external systems"),
+        lanes: z
+          .array(LaneSchema)
+          .describe(
+            "The participants: actors, modules, stores, gateways, external systems. A module this " +
+              "proposal would add is a lane with proposed=true and the plannedPath it would live at",
+          ),
         phases: z.array(PhaseSchema).describe("Named stages of the flow, in order"),
         steps: z.array(StepSchema).describe("The happy path, ordered, each citing file:line"),
         branches: z
@@ -226,19 +286,49 @@ export function createRunServer(options: RunServerOptions): McpServer {
       },
     },
     async (answer) => {
+      const submitted = answer as Record<string, unknown>;
+      const kind = submitted["kind"] === "proposed" ? "proposed" : "observed";
+
+      // Refused before validation, because the fault is not in the answer's shape. The run decides
+      // what may be submitted: this server is started by `veriflow propose` with a parent, or by
+      // `veriflow ask` without one, and only the first can produce a proposal (§10 — the boundary is
+      // the tool list and what it will accept, not the prompt).
+      if (kind === "proposed" && !options.parentAnswerId) {
+        return ok({
+          accepted: false,
+          diagnostics: [
+            {
+              code: "answer.malformed",
+              message:
+                "this run has no parent flow, so it cannot submit a proposal — a proposal is a " +
+                "change to an observed answer. Run `veriflow propose <answerId> \"…\"` instead, or " +
+                "submit this as an observation",
+            },
+          ],
+        });
+      }
+
       const withIds = {
         branches: [],
         moduleEdges: [],
         externalSystems: [],
         openQuestions: [],
-        ...(answer as Record<string, unknown>),
+        ...submitted,
+        kind,
         contractVersion: 1,
         questionId: options.questionId,
         snapshotId,
         runId: options.runId,
+        ...(options.parentAnswerId ? { parentAnswerId: options.parentAnswerId } : {}),
       };
 
-      const structure = validateStructure(withIds);
+      // Module ids for intent citations are derived before anything is checked, so the answer that
+      // is validated is the answer that gets stored — and the agent never has to run the registry's
+      // rule matcher in its head.
+      const preliminary = FlowAnswerSchema.safeParse(withIds);
+      const resolved = preliminary.success ? resolveIntent(preliminary.data) : withIds;
+
+      const structure = validateStructure(resolved);
       if (!structure.ok) {
         return ok({
           accepted: false,
@@ -247,7 +337,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
         });
       }
 
-      const parsed = FlowAnswerSchema.parse(withIds);
+      const parsed = FlowAnswerSchema.parse(resolved);
       const summary = verifyCitations(
         parsed,
         {
@@ -270,30 +360,54 @@ export function createRunServer(options: RunServerOptions): McpServer {
         questionId: options.questionId,
         runId: options.runId,
         snapshotId,
+        ...(options.parentAnswerId ? { parentAnswerId: options.parentAnswerId } : {}),
+        kind,
         title: parsed.title,
         verified: summary.verified,
         unverified: summary.unverified,
+        intent: summary.intent,
         openQuestions: parsed.openQuestions.length,
         body: parsed,
         citations: summary.citations.map((c) => ({
           subjectKind: c.subject.kind,
           subjectId: c.subject.id,
           path: c.citation.path,
-          line: c.citation.line,
+          line: isIntentCitation(c.citation) ? null : c.citation.line,
           symbol: c.citation.symbol,
           state: c.state,
           lineHash: c.lineHash,
           reason: c.reason,
+          moduleId: c.citation.moduleId,
+          plannedPath: c.citation.plannedPath,
         })),
       });
+
+      const proposedModules = kind === "proposed" ? proposedModulesOf(parsed, store.readModules(snapshotId).map((m) => String(m["id"]))) : [];
 
       return ok({
         accepted: true,
         answerId,
+        kind,
         verified: summary.verified,
         unverified: summary.unverified,
+        intent: summary.intent,
+        // The denominator excludes intent citations, and the payload says so — otherwise a proposal
+        // that is nine tenths plan reads as an answer that is nine tenths wrong.
         ratio: Number(summary.ratio.toFixed(3)),
-        unverifiedDetail: summary.citations.filter((c) => c.state !== "verified").slice(0, 20),
+        ratioOver: summary.total - summary.intent,
+        ...(proposedModules.length
+          ? {
+              proposedModules: proposedModules.map((m) => ({
+                id: m.id,
+                root: m.root,
+                citations: m.citations,
+                alreadyInRegistry: m.existsInRegistry,
+              })),
+            }
+          : {}),
+        unverifiedDetail: summary.citations
+          .filter((c) => c.state !== "verified" && c.state !== "intent")
+          .slice(0, 20),
       });
     },
   );

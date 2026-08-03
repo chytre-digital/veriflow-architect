@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
-import type { Citation, FlowAnswer } from "./contract.js";
+import { isIntentCitation, type Citation, type FlowAnswer } from "./contract.js";
+import { intentModuleOf } from "./intent.js";
 import { allSteps } from "./validate.js";
 
-export type CitationState = "verified" | "unverified" | "open-question";
+/**
+ * `intent` is not a third grade of verification. It says there is nothing to verify against: the
+ * code this citation names has not been written, so checking it would be checking the absence of a
+ * file. It is counted separately and kept out of the ratio's denominator for exactly that reason.
+ */
+export type CitationState = "verified" | "unverified" | "open-question" | "intent";
 
 export interface VerifiedCitation {
   subject: { kind: "step" | "branch" | "module-edge" | "external"; id: string };
@@ -17,8 +23,16 @@ export interface VerificationSummary {
   total: number;
   verified: number;
   unverified: number;
+  /** Citations naming code that does not exist yet. Never counted as unverified. */
+  intent: number;
   openQuestions: number;
-  /** verified / total, or 1 when there is nothing to verify. */
+  /**
+   * verified / (total − intent), or 1 when there is nothing checkable.
+   *
+   * An answer that is nine tenths plan is not an answer that is nine tenths wrong. Leaving intent
+   * citations in the denominator would give every proposal the reading the credit answer's 39
+   * unverified citations get today, and it would be the wrong one.
+   */
   ratio: number;
   citations: VerifiedCitation[];
 }
@@ -67,31 +81,45 @@ export function verifyCitations(
     subject: VerifiedCitation["subject"],
     citation: Citation,
   ): VerifiedCitation => {
+    // Skipped, not failed. There is no line to read and no file to read it from; the reason names
+    // the module the step would live in, which is the only thing that can honestly be said.
+    if (isIntentCitation(citation)) {
+      const moduleId = intentModuleOf(citation);
+      return {
+        subject,
+        citation,
+        state: "intent",
+        reason: moduleId
+          ? `code that does not exist yet, in ${moduleId} at ${citation.plannedPath ?? citation.path}`
+          : `code that does not exist yet, at ${citation.plannedPath ?? citation.path}`,
+      };
+    }
+    const line = citation.line!;
     const lines = linesOf(citation.path);
     if (!lines) {
       return { subject, citation, state: "unverified", reason: `file not found: ${citation.path}` };
     }
-    const text = lines[citation.line - 1];
+    const text = lines[line - 1];
     if (text === undefined) {
       return {
         subject,
         citation,
         state: "unverified",
-        reason: `${citation.path} has ${lines.length} lines, citation points at ${citation.line}`,
+        reason: `${citation.path} has ${lines.length} lines, citation points at ${line}`,
       };
     }
     if (citation.symbol) {
       const declared = ranges?.rangeOf(citation.path, citation.symbol);
       const insideDeclaredRange =
-        declared !== undefined && citation.line >= declared.start && citation.line <= declared.end;
-      if (!insideDeclaredRange && !nearbyContains(lines, citation.line, citation.symbol)) {
+        declared !== undefined && line >= declared.start && line <= declared.end;
+      if (!insideDeclaredRange && !nearbyContains(lines, line, citation.symbol)) {
         return {
           subject,
           citation,
           state: "unverified",
           reason:
             `symbol ${citation.symbol} is neither at, around, nor inside a declared range ` +
-            `at ${citation.path}:${citation.line}`,
+            `at ${citation.path}:${line}`,
         };
       }
     }
@@ -121,13 +149,16 @@ export function verifyCitations(
 
   const verified = citations.filter((c) => c.state === "verified").length;
   const unverified = citations.filter((c) => c.state === "unverified").length;
+  const intent = citations.filter((c) => c.state === "intent").length;
+  const checkable = citations.length - intent;
 
   return {
     total: citations.length,
     verified,
     unverified,
+    intent,
     openQuestions: answer.openQuestions.length,
-    ratio: citations.length === 0 ? 1 : verified / citations.length,
+    ratio: checkable === 0 ? 1 : verified / checkable,
     citations,
   };
 }

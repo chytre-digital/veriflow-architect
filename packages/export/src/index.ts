@@ -71,6 +71,7 @@ export function prepareAnswerExport(store: Store, root: string, options: Prepare
     citations: stored.citations,
     snapshot: stored.snapshot,
     freshness: stored.freshness,
+    kind: stored.kind,
     decisions: decisionsOf(stored.corrections),
     frontmatter: { ...options.documentation.frontmatter, ...options.frontmatter },
   });

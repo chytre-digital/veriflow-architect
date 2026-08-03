@@ -1,4 +1,4 @@
-import { FlowAnswerSchema, type FlowAnswer } from "@veriflow/flow-answer";
+import { FlowAnswerSchema, type AnswerKind, type FlowAnswer } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
 import { applyCorrections, type Correction } from "./corrections.js";
 import {
@@ -12,6 +12,8 @@ import {
 } from "./freshness.js";
 import {
   entryPathsOf,
+  intentCitations,
+  observedCitations,
   verifyAnswer,
   type StoredCitation,
   type Verification,
@@ -28,6 +30,13 @@ export interface AnswerRow {
   title: string;
   verified: number;
   unverified: number;
+  /**
+   * `observed` or `proposed`. Present on every list query; absent on the handful of older rows read
+   * before the column existed, which is why every reader defaults it rather than asserting it.
+   */
+  kind?: string;
+  /** Citations naming code that does not exist yet. Never part of `unverified`. */
+  intent?: number;
   /** What the agent submitted. Never shown on its own — see {@link undecidedInRow}. */
   open_questions: number;
   /** Present on every list query. Absent on `SELECT *` reads, where the parsed answer says it. */
@@ -56,6 +65,22 @@ export interface StoredAnswer {
   citations: CitationRow[];
   snapshot: SnapshotFacts;
   freshness: Freshness;
+  /** What this answer describes: the code as it is, or a change somebody proposed. */
+  kind: AnswerKind;
+  /** Of `citations`, how many name code that does not exist yet. */
+  intent: number;
+}
+
+/**
+ * The stored `kind`, defaulted rather than asserted.
+ *
+ * Every answer written before F015 has `observed` in the column because the migration defaulted it,
+ * and an answer read through a `SELECT *` on an older database has nothing there at all. Both are
+ * observations — the product had no other kind — and reading them as anything else would relabel
+ * six months of answers.
+ */
+export function kindOf(row: { kind?: unknown }): AnswerKind {
+  return row.kind === "proposed" ? "proposed" : "observed";
 }
 
 /**
@@ -88,7 +113,11 @@ export function loadStoredAnswer(store: Store, root: string, idOrPrefix: string)
   const { answer, applied, unresolved } = applyCorrections(submitted, corrections);
   const citations = store.readAnswerCitations(row.id) as unknown as CitationRow[];
 
-  const states = fileStates(store, root, row.snapshot_id, citations.map((c) => c.path));
+  // Measured over the files this answer cites that exist. A planned path is not a cited file — it is
+  // a file nobody has written, and hashing it would report every proposal as `stale` on the grounds
+  // that the code it proposes is missing, which is the one thing everybody already knows.
+  const observed = observedCitations(citations);
+  const states = fileStates(store, root, row.snapshot_id, observed.map((c) => c.path));
   const estimate = freshnessFromStates(states, entryPathsOf(answer, citations));
 
   return {
@@ -100,6 +129,8 @@ export function loadStoredAnswer(store: Store, root: string, idOrPrefix: string)
     citations,
     snapshot: snapshotFacts(store, row.snapshot_id, row.created_at),
     freshness: preferVerification(store, row.id, estimate),
+    kind: kindOf(row),
+    intent: intentCitations(citations).length,
   };
 }
 
@@ -176,14 +207,21 @@ export interface Truncation {
 }
 
 /**
- * Every response carries the same three facts. An unreviewed draft is served rather than withheld,
- * and that decision puts the whole weight on this label being present without exception.
+ * Every response carries the same facts. An unreviewed draft is served rather than withheld, and
+ * that decision puts the whole weight on these labels being present without exception.
+ *
+ * `kind` is on every answer-scoped response for the same reason `review` is. An agent that mistakes
+ * a proposal for an observation has been told the code does something it does not do, and the only
+ * other signal available — a low verified ratio — means something else entirely. It is never
+ * inferred; it is stated.
  */
 export interface ToolResponseEnvelope<T> {
   contractVersion: 1;
   snapshot: SnapshotFacts;
   freshness: Freshness;
   review: ReviewFacts;
+  /** Present on answer-scoped responses. Absent on project-scoped ones, which describe no answer. */
+  kind?: AnswerKind;
   data: T;
   truncated?: Truncation;
 }
@@ -200,6 +238,7 @@ export function answerEnvelope<T>(stored: StoredAnswer, data: T, truncated?: Tru
       openQuestions: undecidedQuestions(stored.answer),
       corrections: stored.corrections.length,
     },
+    kind: stored.kind,
     data,
     ...(truncated ? { truncated } : {}),
   };

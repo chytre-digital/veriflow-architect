@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadIgnore } from "@veriflow/snapshot";
 import type { Store } from "@veriflow/store";
-import { locate, type StoredCitation } from "./verification.js";
+import { locate, observedCitations, type StoredCitation } from "./verification.js";
 
 /**
  * F013 — change impact against a base ref.
@@ -288,7 +288,7 @@ export function changedFilesSince(root: string, ref: string): ChangedFile[] {
 /* ------------------------------------------------------------------ the intersection */
 
 /** Where a stored citation's line sits in some other copy of the file, or undefined. */
-function place(lines: readonly string[], citation: StoredCitation): number | undefined {
+function place(lines: readonly string[], citation: StoredCitation & { line: number }): number | undefined {
   const found = locate(lines, citation.line, citation.line_hash, citation.symbol);
   return found ? found.index + 1 : undefined;
 }
@@ -375,9 +375,12 @@ export function changeImpact(store: Store, root: string, ref: string): ChangeImp
         // be carried into them.
         const atRef = refSha !== undefined && shaOf(String(stored?.["snapshot_id"] ?? "")) === refSha;
 
-        const citations = (store.readAnswerCitations(answerId) as unknown as StoredCitation[]).filter(
-          (c) => c.path === lookup,
-        );
+        // Observed citations only. An intent citation names a path a proposal wants code at; a hunk
+        // landing there is the proposal being built, which is WP7a's question, not "whose evidence
+        // did this change edit". Relocating one would search a ref for a line that never existed.
+        const citations = observedCitations(
+          store.readAnswerCitations(answerId) as unknown as StoredCitation[],
+        ).filter((c) => c.path === lookup);
 
         for (const citation of citations) {
           impact.inChangedFiles += 1;

@@ -10,7 +10,7 @@ import {
 } from "@veriflow/diagram";
 import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
-import { THRESHOLDS, moduleOwning, thresholdOf, undecidedInRow, undecidedQuestions } from "@veriflow/answers";
+import { THRESHOLDS, kindOf, moduleOwning, thresholdOf, undecidedInRow, undecidedQuestions } from "@veriflow/answers";
 import type {
   AnswerRow,
   CitationRow,
@@ -761,12 +761,33 @@ export function tile(label: string, value: string, unit: string, sub: string): s
     <span class="tile-sub">${esc(sub)}</span></div>`;
 }
 
-function ratioPill(verified: number, unverified: number): string {
+/**
+ * The ratio is taken over what could be checked. Intent citations sit beside it in their own pill,
+ * never inside the denominator — a proposal that is nine tenths plan would otherwise be drawn in the
+ * same red as an answer whose evidence is nine tenths wrong.
+ */
+function ratioPill(verified: number, unverified: number, intent = 0): string {
   const total = verified + unverified;
-  if (total === 0) return `<span class="pill">no citations</span>`;
+  const intentPill = intent
+    ? `<span class="pill">${intent} intent — not written yet</span>`
+    : "";
+  if (total === 0) {
+    return `<span class="pill">${intent ? "no citation to code that exists" : "no citations"}</span>${intentPill}`;
+  }
   const share = verified / total;
   const cls = share === 1 ? "good" : share >= 0.9 ? "warn" : "bad";
-  return `<span class="pill ${cls}">${verified}/${total} verified</span>`;
+  return `<span class="pill ${cls}">${verified}/${total} verified</span>${intentPill}`;
+}
+
+/**
+ * Said on every listing and every answer header. A proposal read as a description of the code is the
+ * most expensive misreading this product can produce, and the ratio is not a signal that gives it
+ * away — a well-researched proposal has a high one.
+ */
+function kindPill(kind: string): string {
+  return kind === "proposed"
+    ? `<span class="pill warn">proposal — not what the code does</span>`
+    : "";
 }
 
 /**
@@ -789,15 +810,18 @@ export function freshnessPill(f: Freshness): string {
 export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
   const standing = rows.filter((r) => r.status !== "superseded").length;
   const open = rows.reduce((total, r) => total + undecidedInRow(r), 0);
+  const proposals = rows.filter((r) => kindOf(r) === "proposed").length;
 
   const body = rows.length
     ? rows
         .map(
           (r) => `<a class="card" href="/answers/${r.id}">
   <h2>${esc(r.title)}</h2>
-  <div class="meta">${ratioPill(r.verified, r.unverified)}
+  <div class="meta">${kindPill(kindOf(r))}${ratioPill(r.verified, r.unverified, Number(r.intent ?? 0))}
     <span class="pill">${undecidedInRow(r)} open question${undecidedInRow(r) === 1 ? "" : "s"}</span>
-    <span class="pill">${esc(r.review_state)}</span>
+    <span class="pill">${
+      kindOf(r) === "proposed" && r.review_state === "reviewed" ? "accepted" : esc(r.review_state)
+    }</span>
     ${r.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}
     <span>${esc(r.created_at.slice(0, 16).replace("T", " "))}</span></div></a>`,
         )
@@ -814,6 +838,10 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
          lede: rows.length
            ? `${standing} standing answer${standing === 1 ? "" : "s"}${
                rows.length - standing > 0 ? ` and ${rows.length - standing} superseded` : ""
+             }${
+               proposals > 0
+                 ? `, of which ${proposals} ${proposals === 1 ? "is a proposal" : "are proposals"} rather than a description`
+                 : ""
              }, ${open} open question${open === 1 ? "" : "s"} between them. Every claim on every one of
               these screens carries a file reference, and a claim without one is reported as an open
               question rather than narrated.`
@@ -840,11 +868,13 @@ function reviewControl(row: AnswerRow, freshness: Freshness): string {
     !reviewed && (freshness.state === "stale" || freshness.state === "broken")
       ? `<span class="pill warn">evidence has moved — ${esc(freshness.state)}</span>`
       : "";
+  // A reviewed proposal is an accepted one — the word changes, the state does not. There is no third
+  // value on `review_state`, so nothing downstream has to learn a new one.
+  const proposal = kindOf(row) === "proposed";
+  const label = reviewed ? (proposal ? "Withdraw acceptance" : "Reopen") : proposal ? "Accept" : "Mark reviewed";
   return `${warn}<form method="post" action="/answers/${row.id}/review" style="display:inline">
       <input type="hidden" name="state" value="${reviewed ? "unreviewed" : "reviewed"}">
-      <button class="${reviewed ? "" : "primary"}" type="submit">${
-        reviewed ? "Reopen" : "Mark reviewed"
-      }</button>
+      <button class="${reviewed ? "" : "primary"}" type="submit">${label}</button>
     </form>`;
 }
 
@@ -884,9 +914,13 @@ export function flowPage(input: FlowPageInput): string {
   const byStep = new Map<string, { total: number; verified: number }>();
   for (const c of citations) {
     if (c.subject_kind !== "step") continue;
+    // An intent citation is not an unverified one. Counted in the total and out of the verified
+    // count, it would draw every proposed step in the amber the diagram uses for evidence that did
+    // not check out — so a proposed step is drawn as a step with evidence, which is what it has.
+    const intent = c.line === null || c.line === undefined;
     const entry = byStep.get(c.subject_id) ?? { total: 0, verified: 0 };
     entry.total += 1;
-    if (c.state === "verified") entry.verified += 1;
+    if (c.state === "verified" || intent) entry.verified += 1;
     byStep.set(c.subject_id, entry);
   }
 
@@ -912,14 +946,27 @@ export function flowPage(input: FlowPageInput): string {
          selected.citations.length
            ? selected.citations
                .map((c) => {
+                 const intent = c.line === undefined;
                  const hit = citations.find(
-                   (r) => r.subject_id === selected.id && r.path === c.path && r.line === c.line,
+                   (r) =>
+                     r.subject_id === selected.id &&
+                     r.path === c.path &&
+                     (r.line ?? undefined) === c.line,
                  );
-                 const state = hit?.state ?? "unverified";
-                 const cls = state === "verified" ? "good" : "warn";
-                 return `<div class="ev">${esc(c.path)}:${c.line}${c.symbol ? ` · ${esc(c.symbol)}` : ""}
+                 const state = hit?.state ?? (intent ? "intent" : "unverified");
+                 const cls = state === "verified" ? "good" : state === "intent" ? "" : "warn";
+                 const where = intent
+                   ? `${esc(c.plannedPath ?? c.path)}${c.moduleId ? ` · ${esc(c.moduleId)}` : ""}`
+                   : `${esc(c.path)}:${c.line}${c.symbol ? ` · ${esc(c.symbol)}` : ""}`;
+                 return `<div class="ev">${where}
                    <span class="pill ${cls}">${esc(state)}</span>
-                   ${hit?.reason ? `<div class="why">${esc(hit.reason)}</div>` : ""}</div>`;
+                   ${
+                     intent
+                       ? `<div class="why">not written yet — this step is part of the proposal</div>`
+                       : hit?.reason
+                         ? `<div class="why">${esc(hit.reason)}</div>`
+                         : ""
+                   }</div>`;
                })
                .join("")
            : `<p class="meta">No citation on this step.</p>`
@@ -935,14 +982,19 @@ export function flowPage(input: FlowPageInput): string {
        ${screenHead({
          eyebrow: "Answer",
          title: answer.title,
-         lede: `${answer.lanes.length} participant${answer.lanes.length === 1 ? "" : "s"}, ${
+         lede: `${
+           kindOf(row) === "proposed"
+             ? `<b>This is a proposal.</b> It describes the flow as it <i>would</i> be, not as it is —
+                steps whose evidence has no line number are code nobody has written. `
+             : ""
+         }${answer.lanes.length} participant${answer.lanes.length === 1 ? "" : "s"}, ${
            answer.steps.length
          } step${answer.steps.length === 1 ? "" : "s"} across ${phases} phase${phases === 1 ? "" : "s"}, and ${
            answer.branches.length
          } alternative outcome${answer.branches.length === 1 ? "" : "s"}. Nothing here was recomputed to
           open it — the layout is derived from what was stored when the question was answered.`,
          actions: reviewControl(row, freshness),
-         meta: `${ratioPill(row.verified, row.unverified)}
+         meta: `${kindPill(kindOf(row))}${ratioPill(row.verified, row.unverified, Number(row.intent ?? 0))}
        <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
        <a class="pill" href="/answers/${row.id}/paths" style="text-decoration:none">${undecidedQuestions(answer)} open</a>
        ${
@@ -1844,6 +1896,8 @@ export interface ProjectPageInput {
       unreached: number;
       answers: number;
       supersededAnswers: number;
+      proposedAnswers: number;
+      proposedModules: number;
     };
     modules: Array<{
       id: string;
@@ -1851,6 +1905,14 @@ export interface ProjectPageInput {
       paths: string[];
       files: number;
       reach: "shared" | "cited" | "unreached";
+      answers: Array<{ id: string; title: string; citations: number }>;
+    }>;
+    proposedModules: Array<{
+      id: string;
+      label: string;
+      root: string;
+      plannedPath: string;
+      citations: number;
       answers: Array<{ id: string; title: string; citations: number }>;
     }>;
     externals: Array<{
@@ -1925,6 +1987,10 @@ export function projectPage(input: ProjectPageInput): string {
              counts.supersededAnswers
                ? ` · ${counts.supersededAnswers} superseded answer${counts.supersededAnswers === 1 ? "" : "s"} excluded`
                : ""
+           }${
+             counts.proposedAnswers
+               ? ` · ${counts.proposedAnswers} proposal${counts.proposedAnswers === 1 ? "" : "s"} excluded from the counts`
+               : ""
            }.`,
        })}
        <div class="tally">
@@ -1935,9 +2001,34 @@ export function projectPage(input: ProjectPageInput): string {
        </div>
        <p class="meta" style="max-width:760px;margin:0 0 22px">A module counts as reached when a live
        answer cites a file inside it. That is a citation count, not a judgement that the module is
-       understood — and a superseded answer never counts, because nobody stands behind it.</p>
+       understood — a superseded answer never counts, because nobody stands behind it, and a proposal
+       never counts, because a module nobody has built explains nothing.</p>
 
-       <h2 class="section" style="margin-top:0">Where flows meet</h2>
+       ${
+         input.view.proposedModules.length
+           ? `<h2 class="section" style="margin-top:0">Modules the proposals would add</h2>
+              <p class="meta" style="max-width:760px;margin:0 0 10px">Not in the registry above, and not
+              counted anywhere on this screen: the registry is measured from the repository and these
+              are not in it. Each id is derived from its planned path by the same function that will
+              derive it once the code lands, so nothing gets re-pointed on the day it does.</p>
+              <div class="reach">${input.view.proposedModules
+                .map(
+                  (m) => `<div class="m cited">
+                    <h3>${esc(m.label)} <span class="pill warn">proposed</span></h3>
+                    <div class="meta">${esc(m.root)} · id <code>${esc(m.id)}</code> · not built</div>
+                    <div class="flows">${m.answers
+                      .map(
+                        (a) =>
+                          `<a href="/answers/${esc(a.id)}">${esc(a.title)}</a> <span>(${a.citations})</span>`,
+                      )
+                      .join(" · ")}</div>
+                  </div>`,
+                )
+                .join("")}</div>`
+           : ""
+       }
+
+       <h2 class="section"${input.view.proposedModules.length ? "" : ' style="margin-top:0"'}>Where flows meet</h2>
        ${
          shared.length
            ? `<p class="meta" style="margin:0 0 10px">A change in one of these lands in more than one flow.</p>
@@ -1976,6 +2067,8 @@ export interface ImpactPageInput {
       citations: number;
       reviewState: string;
       status: string;
+      kind: string;
+      intentCitations: number;
       lines: number[];
       lineState: "fresh" | "drifted" | "stale";
     }>;
@@ -1995,15 +2088,25 @@ export function impactPage(input: ImpactPageInput): string {
     ? `<div class="list">${impact.answers
         .map(
           (a) => `<a class="card" href="/answers/${esc(a.id)}"><h2>${esc(a.title)}</h2>
-        <div class="meta">${a.citations} citation${a.citations === 1 ? "" : "s"} in this file
+        <div class="meta">${kindPill(a.kind)}${a.citations} citation${a.citations === 1 ? "" : "s"} in this file
+          ${
+            a.intentCitations
+              ? `· ${a.intentCitations} of them intent — this proposal would put code here`
+              : ""
+          }
           ${a.lines.length ? `· line${a.lines.length === 1 ? "" : "s"} ${a.lines.join(", ")}` : ""}
           · <span class="pill">${esc(a.reviewState)}</span>
           ${
-            a.lineState === "fresh"
-              ? `<span class="pill good">lines current</span>`
-              : a.lineState === "drifted"
-                ? `<span class="pill warn">file changed — these are where the lines were</span>`
-                : `<span class="pill bad">file is gone</span>`
+            // Meaningless for a proposal whose citations here are all intent: there are no lines to
+            // be current, and a green "lines current" pill on a file the proposal has not written yet
+            // would be the most confident wrong statement on the screen.
+            a.intentCitations === a.citations
+              ? ""
+              : a.lineState === "fresh"
+                ? `<span class="pill good">lines current</span>`
+                : a.lineState === "drifted"
+                  ? `<span class="pill warn">file changed — these are where the lines were</span>`
+                  : `<span class="pill bad">file is gone</span>`
           }
           ${a.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}</div></a>`,
         )
@@ -2178,7 +2281,15 @@ export interface RunPageInput {
   state: "running" | "settled";
   outcome?: string;
   error?: string;
-  answers: Array<{ id: string; title: string; verified: number; unverified: number; openQuestions: number }>;
+  answers: Array<{
+    id: string;
+    title: string;
+    verified: number;
+    unverified: number;
+    intent: number;
+    kind: string;
+    openQuestions: number;
+  }>;
 }
 
 /**
@@ -2212,8 +2323,8 @@ export function runPage(input: RunPageInput): string {
     ? `<div class="list" style="margin-top:18px">${input.answers
         .map(
           (a) => `<a class="card" href="/answers/${esc(a.id)}"><h2>${esc(a.title)}</h2>
-          <div class="meta">${a.verified}/${a.verified + a.unverified} citations verified ·
-          ${a.openQuestions} open question${a.openQuestions === 1 ? "" : "s"}</div></a>`,
+          <div class="meta">${kindPill(a.kind)}${a.verified}/${a.verified + a.unverified} citations verified ·
+          ${a.intent ? `${a.intent} intent · ` : ""}${a.openQuestions} open question${a.openQuestions === 1 ? "" : "s"}</div></a>`,
         )
         .join("")}</div>`
     : input.state === "settled"
