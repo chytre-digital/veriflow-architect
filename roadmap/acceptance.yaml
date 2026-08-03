@@ -486,3 +486,77 @@ features:
       - "proposal-only labelling and selected-step match confidence;"
       - "geometry and payload determinism;"
       - "shareable browser URLs, MCP payload, and Mermaid text fallback."
+  F018:
+    title: "Declared architecture and expected-versus-actual comparison"
+    spec: "../docs/declared-architecture.md"
+    acceptance:
+      - "A versioned declared model represents stable elements, containment, and allowed or forbidden relationships without importing observed code as intent."
+      - "Comparison distinguishes matched, declared-only, observed-only, violated, unknown, and ambiguous states; no missing evidence is reported as a violation."
+      - "Every observed relationship and violation links to indexed evidence, and every comparison names both the declared revision and indexed snapshot."
+      - "Ambiguous element matching requires explicit human confirmation and is never resolved by first-match or path similarity alone."
+      - "Browser, CLI, and MCP read the same deterministic comparison; MCP remains read-only."
+    tests:
+      - "declared model validation, revision conflict, containment, and relationship rules;"
+      - "all comparison states, ambiguous matching, and preserved unknowns;"
+      - "evidence provenance and declared/indexed revision reporting;"
+      - "browser, CLI, and MCP parity plus deterministic ordering."
+  F019:
+    title: "Runtime test coverage for answered flows"
+    spec: "../docs/product/f019-runtime-coverage-plan.md"
+    acceptance:
+      - "An explicit import reads a documented coverage artifact without implicitly starting project tests or mutating the repository."
+      - "The stored run records producer, supplied command or label, timestamp, tree state, source paths, and whether the artifact is complete or partial."
+      - "Line and branch execution map onto an answer's exact cited files and ranges, with covered, uncovered, stale, missing-source, and out-of-scope evidence counted separately."
+      - "Runtime coverage and the F008 name-based proxy remain separate measurements with their methods labelled; they are never averaged into one score."
+      - "Ambiguous paths are reported rather than guessed, and browser, CLI, and MCP serve the same coverage run."
+    tests:
+      - "coverage import, provenance, line and branch mapping, and partial artifacts;"
+      - "Windows, POSIX, monorepo, missing, and ambiguous source paths;"
+      - "answer/artifact tree-state drift and honest stale states;"
+      - "runtime-versus-proxy separation and cross-surface parity;"
+      - "no implicit test process, Git mutation, or source write."
+  F020:
+    title: "Flow-scoped call graph review"
+    spec: "../docs/product/m6-plan.md"
+    acceptance:
+      - "Every stored answer can open a call graph scoped to its cited repository files without recomputing the project index."
+      - "Only edges whose endpoints remain in scope are drawn; crossings outside the scope and cited files with no indexed functions are counted and named."
+      - "The view says that citations define its scope and do not prove runtime execution."
+      - "Entry filtering, function selection, search, layout, and shareable query state remain deterministic inside the answer route."
+      - "An empty graph preserves the answer and explains whether no citation, no indexed file, or no indexed function caused it."
+    tests:
+      - "flow-file node and edge filtering plus boundary crossings;"
+      - "cited files absent from the index or without function nodes;"
+      - "empty states and non-execution wording;"
+      - "answer-scoped filters, stable URLs, and deterministic geometry;"
+      - "read-only rendering with no provider, agent, store, or Git mutation."
+  F021:
+    title: "Browser correction workflow"
+    spec: "../docs/product/m6-plan.md"
+    acceptance:
+      - "A reviewer can correct every prose field explicitly supported by the correction service and decide an open question from the answer screen."
+      - "Before saving, the UI shows the original and corrected value and requires an author plus a reason; the immutable submitted answer is unchanged."
+      - "Correction history preserves author, timestamp, reason, original value, and effective value, including later corrections to the same target."
+      - "A stale form or missing target fails visibly without overwriting or dropping either correction history."
+      - "Browser counts and effective values agree with CLI, export, and MCP reads; MCP exposes no correction write tool."
+    tests:
+      - "supported prose corrections and open-question decisions through browser routes;"
+      - "attribution, required reason, immutable original, and chronological history;"
+      - "stale revision, missing target, validation, and reversal/conflict cases;"
+      - "cross-surface effective-value and count parity;"
+      - "CSRF/origin protection and MCP write-tool absence."
+  F022:
+    title: "Threaded answer lineage in the browser"
+    spec: "../docs/product/m6-plan.md"
+    acceptance:
+      - "The answer list and answer detail show a navigable parent/child hierarchy instead of rendering related answers as unrelated siblings."
+      - "Every lineage edge is labelled as follow-up, supersedes, or proposes-change-to; the overloaded parent field is never presented as one generic relationship."
+      - "A proposal and the observed answer it changes remain distinct, while a superseded answer remains reachable and visibly non-current."
+      - "Roots, children, and siblings have deterministic ordering, and malformed cycles or missing parents are reported without preventing unrelated answers from rendering."
+      - "Lineage navigation is read-only and preserves stable, shareable answer URLs."
+    tests:
+      - "follow-up, supersession, and proposal relationship labels;"
+      - "multi-level trees, multiple roots, siblings, and deterministic ordering;"
+      - "missing parent, self-parent, and cycle-safe rendering;"
+      - "superseded and proposed state labels plus stable detail links;"
+      - "read-only browser rendering with no answer or repository mutation."

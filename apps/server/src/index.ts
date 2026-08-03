@@ -8,9 +8,13 @@ import {
   diffAnswers,
   impactOf,
   invariantIndex,
+  kindOf,
+  listRuntimeCoverageRuns,
+  loadRuntimeCoverageRun,
   loadStoredAnswer,
   metricsForStoredAnswer,
   projectView,
+  storedArchitectureConformance,
   verifyStoredAnswer,
   type StoredAnswer,
 } from "@veriflow/answers";
@@ -21,6 +25,8 @@ import {
   type ClientCapabilities,
 } from "@veriflow/agent-session";
 import { AskError, answersFromRun } from "@veriflow/ask";
+import { computeTraffic } from "@veriflow/callgraph";
+import { layoutCallMap } from "@veriflow/diagram";
 import { isSecretPath } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { readConfig } from "@veriflow/workspace";
@@ -28,6 +34,7 @@ import { RunRegistry, type RunStatus } from "./runs.js";
 import {
   answersPage,
   architecturePage,
+  declaredArchitecturePage,
   askPage,
   impactPage,
   invariantsPage,
@@ -35,6 +42,7 @@ import {
   flowPage,
   freshnessPage,
   metricsPage,
+  runtimeCoveragePage,
   moduleOwning,
   modulesPage,
   noticePage,
@@ -133,6 +141,8 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
    */
   const chromeOf = (store: Store, active: NavId, answer?: { id: string; title: string }): Chrome => {
     const rows = store.listAnswers() as unknown as AnswerRow[];
+    const answerRow = answer ? rows.find((row) => row.id === answer.id) : undefined;
+    const runtimeCoverageRun = answer ? store.listRuntimeCoverageRuns(answer.id)[0] : undefined;
     const snapshot = store.latestSnapshotAny();
     const facts = snapshot ? store.readSnapshot(snapshot.id) : undefined;
     const counts = snapshot ? store.counts(snapshot.id) : undefined;
@@ -151,8 +161,25 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     return {
       project: projectName,
       active,
-      ...(answer ? { answer } : {}),
-      answers: rows.map((r) => ({ id: r.id, title: r.title, superseded: r.status === "superseded" })),
+      ...(answer
+        ? {
+            answer: {
+              ...answer,
+              ...(answerRow ? { kind: kindOf(answerRow) } : {}),
+              ...(answerRow?.parent_answer_id ? { parentAnswerId: answerRow.parent_answer_id } : {}),
+              ...(runtimeCoverageRun
+                ? { runtimeCoverageRunId: String(runtimeCoverageRun["id"]) }
+                : {}),
+            },
+          }
+        : {}),
+      answers: rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        kind: kindOf(r),
+        ...(r.parent_answer_id ? { parentAnswerId: r.parent_answer_id } : {}),
+        superseded: r.status === "superseded",
+      })),
       ...(index ? { index } : {}),
       subtitle: snapshot
         ? `${counts?.modules ?? 0} modules · ${rows.length} answer${rows.length === 1 ? "" : "s"}`
@@ -284,6 +311,153 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  app.get("/architecture/compare", (c) =>
+    withStore((store) =>
+      c.html(
+        declaredArchitecturePage(
+          chromeOf(store, "architecture"),
+          projectName,
+          storedArchitectureConformance(store, projectId),
+        ),
+      ),
+    ),
+  );
+
+  /**
+   * The call graph as evidence for one answer, not for the whole repository.
+   *
+   * A flow citation says that a file participates in the described behaviour; it does not prove
+   * that every function in the file participates. The view therefore applies two explicit bounds:
+   * files come from the answer's citations, and edges come from the stored call graph only when
+   * both endpoints live in those files. Calls are never inferred from proximity or prose.
+   */
+  app.get("/answers/:id/callgraph", (c) =>
+    withStore((store) => {
+      const found = loadAnswer(store, root, c.req.param("id"));
+      if (!found) return c.html(notice(store, "callgraph", "Not found", "No such answer."), 404);
+
+      const graph = store.readCallGraph(found.row.snapshot_id);
+      if (!graph) {
+        return c.html(
+          noticePage(
+            chromeOf(store, "flow-callgraph", { id: found.row.id, title: found.answer.title }),
+            "Flow call graph",
+            "No call graph was stored for the snapshot this answer used. Run <code>veriflow index</code> and ask again.",
+          ),
+          404,
+        );
+      }
+
+      // The normalized citation rows are the evidence contract shared by freshness, metrics and
+      // export. Reading them here avoids a second, inevitably incomplete walk over answer fields.
+      const citedFiles = [
+        ...new Set(store.readAnswerCitations(found.row.id).map((citation) => String(citation["path"]))),
+      ].sort();
+      const cited = new Set(citedFiles);
+
+      const allNodes = graph.nodes.map((n) => ({
+          id: String(n["id"]),
+          symbol: String(n["symbol"]),
+          path: String(n["path"]),
+          line: Number(n["line"]),
+          module_id: String(n["module_id"]),
+          kind: String(n["kind"]),
+        })) as CallGraphNode[];
+      const nodes = allNodes.filter((node) => cited.has(node.path));
+      const included = new Set(nodes.map((node) => node.id));
+      const allEdges = store
+        .readCallEdges(found.row.snapshot_id)
+        .map((e) => ({
+          from: String(e["from_node"]),
+          to: String(e["to_node"]),
+          kind: String(e["kind"]),
+          inferred: Boolean(e["inferred"]),
+          rule: e["rule"] ? String(e["rule"]) : undefined,
+          sites: Number(e["sites"]),
+        })) as CallGraphEdge[];
+      const edges = allEdges.filter((edge) => included.has(edge.from) && included.has(edge.to));
+      const nodeById = new Map(allNodes.map((node) => [node.id, node]));
+      const boundaryCrossings = allEdges
+        .filter((edge) => included.has(edge.from) !== included.has(edge.to))
+        .map((edge) => {
+          const outgoing = included.has(edge.from);
+          const insideId = outgoing ? edge.from : edge.to;
+          const outsideId = outgoing ? edge.to : edge.from;
+          return {
+            direction: outgoing ? ("outgoing" as const) : ("incoming" as const),
+            inside: nodeById.get(insideId)!,
+            outside: nodeById.get(outsideId),
+            outsideId,
+            kind: edge.kind,
+            inferred: edge.inferred,
+            ...(edge.rule ? { rule: edge.rule } : {}),
+            sites: edge.sites,
+          };
+        })
+        .sort(
+          (a, b) =>
+            a.direction.localeCompare(b.direction) ||
+            a.inside.path.localeCompare(b.inside.path) ||
+            a.inside.line - b.inside.line ||
+            a.outsideId.localeCompare(b.outsideId),
+        );
+
+      const moduleRows = store.readModules(found.row.snapshot_id) as unknown as ModuleRow[];
+      const presentModules = new Set(nodes.map((node) => node.module_id));
+      const modules = moduleRows
+        .filter((module) => presentModules.has(module.id))
+        .map((module) => ({ id: module.id, label: module.label, paths: module.paths }));
+      const layoutNodes = nodes.map((node) => ({
+        id: node.id,
+        symbol: node.symbol,
+        path: node.path,
+        line: node.line,
+        moduleId: node.module_id,
+        kind: node.kind,
+      }));
+      const entryPoints = (store.readEntryPoints(found.row.snapshot_id) as Array<Record<string, unknown>>)
+        .map((r) => ({
+          id: String(r["id"]),
+          kind: String(r["kind"]),
+          label: String(r["label"]),
+          path: String(r["path"]),
+        }))
+        .filter((entry) => included.has(entry.id));
+      const snapshotIndex = new Set([
+        ...store.readFileHashes(found.row.snapshot_id).map((file) => file.path),
+        ...allNodes.map((node) => node.path),
+      ]);
+      const snapshotFiles = citedFiles.filter((path) => snapshotIndex.has(path));
+      const functionFiles = [...new Set(nodes.map((node) => node.path))].sort();
+
+      return c.html(
+        callGraphPage({
+          chrome: chromeOf(store, "flow-callgraph", { id: found.row.id, title: found.answer.title }),
+          project: projectName,
+          nodes,
+          edges,
+          entryPoints,
+          modules,
+          layout: layoutCallMap({ nodes: layoutNodes as never, modules: moduleRows as never }),
+          traffic: computeTraffic(edges as never, layoutNodes as never, moduleRows as never),
+          selected: c.req.query("fn"),
+          scopeEntry: c.req.query("entry"),
+          mesh: c.req.query("mesh") === "1",
+          cell: c.req.query("cell"),
+          query: c.req.query("q"),
+          basePath: `/answers/${found.row.id}/callgraph`,
+          flowScope: {
+            answerTitle: found.answer.title,
+            citedFiles,
+            snapshotFiles,
+            functionFiles,
+            boundaryCrossings,
+          },
+        }),
+      );
+    }),
+  );
+
   app.get("/answers/:id/modules", (c) =>
     withStore((store) => {
       const found = loadAnswer(store, root, c.req.param("id"));
@@ -363,6 +537,32 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
             revision: String(e["revision"]),
             exportedAt: String(e["exported_at"]),
           })),
+          runtimeCoverageRuns: listRuntimeCoverageRuns(store, found.row.id),
+        }),
+      );
+    }),
+  );
+
+  app.get("/answers/:answerId/runtime-coverage/:runId", (c) =>
+    withStore((store) => {
+      const answer = loadAnswer(store, root, c.req.param("answerId"));
+      if (!answer) return c.html(notice(store, "runtime-coverage", "Not found", "No such answer."), 404);
+      const run = loadRuntimeCoverageRun(store, answer.row.id, c.req.param("runId"));
+      if (!run) {
+        return c.html(
+          noticePage(
+            chromeOf(store, "runtime-coverage", { id: answer.row.id, title: answer.answer.title }),
+            "Runtime coverage not found",
+            "No such imported run exists for this answer.",
+          ),
+          404,
+        );
+      }
+      return c.html(
+        runtimeCoveragePage({
+          chrome: chromeOf(store, "runtime-coverage", { id: answer.row.id, title: answer.answer.title }),
+          title: answer.answer.title,
+          run,
         }),
       );
     }),

@@ -217,6 +217,15 @@ describe("WP8 overlay surfaces", () => {
 
     const plain = await (await app.request("/answers/observed")).text();
     expect(plain).not.toContain("Proposed overlay.");
+    expect(plain).toContain('href="/answers/observed/modules?overlay=proposal">Review changes</a>');
+
+    const list = await (await app.request("/")).text();
+    expect(list).toContain('href="/answers/observed?overlay=proposal">Review flow changes</a>');
+    expect(list).toContain('href="/answers/observed/modules?overlay=proposal">Review architecture changes</a>');
+
+    const proposal = await (await app.request("/answers/proposal")).text();
+    expect(proposal).toContain('href="/answers/observed/modules?overlay=proposal">Changes</a>');
+    expect(proposal).toContain("review architecture changes");
 
     const flow = await (await app.request("/answers/observed?overlay=proposal")).text();
     expect(flow).toContain("Proposed overlay.");
@@ -232,6 +241,8 @@ describe("WP8 overlay surfaces", () => {
     expect(modules).toContain("One module map for the as-is answer and its proposal");
     expect(modules).toContain("change-added");
     expect(modules).toContain("NOT BUILT");
+    expect(modules).toContain('href="/answers/proposal">Open proposal</a>');
+    expect(modules).toContain('href="/answers/observed?overlay=proposal">Review flow changes</a>');
   });
 
   it("automatically exports a proposal against its parent with textual markers and the Mermaid limitation", () => {

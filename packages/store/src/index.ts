@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -92,11 +92,51 @@ const MIGRATIONS: readonly Migration[] = [
       `ALTER TABLE answer_citations_v2 RENAME TO answer_citations`,
     ],
   },
+  {
+    to: 3,
+    summary: "immutable declared-architecture revisions and an optimistic current-revision pointer",
+    statements: [
+      `CREATE TABLE declared_architecture_revisions (
+         project_id TEXT NOT NULL REFERENCES projects(id),
+         revision TEXT NOT NULL,
+         contract_version INTEGER NOT NULL,
+         model_json TEXT NOT NULL,
+         author TEXT NOT NULL,
+         note TEXT,
+         created_at TEXT NOT NULL,
+         PRIMARY KEY (project_id, revision)
+       )`,
+      `CREATE TABLE declared_architecture_heads (
+         project_id TEXT PRIMARY KEY REFERENCES projects(id),
+         revision TEXT NOT NULL,
+         updated_at TEXT NOT NULL
+       )`,
+    ],
+  },
+  {
+    to: 4,
+    summary: "immutable, versioned runtime-coverage runs imported for stored answers",
+    statements: [
+      `CREATE TABLE runtime_coverage_runs (
+         id TEXT PRIMARY KEY,
+         answer_id TEXT NOT NULL REFERENCES answers(id),
+         contract_version INTEGER NOT NULL,
+         artifact_sha256 TEXT NOT NULL,
+         imported_at TEXT NOT NULL,
+         payload_json TEXT NOT NULL
+       )`,
+      `CREATE INDEX runtime_coverage_runs_by_answer
+         ON runtime_coverage_runs(answer_id, imported_at DESC, id)`,
+    ],
+  },
 ];
 
 /** Tables a migration is expected to preserve, counted before and after. */
 const COUNTED_TABLES = [
   "projects",
+  "declared_architecture_revisions",
+  "declared_architecture_heads",
+  "runtime_coverage_runs",
   "snapshots",
   "answers",
   "answer_citations",
@@ -403,6 +443,43 @@ CREATE TABLE IF NOT EXISTS entry_points (
 );
 `;
 
+/**
+ * Tables introduced after the first migration-capable schema. Kept out of `SCHEMA` so opening an
+ * older database does not create them before its pre-migration backup is taken. Fresh/current stores
+ * apply this fragment directly; older stores receive the same shape through migration 3.
+ */
+const DECLARED_ARCHITECTURE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS declared_architecture_revisions (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  revision TEXT NOT NULL,
+  contract_version INTEGER NOT NULL,
+  model_json TEXT NOT NULL,
+  author TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, revision)
+);
+CREATE TABLE IF NOT EXISTS declared_architecture_heads (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id),
+  revision TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`;
+
+/** Kept out of SCHEMA so schema-3 databases are backed up before this table is created. */
+const RUNTIME_COVERAGE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS runtime_coverage_runs (
+  id TEXT PRIMARY KEY,
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  contract_version INTEGER NOT NULL,
+  artifact_sha256 TEXT NOT NULL,
+  imported_at TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS runtime_coverage_runs_by_answer
+  ON runtime_coverage_runs(answer_id, imported_at DESC, id);
+`;
+
 export interface OpenOptions {
   /** Absolute path to veriflow.db. Parent directories are created. */
   file: string;
@@ -429,6 +506,8 @@ export class Store {
       | undefined;
 
     if (!row) {
+      this.db.exec(DECLARED_ARCHITECTURE_SCHEMA);
+      this.db.exec(RUNTIME_COVERAGE_SCHEMA);
       this.db
         .prepare("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)")
         .run(String(SCHEMA_VERSION));
@@ -444,7 +523,11 @@ export class Store {
         `veriflow.db was written by schema ${row.value}, this build expects ${SCHEMA_VERSION}`,
       );
     }
-    if (found === SCHEMA_VERSION) return;
+    if (found === SCHEMA_VERSION) {
+      this.db.exec(DECLARED_ARCHITECTURE_SCHEMA);
+      this.db.exec(RUNTIME_COVERAGE_SCHEMA);
+      return;
+    }
 
     try {
       const report = this.migrate(found, options.file);
@@ -559,6 +642,87 @@ export class Store {
          ON CONFLICT(id) DO UPDATE SET root_path = excluded.root_path, name = excluded.name`,
       )
       .run(id, rootPath, name, new Date().toISOString());
+  }
+
+  /* ------------------------------------------ declared architecture (F018) */
+
+  /**
+   * Save one immutable declared-model revision and move the project's head only when the caller
+   * read the revision that is still current. `undefined` means "there was no declared model" and
+   * therefore permits only the first write.
+   */
+  saveDeclaredArchitecture(input: {
+    projectId: string;
+    revision: string;
+    contractVersion: number;
+    modelJson: string;
+    author: string;
+    note?: string;
+    createdAt: string;
+    expectedRevision?: string;
+  }): { saved: true } | { saved: false; currentRevision?: string } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.db
+        .prepare("SELECT revision FROM declared_architecture_heads WHERE project_id = ?")
+        .get(input.projectId) as { revision: string } | undefined;
+      if (current?.revision !== input.expectedRevision) {
+        this.db.exec("ROLLBACK");
+        return { saved: false, ...(current ? { currentRevision: current.revision } : {}) };
+      }
+
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO declared_architecture_revisions
+           (project_id, revision, contract_version, model_json, author, note, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.projectId,
+          input.revision,
+          input.contractVersion,
+          input.modelJson,
+          input.author,
+          input.note ?? null,
+          input.createdAt,
+        );
+      this.db
+        .prepare(
+          `INSERT INTO declared_architecture_heads (project_id, revision, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(project_id) DO UPDATE SET
+             revision = excluded.revision, updated_at = excluded.updated_at`,
+        )
+        .run(input.projectId, input.revision, input.createdAt);
+      this.db.exec("COMMIT");
+      return { saved: true };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  declaredArchitecture(projectId: string): Record<string, unknown> | undefined {
+    return this.db
+      .prepare(
+        `SELECT r.project_id, r.revision, r.contract_version, r.model_json, r.author, r.note,
+                r.created_at, h.updated_at
+         FROM declared_architecture_heads h
+         JOIN declared_architecture_revisions r
+           ON r.project_id = h.project_id AND r.revision = h.revision
+         WHERE h.project_id = ?`,
+      )
+      .get(projectId) as Record<string, unknown> | undefined;
+  }
+
+  declaredArchitectureHistory(projectId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT project_id, revision, contract_version, author, note, created_at
+         FROM declared_architecture_revisions WHERE project_id = ?
+         ORDER BY created_at DESC, revision`,
+      )
+      .all(projectId) as Array<Record<string, unknown>>;
   }
 
   insertSnapshot(snapshot: Snapshot, statsJson: string | null): void {
@@ -1279,6 +1443,63 @@ export class Store {
       .prepare(
         `SELECT answer_id, fingerprint, snapshot_id, computed_at, duration_ms
          FROM flow_metrics WHERE answer_id = ? ORDER BY computed_at DESC`,
+      )
+      .all(answerId) as Array<Record<string, unknown>>;
+  }
+
+  /* ----------------------------------------------- runtime coverage (F019) */
+
+  /**
+   * Insert one content-addressed run. A duplicate id is an idempotent read of the first immutable
+   * row; no timestamp or payload is updated and no half-written row can escape the transaction.
+   */
+  insertRuntimeCoverageRun(run: {
+    id: string;
+    answerId: string;
+    contractVersion: number;
+    artifactSha256: string;
+    importedAt: string;
+    payload: unknown;
+  }): { inserted: boolean; row: Record<string, unknown> } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO runtime_coverage_runs
+           (id, answer_id, contract_version, artifact_sha256, imported_at, payload_json)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          run.id,
+          run.answerId,
+          run.contractVersion,
+          run.artifactSha256,
+          run.importedAt,
+          JSON.stringify(run.payload),
+        );
+      const row = this.db
+        .prepare("SELECT * FROM runtime_coverage_runs WHERE id = ? AND answer_id = ?")
+        .get(run.id, run.answerId) as Record<string, unknown> | undefined;
+      if (!row) throw new Error(`runtime coverage run ${run.id} could not be read after insert`);
+      this.db.exec("COMMIT");
+      return { inserted: Number(result.changes) > 0, row };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  runtimeCoverageRun(answerId: string, runId: string): Record<string, unknown> | undefined {
+    return this.db
+      .prepare("SELECT * FROM runtime_coverage_runs WHERE answer_id = ? AND id = ?")
+      .get(answerId, runId) as Record<string, unknown> | undefined;
+  }
+
+  listRuntimeCoverageRuns(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT id, answer_id, contract_version, artifact_sha256, imported_at, payload_json
+         FROM runtime_coverage_runs WHERE answer_id = ? ORDER BY imported_at DESC, id`,
       )
       .all(answerId) as Array<Record<string, unknown>>;
   }

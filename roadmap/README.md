@@ -1,10 +1,12 @@
 # Product roadmap
 
-Seventeen features in five iterations. The first three iterations produce the original MVP: on a
+Twenty-two features in six iterations. The first three iterations produce the original MVP: on a
 real repository, what the [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a
 verified flow answer out, stored locally, browsable and available to an agent. Iteration 4 assembles
 many answers into a project view. Iteration 5 closes the design loop from written claim and observed
-flow through proposal, review and a diagram of the change.
+flow through proposal, review and a diagram of the change. Iteration 6 compares declared intent with
+indexed structure, adds evidence from a real test run beside the retained coverage proxy, and finishes the
+in-answer review path.
 
 Each feature is intended to fit one implementation task and carries its own acceptance and manual
 verification contract.
@@ -59,6 +61,13 @@ Iteration 5 — design against it
   F016 index the invariants live answers assert
     ↓
   F017 draw the proposal as an overlay on the observed architecture
+
+Iteration 6 — compare intent with execution
+  F018 declare architecture and compare expected versus actual
+  F019 map a real test-coverage artifact onto answered flows
+  F020 review one flow through its scoped call graph
+  F021 correct supported prose and decide open questions in the browser
+  F022 navigate follow-ups, replacements and proposals as answer lineage
 ```
 
 The order follows the two things the MVP exists to do: **generate an application's architecture**, then
@@ -89,6 +98,11 @@ F008 and F009 depend on F005/F006 only, and can be reordered freely.
 | [F015](../docs/product/design-and-review-loop-plan.md) | Proposals and answer diff | An observed flow can become a proposal and be compared conservatively with proposed or built state. |
 | [F016](../docs/product/design-and-review-loop-plan.md) | Invariant index | Live answers' invariants are grouped with freshness and visible exclusions. |
 | [F017](../docs/product/design-and-review-loop-plan.md) | Architecture overlay | Added, removed and moved flow and module structure is drawn in one shareable view. |
+| [F018](../docs/declared-architecture.md) | Declared architecture | Human-authored intent is compared with indexed structure without turning unknowns into violations. |
+| [F019](../docs/product/f019-runtime-coverage-plan.md) | Runtime test coverage | Executed line and branch coverage is mapped onto a flow with provenance and tree state. |
+| [F020](../docs/product/m6-plan.md) | Flow call graph | One answer gets a call graph scoped honestly to the files it cites. |
+| [F021](../docs/product/m6-plan.md) | Corrections UI | Supported corrections and open-question decisions become browser review actions. |
+| [F022](../docs/product/m6-plan.md) | Threaded answers | Follow-ups, replacements and proposals become labelled, navigable answer lineage. |
 
 ## Exit gate per iteration
 
@@ -113,6 +127,12 @@ to one file affects is answered from stored citations rather than from a re-read
 a change to a base ref names the flows its hunks land in, a person can review an answer and decide its
 open questions, and an observed flow can produce a proposal whose changed steps and proposed modules
 are visible in one diagram before implementation begins.
+
+**Iteration 6** is complete when declared architecture can be compared with the indexed project using
+evidence-backed and explicitly unknown states; a real, provenance-carrying coverage artifact maps onto
+one answer without being blended with the existing proxy; and the answer screen contains both its
+flow-scoped call graph and the attributed correction/decision workflow, while answer lists make
+follow-up, supersession and proposal lineage navigable.
 
 Automated tests run without a model, an account, or a network. Windows is the primary platform;
 F001–F003 and F005 portable tests also run on one Unix-like runner.
@@ -140,17 +160,12 @@ lives on where. Much of
 [`docs/veriflow-architecture-spec.md`](../docs/veriflow-architecture-spec.md), previously marked
 long-term exploration, is now in scope.
 
-## Next candidates, not yet implementation-ready
+## Candidates beyond M6, not yet implementation-ready
 
 1. a first-party indexer behind the F002 protocol, removing the external dependency;
-2. ~~many answers per project~~ — **shipped as [F011](11-project-view.md)**;
-3. declared intent and expected-vs-actual, reviving the superseded catalog specs;
-4. real coverage from a test run, replacing the F008 proxy;
-5. ~~change impact against a base ref and answer diffing across snapshots~~ — **shipped as F013 and
-   F015**;
-6. corrections and threads in the browser: both are stored and reachable over MCP, neither is
-   reachable by clicking. This is F006's own scope, recorded in its `gaps`.
+2. editor deep links from evidence, if the current read-only source view proves insufficient;
+3. corrections that add or structurally change flow steps, after Q5 settles their allowed reach.
 
-Open decisions that can still alter F001–F010 are in [open-questions.md](open-questions.md). The one that
-blocks F002 is Q2 — which provider surface carries the call graph, and how good its TypeScript resolution
-actually is — and it needs a spike with measurements, not a decision on paper.
+Open decisions that can still alter existing features are in [open-questions.md](open-questions.md).
+Q3, Q4, Q6 and Q8 retain working defaults; Q5 is explicitly deferred until correction editing grows
+beyond the prose and decision workflow bounded for F021.

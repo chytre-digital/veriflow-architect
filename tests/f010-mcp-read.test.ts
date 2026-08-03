@@ -25,6 +25,7 @@ const SNAP = "snap-1";
 const ROUTE = "src/app/api/checkout/route.ts";
 const REFUND = "src/payments/refund.ts";
 const BOOKINGS = "src/db/bookings.ts";
+const RUNTIME_RUN = "runtime-run-1";
 
 function write(root: string, relative: string, body: string): void {
   const file = join(root, relative);
@@ -183,6 +184,47 @@ function fixture(options: { extraEdges?: number; answer?: boolean } = {}): Fixtu
       { subjectKind: "branch", subjectId: "b1", path: REFUND, line: 2, state: "unverified", reason: "line does not mention the refusal" },
     ],
   });
+  const emptyRuntimeTotals = {
+    covered: 0,
+    uncovered: 0,
+    stale: 0,
+    "missing-source": 0,
+    "out-of-scope": 0,
+  };
+  store.insertRuntimeCoverageRun({
+    id: RUNTIME_RUN,
+    answerId,
+    contractVersion: 1,
+    artifactSha256: "a".repeat(64),
+    importedAt: "2026-08-03T00:00:00.000Z",
+    payload: {
+      contractVersion: 1,
+      id: RUNTIME_RUN,
+      answerId,
+      answerSnapshotId: SNAP,
+      importedAt: "2026-08-03T00:00:00.000Z",
+      format: "cobertura-xml",
+      artifact: { sha256: "a".repeat(64), bytes: 10 },
+      provenance: {
+        producer: "test",
+        label: "fixture",
+        producedAt: "2026-08-03T00:00:00.000Z",
+        commitSha: null,
+        dirty: false,
+        completeness: "partial",
+        sourceRoots: [],
+        rootMappings: [],
+      },
+      answerTree: { commitSha: null, dirty: true },
+      treeMatch: { current: false, reason: "fixture has no commit" },
+      sourceRoots: { artifact: [], supplied: [] },
+      scope: { observedCitationLines: 0, mappedCitationLines: 0, artifactLinesOutsideCitations: 0 },
+      files: [],
+      evidence: [],
+      totals: { lines: emptyRuntimeTotals, branches: emptyRuntimeTotals },
+      diagnostics: [],
+    },
+  });
 
   return { root, store, answerId };
 }
@@ -226,8 +268,10 @@ function callsFor(answerId: string): Record<string, Record<string, unknown>> {
     get_freshness: { answerId },
     get_metrics: { answerId },
     get_coverage_gaps: { answerId },
+    get_runtime_coverage: { answerId, runId: RUNTIME_RUN },
     search_answers: { query: "refund" },
     get_architecture: {},
+    get_architecture_comparison: {},
     get_call_graph: {},
     get_callers: { symbol: "refundBooking" },
     get_callees: { symbol: "refundBooking" },

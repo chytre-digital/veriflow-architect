@@ -24,15 +24,20 @@ import {
   THRESHOLDS,
   changeImpact,
   DecideError,
+  DeclaredArchitectureConflictError,
   checkClaims,
   decideQuestion,
   diffAnswers,
   impactOf,
+  importRuntimeCoverage,
   invariantIndex,
   kindOf,
   loadStoredAnswer,
+  loadRuntimeCoverageRun,
   refExists,
   metricsForStoredAnswer,
+  saveDeclaredArchitecture,
+  storedArchitectureConformance,
   thresholdOf,
   undecidedInRow,
   verifyStoredAnswer,
@@ -40,7 +45,13 @@ import {
   type StoredAnswer,
   type Verification,
 } from "@veriflow/answers";
-import { DEFAULT_DEPTH, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from "@veriflow/metrics";
+import {
+  DEFAULT_DEPTH,
+  SPAGHETTI_BANDS,
+  SPAGHETTI_FORMULA,
+  type RuntimeCoverageRootMapping,
+  type RuntimeCoverageRunV1,
+} from "@veriflow/metrics";
 import {
   ConflictError,
   commitExport,
@@ -494,6 +505,101 @@ program
           `${String(module.symbolCount).padStart(6)} symbols   ${module.source}`,
       );
       if (module.cohesionWarning) log(`  ${" ".repeat(width)}  ⚠ ${module.cohesionWarning}`);
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------ declared architecture */
+
+program
+  .command("architecture-declare")
+  .argument("<model>", "JSON file containing the human-authored declared architecture")
+  .argument("[path]")
+  .requiredOption("--author <name>", "person making this declared revision")
+  .option("--note <text>", "why this revision changed")
+  .option("--expected <revision>", "current revision required before an existing model is replaced")
+  .option("--json", "machine-readable output")
+  .description("validate and store one immutable revision of intended architecture")
+  .action((
+    modelArg: string,
+    pathArg: string | undefined,
+    options: { author: string; note?: string; expected?: string; json?: boolean },
+  ) => {
+    const ctx = open(pathArg);
+    try {
+      const file = resolve(modelArg);
+      if (!existsSync(file)) throw new Error(`no such declared architecture: ${modelArg}`);
+      const input = JSON.parse(readFileSync(file, "utf8")) as unknown;
+      const saved = saveDeclaredArchitecture(ctx.store, ctx.projectId, input, {
+        author: options.author,
+        ...(options.note ? { note: options.note } : {}),
+        ...(options.expected ? { expectedRevision: options.expected } : {}),
+      });
+      if (options.json) {
+        log(JSON.stringify({ contractVersion: 1, declared: saved }, null, 2));
+      } else {
+        log(`Declared architecture ${saved.revision}`);
+        log(`  ${saved.model.elements.length} elements · ${saved.model.relationships.length} relationships`);
+        log(`  author ${saved.author} · stored ${saved.createdAt}`);
+        log(`  compare with: veriflow architecture-compare`);
+      }
+      ctx.close();
+    } catch (error) {
+      ctx.close();
+      if (error instanceof DeclaredArchitectureConflictError) fail(error.message);
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+program
+  .command("architecture-compare")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("compare human-declared architecture with the latest indexed module graph")
+  .action((pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const conformance = storedArchitectureConformance(ctx.store, ctx.projectId);
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, conformance }, null, 2));
+      ctx.close();
+      return;
+    }
+    if (!conformance.comparison) {
+      log(`Architecture comparison unavailable: ${conformance.note}.`);
+      if (!conformance.declared) log(`  declare one with: veriflow architecture-declare <model.json> --author <name>`);
+      if (!conformance.observed) log(`  build the observed side with: veriflow index`);
+      ctx.close();
+      return;
+    }
+
+    const comparison = conformance.comparison;
+    log(`Expected versus actual architecture`);
+    log(`  declared ${comparison.declared.revision} by ${comparison.declared.author}`);
+    log(
+      `  observed ${comparison.observed.snapshotId}` +
+        `${comparison.observed.commitSha ? ` at ${comparison.observed.commitSha.slice(0, 12)}` : ""}`,
+    );
+    const stateLine = (counts: Record<string, number>): string =>
+      Object.entries(counts).filter(([, count]) => count > 0).map(([state, count]) => `${state} ${count}`).join(" · ");
+    log(`  elements      ${stateLine(comparison.counts.elements)}`);
+    log(`  relationships ${stateLine(comparison.counts.relationships)}`);
+    log("");
+
+    for (const element of comparison.elements.filter((item) => item.state !== "matched")) {
+      log(
+        `  ${element.state.padEnd(14)} element ${element.declared?.id ?? element.observed?.id}` +
+          ` — ${element.reason}`,
+      );
+    }
+    for (const relationship of comparison.relationships.filter((item) => item.state !== "matched")) {
+      const rule = relationship.declared;
+      log(`  ${relationship.state.padEnd(14)} ${rule.from} → ${rule.to} (${rule.expectation}) — ${relationship.reason}`);
+      if (relationship.observed) {
+        log(`                 ${relationship.observed.calls} calls · ${relationship.observed.note}`);
+      }
+    }
+    for (const relationship of comparison.observedRelationships.filter((item) => item.state === "observed-only")) {
+      log(`  observed-only  ${relationship.from} → ${relationship.to} — ${relationship.calls} calls · ${relationship.note}`);
     }
     ctx.close();
   });
@@ -1637,6 +1743,130 @@ program
     }
     ctx.close();
   });
+
+/* ------------------------------------------------------- runtime coverage */
+
+const coverageCommand = program
+  .command("coverage")
+  .description("import and read executed line/branch coverage without running project tests");
+
+coverageCommand
+  .command("import")
+  .argument("<answerId>", "stored answer whose exact citation lines are the mapping boundary")
+  .argument("<artifact>", "Cobertura XML produced by an explicit test run")
+  .argument("[path]", "VeriFlow workspace")
+  .requiredOption("--producer <name>", "coverage producer, for example pytest-cov or c8")
+  .option("--command <command>", "the explicit command that produced the artifact")
+  .option("--label <label>", "a human label instead of a command (exactly one is required)")
+  .requiredOption("--produced-at <iso>", "when the producer created the artifact")
+  .requiredOption("--commit <sha>", "producer commit SHA, or `none` when unavailable")
+  .requiredOption("--tree-state <state>", "producer tree state: clean or dirty")
+  .requiredOption("--completeness <state>", "artifact scope: complete or partial")
+  .option("--source-root <root...>", "additional source roots declared by the producer")
+  .option("--map <mapping...>", "artifact-root=repository-prefix mapping; ambiguity is never guessed")
+  .option("--json", "machine-readable canonical run")
+  .description("import one immutable runtime-coverage run; this command never starts tests")
+  .action((
+    answerId: string,
+    artifactArg: string,
+    pathArg: string | undefined,
+    options: {
+      producer: string;
+      command?: string;
+      label?: string;
+      producedAt: string;
+      commit: string;
+      treeState: string;
+      completeness: string;
+      sourceRoot?: string[];
+      map?: string[];
+      json?: boolean;
+    },
+  ) => {
+    const ctx = open(pathArg);
+    try {
+      if (options.treeState !== "clean" && options.treeState !== "dirty") {
+        throw new Error("--tree-state must be clean or dirty");
+      }
+      if (options.completeness !== "complete" && options.completeness !== "partial") {
+        throw new Error("--completeness must be complete or partial");
+      }
+      const rootMappings = (options.map ?? []).map(parseCoverageRootMapping);
+      const imported = importRuntimeCoverage(ctx.store, {
+        answerId,
+        artifactPath: resolve(artifactArg),
+        provenance: {
+          producer: options.producer,
+          ...(options.command ? { command: options.command } : {}),
+          ...(options.label ? { label: options.label } : {}),
+          producedAt: options.producedAt,
+          commitSha: options.commit.toLowerCase() === "none" ? null : options.commit,
+          dirty: options.treeState === "dirty",
+          completeness: options.completeness,
+          sourceRoots: options.sourceRoot ?? [],
+          rootMappings,
+        },
+      });
+      if (options.json) {
+        log(JSON.stringify(imported.run, null, 2));
+      } else {
+        printRuntimeCoverage(imported.run, imported.source);
+      }
+      ctx.close();
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+coverageCommand
+  .command("show")
+  .argument("<answerId>")
+  .argument("<runId>")
+  .argument("[path]", "VeriFlow workspace")
+  .option("--json", "machine-readable canonical run")
+  .description("read one exact stored runtime-coverage run without opening its artifact")
+  .action((answerId: string, runId: string, pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    try {
+      const run = loadRuntimeCoverageRun(ctx.store, answerId, runId);
+      if (!run) throw new Error(`no runtime coverage run ${runId} for answer ${answerId}`);
+      if (options.json) log(JSON.stringify(run, null, 2));
+      else printRuntimeCoverage(run, "stored");
+      ctx.close();
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+function parseCoverageRootMapping(raw: string): RuntimeCoverageRootMapping {
+  const at = raw.indexOf("=");
+  if (at <= 0) throw new Error(`invalid --map "${raw}"; expected artifact-root=repository-prefix`);
+  return { artifactRoot: raw.slice(0, at), repositoryPrefix: raw.slice(at + 1) };
+}
+
+function printRuntimeCoverage(run: RuntimeCoverageRunV1, source: "imported" | "existing" | "stored"): void {
+  log(`Imported runtime coverage ${run.id}  (${source})`);
+  log(`  answer       ${run.answerId} at snapshot ${run.answerSnapshotId}`);
+  log(
+    `  producer     ${run.provenance.producer} · ${run.provenance.completeness} · ` +
+      `${run.provenance.command ? `command: ${run.provenance.command}` : `label: ${run.provenance.label}`}`,
+  );
+  log(`  artifact     Cobertura XML · ${run.artifact.bytes} bytes · sha256:${run.artifact.sha256.slice(0, 16)}`);
+  log(`  tree         ${run.treeMatch.current ? "current" : "stale"} — ${run.treeMatch.reason}`);
+  log(`  scope        ${run.scope.mappedCitationLines}/${run.scope.observedCitationLines} exact cited lines mapped · ${run.scope.artifactLinesOutsideCitations} artifact lines outside citations`);
+  const states = ["covered", "uncovered", "stale", "missing-source", "out-of-scope"] as const;
+  log(`  lines        ${states.map((state) => `${state} ${run.totals.lines[state]}`).join(" · ")}`);
+  log(`  branches     ${states.map((state) => `${state} ${run.totals.branches[state]}`).join(" · ")}`);
+  log(`  comparison   F008 remains separate: veriflow metrics ${run.answerId}`);
+  for (const item of run.evidence.filter((entry) => entry.state !== "covered")) {
+    log(
+      `    ${item.state.padEnd(14)} ${(item.path ?? item.artifactPath ?? "unknown")}:${item.line}` +
+        `${item.hits === undefined ? "" : ` · hits ${item.hits}`} — ${item.reason}`,
+    );
+  }
+}
 
 /* ------------------------------------------------------------------ diff */
 

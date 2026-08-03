@@ -1,5 +1,6 @@
 export * from "./claims.js";
 export * from "./corrections.js";
+export * from "./declared.js";
 export * from "./decide.js";
 export * from "./diff-impact.js";
 export * from "./freshness.js";
@@ -7,4 +8,5 @@ export * from "./invariants.js";
 export * from "./metrics.js";
 export * from "./project.js";
 export * from "./read.js";
+export * from "./runtime-coverage.js";
 export * from "./verification.js";

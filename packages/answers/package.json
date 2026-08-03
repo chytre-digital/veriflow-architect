@@ -9,6 +9,7 @@
     "@veriflow/flow-answer": "workspace:*",
     "@veriflow/metrics": "workspace:*",
     "@veriflow/snapshot": "workspace:*",
-    "@veriflow/store": "workspace:*"
+    "@veriflow/store": "workspace:*",
+    "zod": "^3.24.1"
   }
 }

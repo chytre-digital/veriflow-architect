@@ -54,6 +54,17 @@ export interface CallGraphEntryPoint {
   path: string;
 }
 
+export interface FlowBoundaryCrossing {
+  direction: "incoming" | "outgoing";
+  inside: CallGraphNode;
+  outside?: CallGraphNode;
+  outsideId: string;
+  kind: string;
+  inferred: boolean;
+  rule?: string;
+  sites: number;
+}
+
 export interface CallGraphPageInput {
   chrome: Chrome;
   project: string;
@@ -63,7 +74,7 @@ export interface CallGraphPageInput {
   modules: Array<{ id: string; label: string; paths: string[] }>;
   layout: CallMapLayout;
   traffic: TrafficCell[];
-  buckets: {
+  buckets?: {
     total: number;
     resolved: number;
     database: number;
@@ -86,6 +97,19 @@ export interface CallGraphPageInput {
   cell?: string;
   /** `?q=` — the find box over every reached function. */
   query?: string;
+  /** Route that owns this graph. Keeps every picker and selected function inside a flow tab. */
+  basePath?: string;
+  /** Present when the graph is narrowed to the files cited by one stored flow answer. */
+  flowScope?: {
+    answerTitle: string;
+    citedFiles: string[];
+    /** Cited files captured in the answer snapshot, whether or not they contain a call node. */
+    snapshotFiles: string[];
+    /** Cited files represented by at least one node in the stored call graph. */
+    functionFiles: string[];
+    /** Stored edges with exactly one endpoint in the cited-file scope. */
+    boundaryCrossings: FlowBoundaryCrossing[];
+  };
 }
 
 /**
@@ -100,7 +124,9 @@ const MATRIX_LIMIT = 14;
 const CLUSTERS = 8;
 
 export function callGraphPage(input: CallGraphPageInput): string {
-  const { nodes, edges, entryPoints, buckets } = input;
+  const { nodes, edges, entryPoints } = input;
+  const buckets = input.buckets;
+  const basePath = input.basePath ?? "/callgraph";
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const moduleLabel = new Map(input.modules.map((m) => [m.id, m.label]));
@@ -160,7 +186,7 @@ export function callGraphPage(input: CallGraphPageInput): string {
     };
     for (const [key, value] of Object.entries(merged)) if (value) params.set(key, value);
     const query = params.toString();
-    return query ? `/callgraph?${query}` : "/callgraph";
+    return query ? `${basePath}?${query}` : basePath;
   };
 
   /* -------------------------------------------------------------- the map */
@@ -330,7 +356,7 @@ export function callGraphPage(input: CallGraphPageInput): string {
     }
     <div class="cg-group cg-group-find">
       <span class="cg-group-label">Find any of the ${nodes.length}</span>
-      <form method="get" action="/callgraph">
+      <form method="get" action="${esc(basePath)}">
         ${input.selected ? `<input type="hidden" name="fn" value="${esc(input.selected)}">` : ""}
         ${scopeEntry ? `<input type="hidden" name="entry" value="${esc(scopeEntry)}">` : ""}
         ${input.mesh ? `<input type="hidden" name="mesh" value="1">` : ""}
@@ -365,44 +391,74 @@ export function callGraphPage(input: CallGraphPageInput): string {
 
   /* --------------------------------------------------------------- totals */
 
-  const bucketSum =
-    buckets.resolved +
-    buckets.database +
-    buckets.stdlib +
-    buckets.unresolved +
-    buckets.packages.reduce((a, b) => a + b.sites, 0) +
-    buckets.externalSdk.reduce((a, b) => a + b.sites, 0);
-  const leaves =
-    buckets.database + buckets.packages.reduce((a, b) => a + b.sites, 0) + buckets.externalSdk.reduce((a, b) => a + b.sites, 0);
-  const accounted = buckets.total ? Math.round(((buckets.total - buckets.unresolved) / buckets.total) * 100) : 0;
+  const bucketSum = buckets
+    ? buckets.resolved +
+      buckets.database +
+      buckets.stdlib +
+      buckets.unresolved +
+      buckets.packages.reduce((a, b) => a + b.sites, 0) +
+      buckets.externalSdk.reduce((a, b) => a + b.sites, 0)
+    : 0;
+  const leaves = buckets
+    ? buckets.database +
+      buckets.packages.reduce((a, b) => a + b.sites, 0) +
+      buckets.externalSdk.reduce((a, b) => a + b.sites, 0)
+    : 0;
+  const accounted = buckets?.total ? Math.round(((buckets.total - buckets.unresolved) / buckets.total) * 100) : 0;
   const files = new Set(nodes.map((n) => n.path)).size;
   const inferred = edges.filter((e) => e.inferred).length;
 
-  const tiles = [
-    tile("Functions reached", String(nodes.length), "", `in ${files} files, from ${doors.length} door${doors.length === 1 ? "" : "s"}`),
-    tile("Calls between them", String(edges.length), "edges", `${edges.reduce((a, b) => a + b.sites, 0)} call sites`),
-    tile(
-      "Statically proven",
-      String(edges.length - inferred),
-      "edges",
-      inferred ? `+ ${inferred} inferred, each with a named rule` : "nothing inferred",
-    ),
-    tile(
-      "Leaves the process",
-      String(leaves),
-      "calls",
-      `${buckets.database} database · ${buckets.packages.reduce((a, b) => a + b.sites, 0)} package · ${buckets.externalSdk.reduce(
-        (a, b) => a + b.sites,
-        0,
-      )} SDK`,
-    ),
-    tile(
-      "Sites accounted for",
-      String(accounted),
-      "%",
-      `${buckets.unresolved} of ${buckets.total} unresolved, counted not guessed`,
-    ),
-  ].join("");
+  const tiles = (input.flowScope
+    ? [
+        tile("Functions in flow files", String(nodes.length), "", `in ${files} indexed files`),
+        tile("Calls inside the flow", String(edges.length), "edges", `${edges.reduce((a, b) => a + b.sites, 0)} call sites`),
+        tile(
+          "Flow files represented",
+          String(input.flowScope.functionFiles.length),
+          `of ${input.flowScope.citedFiles.length}`,
+          "only files with indexed call nodes can be drawn",
+        ),
+        tile(
+          "Boundary crossings",
+          String(input.flowScope.boundaryCrossings.length),
+          "edges",
+          (() => {
+            const sites = input.flowScope!.boundaryCrossings.reduce((sum, edge) => sum + edge.sites, 0);
+            return `${sites} call site${sites === 1 ? " crosses" : "s cross"} the cited-file scope`;
+          })(),
+        ),
+        tile(
+          "Statically proven",
+          String(edges.length - inferred),
+          "edges",
+          inferred ? `+ ${inferred} inferred, each with a named rule` : "nothing inferred",
+        ),
+      ]
+    : [
+        tile("Functions reached", String(nodes.length), "", `in ${files} files, from ${doors.length} door${doors.length === 1 ? "" : "s"}`),
+        tile("Calls between them", String(edges.length), "edges", `${edges.reduce((a, b) => a + b.sites, 0)} call sites`),
+        tile(
+          "Statically proven",
+          String(edges.length - inferred),
+          "edges",
+          inferred ? `+ ${inferred} inferred, each with a named rule` : "nothing inferred",
+        ),
+        tile(
+          "Leaves the process",
+          String(leaves),
+          "calls",
+          `${buckets!.database} database · ${buckets!.packages.reduce((a, b) => a + b.sites, 0)} package · ${buckets!.externalSdk.reduce(
+            (a, b) => a + b.sites,
+            0,
+          )} SDK`,
+        ),
+        tile(
+          "Sites accounted for",
+          String(accounted),
+          "%",
+          `${buckets!.unresolved} of ${buckets!.total} unresolved, counted not guessed`,
+        ),
+      ]).join("");
 
   /* ---------------------------------------------------------------- detail */
 
@@ -456,19 +512,67 @@ export function callGraphPage(input: CallGraphPageInput): string {
 
   /* ----------------------------------------------------------------- page */
 
-  const packages = buckets.packages.slice(0, 8);
-  const sdk = buckets.externalSdk.slice(0, 8);
+  const packages = buckets?.packages.slice(0, 8) ?? [];
+  const sdk = buckets?.externalSdk.slice(0, 8) ?? [];
+  const flowScope = input.flowScope;
+  const absentFlowFiles = flowScope
+    ? flowScope.citedFiles.filter((path) => !flowScope.snapshotFiles.includes(path))
+    : [];
+  const functionlessFlowFiles = flowScope
+    ? flowScope.snapshotFiles.filter((path) => !flowScope.functionFiles.includes(path))
+    : [];
+  const flowEmpty = flowScope
+    ? flowScope.citedFiles.length === 0
+      ? `This answer has no repository citations, so citations define an empty scope. The answer remains available and no calls are invented.`
+      : flowScope.snapshotFiles.length === 0
+        ? `None of this answer's ${flowScope.citedFiles.length} cited files is present in the stored snapshot index. The answer remains available and no calls are invented.`
+        : `The snapshot contains ${flowScope.snapshotFiles.length} cited file${flowScope.snapshotFiles.length === 1 ? "" : "s"}, but none has an indexed function in the stored call graph. The answer remains available and no calls are invented.`
+    : "";
+  const crossingList = flowScope?.boundaryCrossings.length
+    ? `<div class="detail">
+         <span class="col-label">Calls crossing the cited-file boundary · ${flowScope.boundaryCrossings.length}</span>
+         <p class="detail-note" style="margin:6px 0 10px">These stored edges are not drawn in the
+           scoped graph because exactly one endpoint is outside the files cited by this answer.</p>
+         <ul class="bullets">${flowScope.boundaryCrossings
+           .map((crossing) => {
+             const from = crossing.direction === "outgoing" ? crossing.inside : crossing.outside;
+             const to = crossing.direction === "outgoing" ? crossing.outside : crossing.inside;
+             const endpoint = (item: CallGraphNode | undefined, fallback: string): string =>
+               item
+                 ? `<b>${esc(item.symbol === "<module init>" ? `${basename(item.path)} · top level` : item.symbol)}</b>
+                    <code>${esc(item.path)}:${item.line}</code>`
+                 : `<code>${esc(fallback)}</code> <span class="dim">(endpoint node not stored)</span>`;
+             return `<li><span class="pill">${crossing.direction === "outgoing" ? "out" : "in"}</span>
+               ${endpoint(from, crossing.outsideId)} → ${endpoint(to, crossing.outsideId)} ·
+               ${crossing.sites} call site${crossing.sites === 1 ? "" : "s"} · ${esc(crossing.kind)}${
+                 crossing.inferred
+                   ? ` · <span class="pill warn">inferred${crossing.rule ? `: ${esc(crossing.rule)}` : ""}</span>`
+                   : ""
+               }</li>`;
+           })
+           .join("")}</ul>
+       </div>`
+    : flowScope
+      ? `<div class="detail"><span class="col-label">Calls crossing the cited-file boundary · 0</span>
+           <p class="detail-note" style="margin-top:6px">No stored edge has exactly one endpoint in this
+             answer's cited-file scope.</p></div>`
+      : "";
 
   return shell(
     input.chrome,
-    `${input.project} — call graph`,
+    flowScope ? `${flowScope.answerTitle} — call graph` : `${input.project} — call graph`,
     `<section class="screen">
        ${screenHead({
-         eyebrow: "Call graph",
-         title: "Every function the doors reach",
-         lede: `Walked from ${doors.length} detected entry point${doors.length === 1 ? "" : "s"}, one call at
-           a time, over the stored index. A function is here because something reaches it — not because it
-           happens to live in a file the flow opens. Nothing was recomputed to draw this.`,
+         eyebrow: flowScope ? "Flow call graph" : "Call graph",
+         title: flowScope ? "Calls inside this flow's files" : "Every function the doors reach",
+         lede: flowScope
+           ? `Filtered to the ${flowScope.citedFiles.length} repository file${flowScope.citedFiles.length === 1 ? "" : "s"}
+              cited by “${esc(flowScope.answerTitle)}”. An edge is drawn only when both functions live in
+              those files. Citations define this scope; they do not prove that any function executed at
+              runtime. Calls crossing the filter boundary are counted and named below.`
+           : `Walked from ${doors.length} detected entry point${doors.length === 1 ? "" : "s"}, one call at
+              a time, over the stored index. A function is here because something reaches it — not because it
+              happens to live in a file the flow opens. Nothing was recomputed to draw this.`,
          meta: `<span class="pill">${nodes.length} functions</span>
            <span class="pill">${edges.length} edges</span>
            <span class="pill">${matrix.cells.length} traffic cell${matrix.cells.length === 1 ? "" : "s"}</span>
@@ -486,11 +590,13 @@ export function callGraphPage(input: CallGraphPageInput): string {
 
        ${
          nodes.length === 0
-           ? `<p class="note">Nothing is reachable. The graph starts at the doors of the repository —
-              HTTP routes, pages, server actions, cron, webhooks and subscribers, recognized from where
-              they sit, plus the <code>bin</code> commands and <code>exports</code> a package manifest
-              declares — and this snapshot has ${entryPoints.length}. That is a statement about what was
-              detected, not about what the code does.</p>`
+           ? flowScope
+             ? `<p class="note">${esc(flowEmpty)}</p>`
+             : `<p class="note">Nothing is reachable. The graph starts at the doors of the repository —
+                HTTP routes, pages, server actions, cron, webhooks and subscribers, recognized from where
+                they sit, plus the <code>bin</code> commands and <code>exports</code> a package manifest
+                declares — and this snapshot has ${entryPoints.length}. That is a statement about what was
+                detected, not about what the code does.</p>`
            : ""
        }
 
@@ -551,7 +657,11 @@ export function callGraphPage(input: CallGraphPageInput): string {
 
        ${detail}
 
-       <div class="detail detail-cols">
+       ${crossingList}
+
+       ${
+         buckets
+           ? `<div class="detail detail-cols">
          <div>
            <span class="col-label">Where the ${buckets.total} call sites go</span>
            <table class="traffic"><tbody>
@@ -607,7 +717,42 @@ export function callGraphPage(input: CallGraphPageInput): string {
              }
            </ul>
          </div>
-       </div>
+       </div>`
+           : `<div class="detail detail-cols">
+         <div>
+           <span class="col-label">How this flow filter is built</span>
+           <p class="detail-note">The answer cites ${flowScope?.citedFiles.length ?? 0} repository file${
+             flowScope?.citedFiles.length === 1 ? "" : "s"
+           }. ${flowScope?.snapshotFiles.length ?? 0} are present in the stored snapshot and
+             ${flowScope?.functionFiles.length ?? 0} contain functions in the stored call graph.
+             The map is laid out only from those indexed functions.</p>
+         </div>
+         <div>
+           <span class="col-label">What the edges mean</span>
+           <p class="detail-note">Only stored calls whose caller and callee both live in a cited file are
+             shown. ${flowScope?.boundaryCrossings.length ?? 0} edge${flowScope?.boundaryCrossings.length === 1 ? "" : "s"}
+             ${flowScope?.boundaryCrossings.length === 1 ? "crosses" : "cross"} into or out of the flow's cited-file set and ${flowScope?.boundaryCrossings.length === 1 ? "is" : "are"} named above; open the
+             <a href="/callgraph">project call graph</a> to follow them in context.</p>
+         </div>
+         <div>
+           <span class="col-label">Where this graph goes dark</span>
+           ${
+             absentFlowFiles.length || functionlessFlowFiles.length
+               ? `<ul class="bullets">
+                    ${absentFlowFiles
+                      .map((path) => `<li><code>${esc(path)}</code> — absent from the stored snapshot index</li>`)
+                      .join("")}
+                    ${functionlessFlowFiles
+                      .map((path) => `<li><code>${esc(path)}</code> — in the snapshot, with no indexed call node</li>`)
+                      .join("")}
+                  </ul>`
+               : flowScope?.citedFiles.length
+                 ? `<p class="detail-note">Every cited file has at least one indexed call node.</p>`
+                 : `<p class="detail-note">There are no cited repository files to index.</p>`
+           }
+         </div>
+       </div>`
+       }
      </section>`,
   );
 }

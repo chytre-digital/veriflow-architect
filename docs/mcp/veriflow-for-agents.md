@@ -133,6 +133,9 @@ record of intent, but the code they describe has moved — re-verify the citatio
    executed coverage: `gap` means no test file names the identifier that outcome is built on, which
    is a narrower and checkable claim. `get_metrics` covers the rest — debt, structure and coupling
    for the flow's own files.
+7. When the answer lists an imported run, `get_runtime_coverage(answerId, runId)` → exact executed
+   line and branch facts with producer, completeness and tree equality. Keep this evidence separate
+   from the identifier proxy; neither corrects or averages the other.
 
 ## The tools
 
@@ -148,8 +151,10 @@ record of intent, but the code they describe has moved — re-verify the citatio
 | `get_freshness` | Which cited files changed, and per citation whether it resolved, moved (to which line), or is gone. |
 | `get_metrics` | Debt, structure, coupling and function-level findings for the flow's own files, one section at a time. Every number carries the tool it mirrors and the rule behind it. |
 | `get_coverage_gaps` | Alternative outcomes no test names — a proxy over identifiers, labelled as one. |
+| `get_runtime_coverage` | One immutable imported Cobertura run: exact line/branch facts, five disjoint states and full producer/tree provenance. |
 | `search_answers` | Title, body, or cited path. |
 | `get_project_overview` | What every answer adds up to: modules more than one flow runs through, modules no answer reaches, externals across flows, every open question in one place. Superseded answers are excluded and counted. |
+| `get_architecture_comparison` | Human-declared boundaries compared with the latest indexed modules and stored call traffic. |
 | `get_invariants` | Invariant strings grouped across standing answers, with each asserting answer, branch and its own freshness. Superseded answers are excluded and counted; nothing is checked or scored. |
 | `get_impact` | Every answer citing one file, the lines each depends on, its review state, and whether it was superseded — plus the other cited files in the same module. |
 | `get_architecture` | Module registry, entry points, measured traffic, flows per module. |

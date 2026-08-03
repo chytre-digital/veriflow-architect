@@ -187,6 +187,19 @@ describe("the local server", () => {
     }
     for (const phase of ["Checkout", "Settlement"]) expect(html).toContain(phase);
     expect(html).toContain("1/1 verified");
+    expect(html).toContain('class="answer-tabs"');
+    expect(html).not.toContain('class="nav-children"');
+    expect(html).toContain('class="nav-question is-current"');
+    for (const [label, href] of [
+      ["Flow", "/answers/a-1"],
+      ["Paths", "/answers/a-1/paths"],
+      ["Call graph", "/answers/a-1/callgraph"],
+      ["Modules", "/answers/a-1/modules"],
+      ["Freshness", "/answers/a-1/freshness"],
+      ["Metrics", "/answers/a-1/metrics"],
+    ]) {
+      expect(html).toContain(`href="${href}">${label}</a>`);
+    }
   });
 
   it("shows freshness measured on the cited files, not on commits", async () => {
@@ -539,7 +552,7 @@ describe("the call graph screen", () => {
     { from: "src/app/other.ts::GET", to: "src/modules/payments/c.ts::orphan", kind: "call", inferred: false, sites: 1 },
   ];
 
-  function graphProject(): string {
+  function graphProject(options: { citedFiles?: string[]; snapshotOnlyFiles?: string[] } = {}): string {
     const root = mkdtempSync(join(tmpdir(), "veriflow-cg-"));
     made.push(root);
     execFileSync("git", ["init", "-q"], { cwd: root });
@@ -550,6 +563,14 @@ describe("the call graph screen", () => {
     store.insertSnapshot(
       { id: "s1", projectId: "p", path: root, dirty: false, fileCount: 4, createdAt: new Date().toISOString() },
       null,
+    );
+    const citedFiles = options.citedFiles ?? ["src/app/route.ts", "src/modules/payments/a.ts"];
+    const snapshotFiles = [
+      ...new Set([...NODES.map((node) => node.path), ...(options.snapshotOnlyFiles ?? [])]),
+    ].sort();
+    store.insertFileHashes(
+      "s1",
+      snapshotFiles.map((path, index) => ({ path, sha256: `fixture-${index}`, size: 1 })),
     );
     store.insertModules("s1", [
       { id: "src-app", label: "App", paths: ["src/app"], source: "app-route-tree", fileCount: 2, symbolCount: 2, communityIds: [] },
@@ -574,6 +595,59 @@ describe("the call graph screen", () => {
       { total: 9, resolved: 3, database: 2, stdlib: 1, unresolved: 3, packages: [], externalSdk: [], exact: true },
       new Map(),
     );
+    const steps = citedFiles.length
+      ? citedFiles.map((path, index) => {
+          const node = NODES.find((candidate) => candidate.path === path);
+          return {
+            id: `s${index + 1}`,
+            phaseId: "p1",
+            from: index === 0 ? "customer" : "api",
+            to: "api",
+            kind: index === 0 ? ("sync" as const) : ("self" as const),
+            label: node?.symbol ?? `read ${path}`,
+            reasoning: "",
+            citations: [{ path, line: node?.line ?? 1, ...(node ? { symbol: node.symbol } : {}) }],
+          };
+        })
+      : [
+          {
+            id: "s1",
+            phaseId: "p1",
+            from: "customer",
+            to: "api",
+            kind: "sync" as const,
+            label: "uncited step",
+            reasoning: "",
+            citations: [],
+          },
+        ];
+    const flow = answer({
+      snapshotId: "s1",
+      steps,
+      branches: [],
+    });
+    store.insertAnswer({
+      id: "flow-1",
+      questionId: "q-flow",
+      runId: "r-flow",
+      snapshotId: "s1",
+      title: flow.title,
+      verified: citedFiles.length,
+      unverified: 0,
+      openQuestions: 0,
+      body: flow,
+      citations: citedFiles.map((path, index) => {
+        const node = NODES.find((candidate) => candidate.path === path);
+        return {
+          subjectKind: "step",
+          subjectId: `s${index + 1}`,
+          path,
+          line: node?.line ?? 1,
+          ...(node ? { symbol: node.symbol } : {}),
+          state: "verified",
+        };
+      }),
+    });
     store.close();
     return root;
   }
@@ -585,6 +659,121 @@ describe("the call graph screen", () => {
     expect(html).toContain('class="hier"');
     expect(html).toContain("5 functions");
     expect(html).toContain("3 edges");
+  });
+
+  it("serves a flow tab filtered to exactly the files that answer cites", async () => {
+    const html = await (await createApp(graphProject()).request("/answers/flow-1/callgraph")).text();
+    const map = html.match(/<svg[^>]*class="callmap"[\s\S]*?<\/svg>/)?.[0];
+    expect(html).toContain("Calls inside this flow's files");
+    expect(html).toContain("2 functions");
+    expect(html).toContain("1 edges");
+    expect(html).toContain("src/app/route.ts");
+    expect(html).toContain("src/modules/payments/a.ts");
+    expect(html).not.toContain("src/app/other.ts");
+    expect(html).not.toContain("src/modules/payments/c.ts");
+    expect(map).toBeDefined();
+    expect(map).toContain("src/app/route.ts");
+    expect(map).not.toContain("src/modules/payments/b.ts");
+    expect(html).toContain("Boundary crossings");
+    expect(html).toContain("src/modules/payments/b.ts");
+    expect(html).toContain("refund");
+    expect(html).toContain("1 call site crosses the cited-file scope");
+    expect(html).toContain("Citations define this scope; they do not prove that any function executed at");
+    expect(html).toContain("/answers/flow-1/callgraph?fn=");
+    expect(html).toContain('class="answer-tab is-active" href="/answers/flow-1/callgraph"');
+    expect(html).not.toContain('class="nav-item is-active" href="/callgraph"');
+  });
+
+  it("names each honest empty state and preserves the answer route", async () => {
+    const noCitations = await (
+      await createApp(graphProject({ citedFiles: [] })).request("/answers/flow-1/callgraph")
+    ).text();
+    expect(noCitations).toContain("This answer has no repository citations");
+    expect(noCitations).toContain('class="answer-tab is-active" href="/answers/flow-1/callgraph"');
+
+    const absent = await (
+      await createApp(graphProject({ citedFiles: ["src/not-indexed.ts"] })).request("/answers/flow-1/callgraph")
+    ).text();
+    expect(absent).toContain("None of this answer's 1 cited files is present in the stored snapshot index");
+    expect(absent).toContain("src/not-indexed.ts");
+    expect(absent).toContain("absent from the stored snapshot index");
+
+    const noFunctions = await (
+      await createApp(
+        graphProject({ citedFiles: ["src/config.ts"], snapshotOnlyFiles: ["src/config.ts"] }),
+      ).request("/answers/flow-1/callgraph")
+    ).text();
+    expect(noFunctions).toContain("The snapshot contains 1 cited file, but none has an indexed function");
+    expect(noFunctions).toContain("src/config.ts");
+    expect(noFunctions).toContain("in the snapshot, with no indexed call node");
+  });
+
+  it("keeps filters, search, selection, layout, and shareable state inside the answer route", async () => {
+    const app = createApp(graphProject());
+    const query = new URLSearchParams({
+      fn: "src/modules/payments/a.ts::pay",
+      entry: "src/app/route.ts::POST",
+      mesh: "1",
+      q: "pay",
+      cell: "src-app>src-modules-payments",
+    });
+    const first = await (await app.request(`/answers/flow-1/callgraph?${query}`)).text();
+    const second = await (await app.request(`/answers/flow-1/callgraph?${query}`)).text();
+    const coordinates = (html: string): string[] =>
+      [...html.matchAll(/<circle class="cm-dot" cx="([\d.]+)" cy="([\d.]+)"/g)].map(
+        (match) => `${match[1]},${match[2]}`,
+      );
+
+    expect(first).toBe(second);
+    expect(coordinates(first)).toEqual(coordinates(second));
+    expect(first).toContain('action="/answers/flow-1/callgraph"');
+    expect(first).toContain('name="entry" value="src/app/route.ts::POST"');
+    expect(first).toContain('name="mesh" value="1"');
+    expect(first).toContain("q=pay");
+    expect(first).not.toContain('href="/callgraph?fn=');
+  });
+
+  it("renders from stored rows without starting an agent, changing the store, or touching Git", async () => {
+    const root = graphProject();
+    const beforeStore = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    const before = JSON.stringify({
+      answers: beforeStore.dumpTable("answers"),
+      citations: beforeStore.dumpTable("answer_citations"),
+      nodes: beforeStore.dumpTable("call_nodes"),
+      edges: beforeStore.dumpTable("call_edges"),
+    });
+    beforeStore.close();
+    const gitBefore = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    let clients = 0;
+    const app = createApp(root, {
+      createClient: () => {
+        clients += 1;
+        throw new Error("a read-only route must not start an agent");
+      },
+    });
+
+    const response = await app.request("/answers/flow-1/callgraph?q=pay");
+    expect(response.status).toBe(200);
+    await response.text();
+
+    const afterStore = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    const after = JSON.stringify({
+      answers: afterStore.dumpTable("answers"),
+      citations: afterStore.dumpTable("answer_citations"),
+      nodes: afterStore.dumpTable("call_nodes"),
+      edges: afterStore.dumpTable("call_edges"),
+    });
+    afterStore.close();
+    const gitAfter = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(clients).toBe(0);
+    expect(after).toBe(before);
+    expect(gitAfter).toBe(gitBefore);
   });
 
   it("filters to one door by dimming, and never by reflowing", async () => {

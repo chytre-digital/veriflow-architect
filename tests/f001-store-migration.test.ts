@@ -112,7 +112,7 @@ describe("opening an older database", () => {
     expect(store.schemaVersion()).toBe(SCHEMA_VERSION);
     expect(store.migration?.from).toBe(1);
     expect(store.migration?.to).toBe(SCHEMA_VERSION);
-    expect(store.migration?.applied.map((a) => a.to)).toEqual([2]);
+    expect(store.migration?.applied.map((a) => a.to)).toEqual([2, 3, 4]);
   });
 
   it("keeps every row that was in it", () => {
@@ -158,6 +158,9 @@ describe("opening an older database", () => {
       (backup.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get() as { value: string })
         .value,
     ).toBe("1");
+    expect(
+      backup.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'declared_architecture_revisions'").get(),
+    ).toBeUndefined();
     backup.close();
   });
 

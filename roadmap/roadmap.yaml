@@ -7,6 +7,7 @@
 schemaVersion: 1
 
 # Feature status vocabulary:
+#   planned — selected for an iteration; the outcome is bounded but design decisions remain.
 #   ready   — the spec is implementable; nothing is built yet.
 #   shipped — implemented, with its acceptance criteria met except where `gaps` says otherwise.
 #
@@ -56,6 +57,15 @@ iterations:
       ref names the stored flows its hunks land in; a person can review an answer and decide its
       open questions; and an observed flow can produce a proposed successor whose changed steps,
       lanes, modules and contracts are visible in one reviewable overlay before implementation.
+  - id: M6-conformance
+    name: Compare intent with execution
+    features: [F018, F019, F020, F021, F022]
+    done: >-
+      A person can declare the architecture the project intends to keep and see deterministic,
+      evidence-backed differences from the indexed implementation; flow coverage is imported from
+      a real test run with its provenance and limits visible; and review can stay in one answer view
+      through a flow-scoped call graph, attributed corrections made in the browser, and visible
+      lineage between follow-ups, replacements and proposals.
 
 features:
   F001:
@@ -287,6 +297,63 @@ features:
       A shareable overlay draws added, removed, moved and unchanged flow steps, lanes, modules and
       contracts; proposal-only architecture is labelled not built and exports carry a text fallback.
     notes: "Implemented by WP8; browser SVG is coloured and Mermaid uses explicit textual markers."
+  F018:
+    title: Declared architecture and expected-versus-actual comparison
+    spec: ../docs/declared-architecture.md
+    iteration: M6-conformance
+    status: shipped
+    dependsOn: [F003, F011, F015, F017]
+    outcome: >-
+      A versioned, human-authored architecture model states intended boundaries and dependencies;
+      VeriFlow compares it with the indexed architecture, preserving unknown and
+      ambiguous matches instead of turning missing evidence into a violation.
+    notes: >-
+      Canonical in immutable content-addressed store revisions with optimistic expected-revision
+      writes. Direct allowed, required and forbidden rules compare with stored module traffic; CLI,
+      browser and MCP all read one deterministic comparison.
+  F019:
+    title: Runtime test coverage for answered flows
+    spec: ../docs/product/f019-runtime-coverage-plan.md
+    iteration: M6-conformance
+    status: shipped
+    dependsOn: [F005, F008]
+    outcome: >-
+      VeriFlow imports a real coverage artifact produced by an explicit user-run test command, maps
+      executed lines and branches onto a flow's evidence, and keeps the existing proxy separate and
+      visibly labelled when runtime coverage is absent or incomplete.
+  F020:
+    title: Flow-scoped call graph review
+    spec: ../docs/product/m6-plan.md
+    iteration: M6-conformance
+    status: shipped
+    dependsOn: [F003, F006, F011]
+    outcome: >-
+      Every stored flow has a call-graph view restricted to its cited indexed files, with boundary
+      crossings and cited files that have no indexed functions named rather than silently omitted.
+    notes: >-
+      The answer tab reads normalized citation rows and the answer's stored snapshot graph only. It
+      draws edges only when both endpoints remain in scope, lists every incoming or outgoing
+      crossing, distinguishes absent snapshot files from files with no call node, and keeps all
+      filters and deterministic layout state in the answer URL without starting an index or agent.
+  F021:
+    title: Browser correction workflow
+    spec: ../docs/product/m6-plan.md
+    iteration: M6-conformance
+    status: planned
+    dependsOn: [F006, F014]
+    outcome: >-
+      A person can correct supported answer prose and decide an open question from the answer screen;
+      each edit preserves the immutable agent answer, author, timestamp, original value and reason.
+  F022:
+    title: Threaded answer lineage in the browser
+    spec: ../docs/product/m6-plan.md
+    iteration: M6-conformance
+    status: planned
+    dependsOn: [F006, F014, F015]
+    outcome: >-
+      Answer lists and detail views expose their parent and children as navigable lineage, labelling
+      whether each edge is a follow-up, a superseding answer or a proposal rather than presenting
+      related answers as unrelated siblings.
 
 blocking:
   - question: Q2

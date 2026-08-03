@@ -44,6 +44,8 @@ export * from "./history.js";
 export * from "./structure.js";
 export * from "./duplication.js";
 export * from "./coverage.js";
+export * from "./cobertura.js";
+export * from "./runtime-coverage.js";
 export * from "./spaghetti.js";
 
 /**

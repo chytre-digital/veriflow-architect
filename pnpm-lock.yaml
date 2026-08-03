@@ -150,6 +150,9 @@ importers:
       '@veriflow/store':
         specifier: workspace:*
         version: link:../store
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
 
   packages/ask:
     dependencies:

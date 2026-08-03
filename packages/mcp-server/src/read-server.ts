@@ -13,11 +13,14 @@ import {
   impactOf,
   invariantIndex,
   kindOf,
+  listRuntimeCoverageRuns,
+  loadRuntimeCoverageRun,
   refExists,
   loadStoredAnswer,
   metricsForStoredAnswer,
   paginate,
   projectView,
+  storedArchitectureConformance,
   paginateWithin,
   projectEnvelope,
   thresholdOf,
@@ -90,6 +93,12 @@ const INSTRUCTIONS = [
   "- metrics name the tool they mirror and the rule they used, and are never blended into a score.",
   "  Two metrics disagreeing is the finding; get_metrics reports both. get_coverage_gaps is a proxy",
   "  over identifiers, not executed coverage — `gap` means no test names this identifier.",
+  "- get_runtime_coverage returns imported executed line/branch evidence for one immutable run.",
+  "  Its five states and provenance stay separate from the F008 identifier proxy; VeriFlow never",
+  "  starts tests while importing or reading it.",
+  "- declared architecture is human intent, not indexed evidence. get_architecture_comparison keeps",
+  "  declared-only, observed-only, unknown and ambiguous states visible; only observed traffic over",
+  "  a forbidden declared relationship is a violation.",
   "",
   "Everything here is read-only. There is no tool that writes a file, runs a command, or touches Git.",
 ].join("\n");
@@ -318,8 +327,9 @@ export function createReadServer(options: ReadServerOptions): McpServer {
       title: "Read one flow answer in full",
       description:
         "The whole answer: lanes, phases, ordered steps with citations, alternative outcomes, module " +
-        "edges, external systems, open questions. Human corrections are already applied to the text; " +
-        "the `corrections` list carries the agent's original wording for each one.",
+        "edges, external systems, open questions, and the ids of imported runtime-coverage runs. " +
+        "Human corrections are already applied to the text; the `corrections` list carries the " +
+        "agent's original wording for each one.",
       inputSchema: { answerId: z.string() },
     },
     async ({ answerId }) => {
@@ -332,6 +342,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
           corrections: stored.corrections,
           unresolvedCorrections: stored.unresolvedCorrections,
           citations: stored.citations,
+          runtimeCoverageRuns: listRuntimeCoverageRuns(store, stored.row.id),
         },
         budget,
       );
@@ -731,6 +742,49 @@ export function createReadServer(options: ReadServerOptions): McpServer {
           },
         };
       }),
+  );
+
+  server.registerTool(
+    "get_runtime_coverage",
+    {
+      title: "Imported executed coverage for exact flow citations",
+      description:
+        "Read one immutable runtime-coverage run imported from Cobertura XML. The payload carries " +
+        "producer, command or label, tree state, completeness, exact line/branch facts and separate " +
+        "covered, uncovered, stale, missing-source and out-of-scope totals. This is executed evidence, " +
+        "not the F008 identifier proxy. Reading it opens no artifact, starts no test and writes nothing.",
+      inputSchema: {
+        answerId: z.string(),
+        runId: z.string(),
+        cursor: z.string().optional(),
+      },
+    },
+    async ({ answerId, runId, cursor }) => {
+      const stored = loadStoredAnswer(store, root, answerId);
+      if (!stored) return refuse(`no stored answer with id or prefix "${answerId}" — call list_flow_answers first`);
+      const run = loadRuntimeCoverageRun(store, stored.row.id, runId);
+      if (!run) return refuse(`no runtime coverage run "${runId}" for answer ${stored.row.id}`);
+      const page = paginateWithin(run.evidence, pageSize, cursor, Math.floor(budget / 2));
+      const data = page.truncated ? { ...run, evidence: page.items } : run;
+      return ok(answerEnvelope(stored, data, page.truncated));
+    },
+  );
+
+  server.registerTool(
+    "get_architecture_comparison",
+    {
+      title: "Declared architecture compared with the indexed project",
+      description:
+        "The human-authored architecture revision and the latest indexed snapshot, compared " +
+        "deterministically. Elements remain matched, declared-only, observed-only or ambiguous; " +
+        "relationship evidence is stored module traffic. Missing evidence is unknown, never a " +
+        "violation. Only observed traffic across a forbidden relationship is `violated`. Read-only.",
+      inputSchema: {},
+    },
+    async () =>
+      projectOr(() => ({
+        data: storedArchitectureConformance(store),
+      })),
   );
 
   server.registerTool(

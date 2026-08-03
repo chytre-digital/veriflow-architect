@@ -20,6 +20,7 @@ import type {
   InvariantIndex,
   QuestionDecision,
   SnapshotFacts,
+  StoredArchitectureConformance,
   Verification,
 } from "@veriflow/answers";
 import {
@@ -30,6 +31,7 @@ import {
   SPAGHETTI_FORMULA,
   STRUCTURE_RULE,
   type FlowMetrics,
+  type RuntimeCoverageRunV1,
 } from "@veriflow/metrics";
 
 // The browser and the MCP server read the same measurements from the same place, so they cannot
@@ -103,7 +105,8 @@ h1,h2,h3 { letter-spacing:-.01em; }
 .nav { display:flex; flex-direction:column; gap:2px; min-height:0; flex:1; }
 .nav-section { margin-top:14px; display:flex; flex-direction:column; gap:2px; min-height:0; }
 .nav-flows { flex:1; min-height:64px; }
-.nav-scroll { overflow-y:auto; scrollbar-width:thin; display:flex; flex-direction:column; gap:2px; }
+.nav-scroll { overflow-y:auto; scrollbar-width:thin; display:flex; flex:1; min-height:0;
+  flex-direction:column; gap:2px; }
 .nav-section-label { padding:0 10px 4px; font-size:10px; font-weight:560; letter-spacing:.09em;
   text-transform:uppercase; color:var(--quiet); }
 .nav-item { display:flex; flex-direction:column; gap:1px; padding:7px 10px; border-radius:6px;
@@ -120,10 +123,11 @@ h1,h2,h3 { letter-spacing:-.01em; }
 .nav-question::before { content:""; flex-shrink:0; width:6px; height:6px; margin-top:5px;
   border-radius:50%; background:var(--ok); }
 .nav-question.is-superseded::before { background:var(--quiet); }
+.nav-question.is-current { background:var(--bg); border-radius:6px; box-shadow:inset 2px 0 0 var(--accent); }
 .nav-question:hover { color:var(--accent); }
-.nav-children { display:flex; flex-direction:column; gap:2px; margin:0 0 6px 12px; padding-left:8px;
-  border-left:1px solid var(--line); }
-.nav-child.is-active { box-shadow:inset 2px 0 0 var(--accent); }
+.nav-answer { display:flex; flex-direction:column; }
+.nav-review-link { margin:-5px 10px 5px 23px; color:var(--accent); font-size:11px; text-decoration:none; }
+.nav-review-link:hover { text-decoration:underline; }
 .sidebar-foot { margin-top:auto; display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
 .foot-note { font-size:11px; color:var(--quiet); }
 
@@ -132,6 +136,12 @@ h1,h2,h3 { letter-spacing:-.01em; }
 .topbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between;
   gap:16px; flex-wrap:wrap; padding:11px 24px; border-bottom:1px solid var(--line);
   background:color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter:blur(6px); }
+.answer-tabs { display:flex; gap:2px; overflow-x:auto; padding:0 24px; border-bottom:1px solid var(--line);
+  background:var(--panel); scrollbar-width:thin; }
+.answer-tab { flex:0 0 auto; padding:10px 12px 9px; border-bottom:2px solid transparent; color:var(--muted);
+  font-size:12.5px; font-weight:540; text-decoration:none; white-space:nowrap; }
+.answer-tab:hover { color:var(--ink); background:var(--panel-2); }
+.answer-tab.is-active { color:var(--ink); border-bottom-color:var(--accent); }
 .crumbs { display:flex; gap:7px; font-size:12.5px; color:var(--muted); flex-wrap:wrap; }
 .crumbs a { text-decoration:none; }
 .crumbs a:hover { color:var(--ink); }
@@ -539,6 +549,7 @@ button.quiet { background:transparent; color:var(--muted); border:1px solid var(
   .nav-flows { flex:none; }
   .nav { flex-direction:row; flex-wrap:wrap; }
   .nav-hint { display:none; }
+  .answer-tabs { padding:0 14px; }
   .canvas { padding:20px 14px 44px; }
   .detail-cols { grid-template-columns:1fr; gap:16px; }
   .screen-head { flex-direction:column; }
@@ -590,11 +601,13 @@ export type NavId =
   | "invariants"
   | "architecture"
   | "callgraph"
+  | "flow-callgraph"
   | "flow"
   | "paths"
   | "modules"
   | "freshness"
   | "metrics"
+  | "runtime-coverage"
   | "source"
   | "impact"
   | "run";
@@ -613,9 +626,21 @@ export interface Chrome {
   project: string;
   active: NavId;
   /** The answer whose views the sidebar expands, when the screen belongs to one. */
-  answer?: { id: string; title: string };
+  answer?: {
+    id: string;
+    title: string;
+    kind?: string;
+    parentAnswerId?: string;
+    runtimeCoverageRunId?: string;
+  };
   /** Every standing answer, so the sidebar is a table of contents rather than a back link. */
-  answers?: Array<{ id: string; title: string; superseded?: boolean }>;
+  answers?: Array<{
+    id: string;
+    title: string;
+    kind?: string;
+    parentAnswerId?: string;
+    superseded?: boolean;
+  }>;
   index?: IndexState;
   /** The project line under the brand: what has been indexed and how much has been asked. */
   subtitle?: string;
@@ -624,6 +649,7 @@ export interface Chrome {
 const ANSWER_VIEWS: Array<{ id: NavId; label: string; hint: string; path: (id: string) => string }> = [
   { id: "flow", label: "Flow", hint: "who talks to whom, in order", path: (id) => `/answers/${id}` },
   { id: "paths", label: "Paths", hint: "every outcome, not just the happy one", path: (id) => `/answers/${id}/paths` },
+  { id: "flow-callgraph", label: "Call graph", hint: "calls inside this flow's files", path: (id) => `/answers/${id}/callgraph` },
   { id: "modules", label: "Modules", hint: "boundaries and contracts", path: (id) => `/answers/${id}/modules` },
   { id: "freshness", label: "Freshness", hint: "does it still locate", path: (id) => `/answers/${id}/freshness` },
   { id: "metrics", label: "Metrics", hint: "debt and coverage of this flow", path: (id) => `/answers/${id}/metrics` },
@@ -644,11 +670,13 @@ const NAV_LABEL: Record<NavId, string> = {
   invariants: "Invariants",
   architecture: "Architecture",
   callgraph: "Call graph",
+  "flow-callgraph": "Call graph",
   flow: "Flow",
   paths: "Paths",
   modules: "Modules",
   freshness: "Freshness",
   metrics: "Metrics",
+  "runtime-coverage": "Runtime coverage",
   source: "Source",
   impact: "Impact",
   run: "Run",
@@ -656,8 +684,8 @@ const NAV_LABEL: Record<NavId, string> = {
 
 const MAX_SIDEBAR_ANSWERS = 8;
 
-function navItem(href: string, label: string, hint: string, active: boolean, child = false): string {
-  return `<a class="nav-item${child ? " nav-child" : ""}${active ? " is-active" : ""}" href="${esc(href)}">
+function navItem(href: string, label: string, hint: string, active: boolean): string {
+  return `<a class="nav-item${active ? " is-active" : ""}" href="${esc(href)}">
     <span class="nav-label">${esc(label)}</span><span class="nav-hint">${esc(hint)}</span></a>`;
 }
 
@@ -676,13 +704,14 @@ function sidebar(chrome: Chrome): string {
   const flows = shown
     .map((answer) => {
       const open = answer.id === openId;
-      const question = `<a class="nav-question${answer.superseded ? " is-superseded" : ""}" href="/answers/${esc(
-        answer.id,
-      )}"><span>${esc(answer.title)}</span></a>`;
-      if (!open) return question;
-      return `${question}<div class="nav-children">${ANSWER_VIEWS.map((view) =>
-        navItem(view.path(answer.id), view.label, view.hint, chrome.active === view.id, true),
-      ).join("")}</div>`;
+      const reviewHref =
+        answer.kind === "proposed" && answer.parentAnswerId
+          ? `/answers/${esc(answer.parentAnswerId)}/modules?overlay=${encodeURIComponent(answer.id)}`
+          : undefined;
+      return `<div class="nav-answer"><a class="nav-question${answer.superseded ? " is-superseded" : ""}${
+        open ? " is-current" : ""
+      }" href="/answers/${esc(answer.id)}"${open ? ' aria-current="page"' : ""}><span>${esc(answer.title)}</span></a>
+        ${reviewHref ? `<a class="nav-review-link" href="${reviewHref}">Review changes</a>` : ""}</div>`;
     })
     .join("");
 
@@ -714,6 +743,31 @@ function sidebar(chrome: Chrome): string {
       <span class="foot-note">no API key · runs in your agent</span>
     </div>
   </aside></div>`;
+}
+
+/**
+ * A flow's views are primary navigation, so they stay in the main pane as real tabs. The sidebar is
+ * still the project table of contents, but it can be shorter than an expanded answer on a laptop
+ * screen; clipping there must never make Paths, Metrics or the flow call graph unreachable.
+ */
+function answerTabs(chrome: Chrome): string {
+  if (!chrome.answer) return "";
+  const changes =
+    chrome.answer.kind === "proposed" && chrome.answer.parentAnswerId
+      ? `<a class="answer-tab" href="/answers/${esc(chrome.answer.parentAnswerId)}/modules?overlay=${encodeURIComponent(
+          chrome.answer.id,
+        )}">Changes</a>`
+      : "";
+  const runtime = chrome.answer.runtimeCoverageRunId
+    ? `<a class="answer-tab${chrome.active === "runtime-coverage" ? " is-active" : ""}"
+         href="/answers/${esc(chrome.answer.id)}/runtime-coverage/${esc(chrome.answer.runtimeCoverageRunId)}">Runtime</a>`
+    : "";
+  return `<nav class="answer-tabs" aria-label="Flow views">${ANSWER_VIEWS.map(
+    (view) =>
+      `<a class="answer-tab${chrome.active === view.id ? " is-active" : ""}" href="${esc(
+        view.path(chrome.answer!.id),
+      )}">${esc(view.label)}</a>`,
+  ).join("")}${runtime}${changes}</nav>`;
 }
 
 function indexState(state: IndexState | undefined): string {
@@ -758,6 +812,7 @@ export function shell(chrome: Chrome, title: string, body: string): string {
     `<div class="shell">${sidebar(chrome)}
       <main class="main">
         <header class="topbar">${crumbs(chrome)}${indexState(chrome.index)}</header>
+        ${answerTabs(chrome)}
         <div class="canvas">${body}</div>
       </main>
     </div><script>${TOGGLE_SCRIPT}</script>`,
@@ -851,17 +906,32 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
 
   const body = rows.length
     ? rows
-        .map(
-          (r) => `<a class="card" href="/answers/${r.id}">
-  <h2>${esc(r.title)}</h2>
+        .map((r) => {
+          const proposal = kindOf(r) === "proposed" && r.parent_answer_id;
+          const flowOverlay = proposal
+            ? `/answers/${esc(r.parent_answer_id!)}?overlay=${encodeURIComponent(r.id)}`
+            : undefined;
+          const moduleOverlay = proposal
+            ? `/answers/${esc(r.parent_answer_id!)}/modules?overlay=${encodeURIComponent(r.id)}`
+            : undefined;
+          return `<div class="card">
+  <h2><a href="/answers/${r.id}">${esc(r.title)}</a></h2>
   <div class="meta">${kindPill(kindOf(r))}${ratioPill(r.verified, r.unverified, Number(r.intent ?? 0))}
     <span class="pill">${undecidedInRow(r)} open question${undecidedInRow(r) === 1 ? "" : "s"}</span>
     <span class="pill">${
       kindOf(r) === "proposed" && r.review_state === "reviewed" ? "accepted" : esc(r.review_state)
     }</span>
     ${r.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}
-    <span>${esc(r.created_at.slice(0, 16).replace("T", " "))}</span></div></a>`,
-        )
+    <span>${esc(r.created_at.slice(0, 16).replace("T", " "))}</span></div>
+    ${
+      proposal
+        ? `<div class="actions" style="margin-top:10px">
+             <a class="ghost" href="${flowOverlay}">Review flow changes</a>
+             <a class="primary" href="${moduleOverlay}">Review architecture changes</a>
+           </div>`
+        : ""
+    }</div>`;
+        })
         .join("\n")
     : `<p class="meta">No answers yet. <a href="/ask">Ask the first question</a>.</p>`;
 
@@ -933,6 +1003,14 @@ export interface FlowPageInput {
   };
   /** Where this answer has been published, if anywhere. An answer that does not know cannot say. */
   exports?: Array<{ targetPath: string; revision: string; exportedAt: string }>;
+  runtimeCoverageRuns?: Array<{
+    id: string;
+    importedAt: string;
+    producer: string;
+    completeness: "complete" | "partial";
+    current: boolean;
+    totals: RuntimeCoverageRunV1["totals"];
+  }>;
 }
 
 /**
@@ -1062,6 +1140,24 @@ export function flowPage(input: FlowPageInput): string {
         paired: input.overlay.diff.steps.matched.length,
       }
     : undefined;
+  const runtimeRuns = input.runtimeCoverageRuns ?? [];
+  const runtimeCoverage = runtimeRuns.length
+    ? `<div class="branch" style="margin:0 0 12px"><h3>Imported runtime coverage</h3>
+       ${runtimeRuns
+         .map(
+           (run) => `<div class="ev"><a href="/answers/${esc(row.id)}/runtime-coverage/${esc(run.id)}">${esc(
+             run.producer,
+           )} · ${esc(run.importedAt.slice(0, 16).replace("T", " "))}</a>
+             <span class="pill ${run.current ? "good" : "warn"}">${run.current ? "same clean commit" : "stale tree"}</span>
+             <span class="pill">${esc(run.completeness)}</span>
+             <div class="why">lines: ${run.totals.lines.covered} covered · ${run.totals.lines.uncovered} uncovered ·
+               ${run.totals.lines["missing-source"]} missing source · ${run.totals.lines["out-of-scope"]} outside citations</div>
+           </div>`,
+         )
+         .join("")}
+       <p class="meta" style="margin-bottom:0">This is executed evidence from an imported artifact.
+         <a href="/answers/${esc(row.id)}/metrics?view=coverage">F008 identifier proxy</a> remains a separate measurement.</p></div>`
+    : "";
 
   return shell(
     input.chrome,
@@ -1089,7 +1185,8 @@ export function flowPage(input: FlowPageInput): string {
          meta: `${kindPill(kindOf(row))}${ratioPill(row.verified, row.unverified, Number(row.intent ?? 0))}
        ${
          kindOf(row) === "proposed" && row.parent_answer_id
-           ? `<a class="pill" href="/answers/${esc(row.parent_answer_id)}?overlay=${encodeURIComponent(row.id)}" style="text-decoration:none">compare with as-is</a>`
+           ? `<a class="pill" href="/answers/${esc(row.parent_answer_id)}?overlay=${encodeURIComponent(row.id)}" style="text-decoration:none">review flow changes</a>
+              <a class="pill" href="/answers/${esc(row.parent_answer_id)}/modules?overlay=${encodeURIComponent(row.id)}" style="text-decoration:none">review architecture changes</a>`
            : ""
        }
        <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
@@ -1112,6 +1209,7 @@ export function flowPage(input: FlowPageInput): string {
        }`,
        })}
        ${input.overlay ? "" : variantChips(answer, row.id, input.selectedBranchId)}
+       ${input.overlay ? "" : runtimeCoverage}
        ${
          overlayCounts
            ? `<p class="legend" style="margin:0 0 10px"><span class="pill good">+ ${overlayCounts.added} added</span>
@@ -1322,6 +1420,8 @@ export function architecturePage(input: ArchitectureInput): string {
                : `<span class="pill good">nothing runs back up a layer</span>`
            }`,
        })}
+       <div class="note"><b>Expected versus actual.</b> This screen is indexed evidence only.
+         <a href="/architecture/compare">Compare it with the human-declared architecture →</a></div>
        ${
          traffic.length
            ? `<div class="scroll">${svg}</div>
@@ -1338,6 +1438,117 @@ export function architecturePage(input: ArchitectureInput): string {
        }
        <h2 class="section">What each module is</h2>
        <div class="list">${rows}</div>
+     </section>`,
+  );
+}
+
+/** F018 — one deterministic comparison, rendered without re-indexing or running an agent. */
+export function declaredArchitecturePage(
+  chrome: Chrome,
+  project: string,
+  conformance: StoredArchitectureConformance,
+): string {
+  const comparison = conformance.comparison;
+  if (!comparison) {
+    return shell(
+      chrome,
+      `${project} — expected versus actual`,
+      `<section class="screen">
+         ${screenHead({
+           eyebrow: "Expected versus actual",
+           title: "Declared intent beside indexed evidence",
+           lede: "The declared model is written by a person. The observed side comes from one stored snapshot. Neither is substituted for the other.",
+           meta: `<span class="pill">${esc(conformance.note ?? "comparison unavailable")}</span>`,
+         })}
+         <div class="note">${esc(conformance.note ?? "Comparison unavailable")}.
+           ${
+             !conformance.declared
+               ? "Declare a model with <code>veriflow architecture-declare model.json --author &lt;name&gt;</code>."
+               : ""
+           }
+           ${!conformance.observed ? "Build the observed side with <code>veriflow index</code>." : ""}
+         </div>
+         <p><a href="/architecture">← Indexed architecture</a></p>
+       </section>`,
+    );
+  }
+
+  const stateClass = (state: string): string =>
+    state === "matched" ? "good" : state === "violated" ? "bad" : state === "ambiguous" ? "warn" : "";
+  const statePill = (state: string): string => `<span class="pill ${stateClass(state)}">${esc(state)}</span>`;
+  const countPills = (counts: Record<string, number>): string =>
+    Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .map(([state, count]) => `<span class="pill ${stateClass(state)}">${esc(state)} ${count}</span>`)
+      .join(" ");
+
+  const elements = comparison.elements
+    .map((item) => {
+      const id = item.declared?.id ?? item.observed?.id ?? "unknown";
+      const name = item.declared?.name ?? item.observed?.label ?? id;
+      const observed = item.observed
+        ? `<div class="meta">indexed as <code>${esc(item.observed.id)}</code> · ${esc(item.observed.paths.join(", "))}</div>`
+        : "";
+      const candidates = item.candidates?.length
+        ? `<div class="meta">candidates: ${item.candidates.map((candidate) => `<code>${esc(candidate.id)}</code>`).join(" · ")}</div>`
+        : "";
+      return `<div class="card">
+        <div>${statePill(item.state)} <b>${esc(name)}</b> <code>${esc(id)}</code></div>
+        ${observed}${candidates}<div class="meta">${esc(item.reason)}</div>
+      </div>`;
+    })
+    .join("");
+
+  const relationships = comparison.relationships
+    .map((item) => `<div class="card">
+      <div>${statePill(item.state)} <b>${esc(item.declared.from)} → ${esc(item.declared.to)}</b>
+        <span class="pill">${esc(item.declared.expectation)}</span></div>
+      <div class="meta">${esc(item.reason)}</div>
+      ${
+        item.observed
+          ? `<div class="ev">Evidence from the stored call graph: ${item.observed.calls} calls across ${item.observed.edges} edges · ${esc(item.observed.note)}</div>`
+          : ""
+      }
+    </div>`)
+    .join("");
+
+  const observedOnly = comparison.observedRelationships
+    .filter((item) => item.state === "observed-only")
+    .map((item) => `<div class="card">
+      <div>${statePill(item.state)} <b>${esc(item.from)} → ${esc(item.to)}</b></div>
+      <div class="ev">${item.calls} calls across ${item.edges} edges · ${esc(item.note)}</div>
+    </div>`)
+    .join("");
+
+  return shell(
+    chrome,
+    `${project} — expected versus actual`,
+    `<section class="screen">
+       ${screenHead({
+         eyebrow: "Expected versus actual",
+         title: "Declared intent beside indexed evidence",
+         lede: `Compared deterministically. Missing or ambiguous evidence stays visible as unknown;
+           only stored call traffic crossing a forbidden declared relationship is a violation.`,
+         meta: `<span class="pill">declared ${esc(comparison.declared.revision.slice(0, 19))}…</span>
+           <span class="pill">snapshot ${esc(comparison.observed.snapshotId.slice(0, 12))}</span>
+           ${comparison.counts.relationships.violated ? `<span class="pill bad">${comparison.counts.relationships.violated} violation${comparison.counts.relationships.violated === 1 ? "" : "s"}</span>` : `<span class="pill good">no forbidden traffic</span>`}`,
+       })}
+       <div class="note">Declared by <b>${esc(comparison.declared.author)}</b> at ${esc(comparison.declared.createdAt)}.
+         Observed from snapshot <code>${esc(comparison.observed.snapshotId)}</code>${comparison.observed.commitSha ? ` at commit <code>${esc(comparison.observed.commitSha)}</code>` : ""}.
+         <a href="/architecture">Open indexed architecture →</a></div>
+       <h2 class="section">Elements</h2>
+       <div class="meta">${countPills(comparison.counts.elements)}</div>
+       <div class="list">${elements || `<p class="meta">No elements declared or observed.</p>`}</div>
+       <h2 class="section">Declared relationships</h2>
+       <div class="meta">${countPills(comparison.counts.relationships)}</div>
+       <div class="list">${relationships || `<p class="meta">No relationships declared.</p>`}</div>
+       ${
+         observedOnly
+           ? `<h2 class="section">Observed traffic with no declared relationship</h2><div class="list">${observedOnly}</div>`
+           : ""
+       }
+       <h2 class="section">Method</h2>
+       <ul>${comparison.method.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>
      </section>`,
   );
 }
@@ -1530,6 +1741,10 @@ export function modulesPage(
               added, red ones are removed, and proposal-only modules are explicitly marked not built.`
            : `The participants this answer declared, with the contract written on every edge. A dashed
               edge is inferred rather than proven, and it says which rule inferred it.`,
+         actions: overlay
+           ? `<a class="ghost" href="/answers/${esc(overlay.id)}">Open proposal</a>
+              <a class="ghost" href="/answers/${esc(row.id)}?overlay=${encodeURIComponent(overlay.id)}">Review flow changes</a>`
+           : undefined,
          meta: `<span class="pill">${layout.nodes.length} participant${layout.nodes.length === 1 ? "" : "s"}</span>
        <span class="pill">${layout.edges.length} edge${layout.edges.length === 1 ? "" : "s"} with a contract</span>
        <span class="pill">${answer.externalSystems.length} external system${answer.externalSystems.length === 1 ? "" : "s"}</span>
@@ -1748,6 +1963,104 @@ export function metricsPage(input: MetricsPageInput): string {
        }
        ${body}
      </section>`,
+  );
+}
+
+/* ---------------------------------------------------- runtime coverage (F019) */
+
+const RUNTIME_STATE_CLASS: Record<string, string> = {
+  covered: "good",
+  uncovered: "bad",
+  stale: "warn",
+  "missing-source": "warn",
+  "out-of-scope": "",
+};
+
+export function runtimeCoveragePage(input: {
+  chrome: Chrome;
+  title: string;
+  run: RuntimeCoverageRunV1;
+}): string {
+  const { run } = input;
+  const states = ["covered", "uncovered", "stale", "missing-source", "out-of-scope"] as const;
+  const counts = (kind: "lines" | "branches"): string =>
+    states.map((state) => `${state} ${run.totals[kind][state]}`).join(" · ");
+  const evidence = run.evidence
+    .map(
+      (item) => `<tr>
+        <td><span class="pill ${RUNTIME_STATE_CLASS[item.state] ?? ""}">${esc(item.state)}</span></td>
+        <td>${
+          item.path
+            ? sourceLink(item.path, item.line)
+            : `<code>${esc(item.artifactPath ?? "unknown")}:${item.line}</code>`
+        }${item.artifactPath && item.path !== item.artifactPath ? `<div class="dim">artifact: ${esc(item.artifactPath)}</div>` : ""}</td>
+        <td>${item.hits === undefined ? "—" : item.hits}${
+          item.branches
+            ? `<div class="dim">branches ${item.branches.covered}/${item.branches.total}</div>`
+            : `<div class="dim">no branch fact</div>`
+        }</td>
+        <td>${esc(item.reason)}${
+          item.citations.length
+            ? `<div class="dim">${item.citations.map((citation) => `${esc(citation.subjectKind)} ${esc(citation.subjectId)}`).join(" · ")}</div>`
+            : ""
+        }<div class="dim">${esc(item.artifactCompleteness)} artifact</div></td>
+      </tr>`,
+    )
+    .join("");
+  const diagnostics = run.diagnostics.length
+    ? `<h2 class="section">Diagnostics</h2>${run.diagnostics
+        .map(
+          (diagnostic) => `<div class="ev"><span class="pill ${diagnostic.code === "tree-mismatch" ? "warn" : ""}">${esc(
+            diagnostic.code,
+          )}</span> ${esc(diagnostic.message)}${
+            diagnostic.artifactPath ? `<div class="why">${esc(diagnostic.artifactPath)}</div>` : ""
+          }</div>`,
+        )
+        .join("")}`
+    : "";
+
+  return shell(
+    input.chrome,
+    `${input.title} — imported runtime coverage`,
+    `<section class="screen">
+      ${screenHead({
+        eyebrow: "Runtime coverage",
+        title: "Executed evidence on exact cited lines",
+        lede: `Imported from Cobertura XML produced by <b>${esc(run.provenance.producer)}</b>. VeriFlow did not
+          start tests, and this run is never averaged with the F008 identifier proxy.`,
+        actions: `<a href="/answers/${esc(run.answerId)}/metrics?view=coverage">Open F008 proxy</a>`,
+        meta: `<span class="pill ${run.treeMatch.current ? "good" : "warn"}">${
+          run.treeMatch.current ? "same clean commit" : "stale tree evidence"
+        }</span>
+          <span class="pill">${esc(run.provenance.completeness)} artifact</span>
+          <span class="pill">${run.scope.mappedCitationLines}/${run.scope.observedCitationLines} cited lines mapped</span>
+          <span class="pill">${esc(run.id)}</span>`,
+      })}
+      <div class="tiles">
+        ${tile("Covered lines", String(run.totals.lines.covered), "", "exact citation or artifact facts")}
+        ${tile("Uncovered lines", String(run.totals.lines.uncovered), "", "zero hits or an uncovered condition")}
+        ${tile("Stale", String(run.totals.lines.stale), "", "tree equality could not be proven")}
+        ${tile("Missing source", String(run.totals.lines["missing-source"]), "", "never guessed from a basename")}
+        ${tile("Out of scope", String(run.totals.lines["out-of-scope"]), "", "mapped, but outside exact citations")}
+      </div>
+      <div class="split"><div>
+        <h2 class="section">Line and branch facts</h2>
+        <p class="meta">Lines: ${esc(counts("lines"))}<br>Branches: ${esc(counts("branches"))}</p>
+        <table class="grid"><tr><th>State</th><th>Source</th><th>Execution</th><th>Why</th></tr>
+          ${evidence || `<tr><td colspan="4" class="dim">This answer has no observed citation lines to map.</td></tr>`}
+        </table>
+        ${diagnostics}
+      </div><aside>
+        <h3>Provenance</h3>
+        <p><b>${esc(run.provenance.producer)}</b><br>${esc(run.provenance.command ?? run.provenance.label ?? "")}</p>
+        <p class="dim">Produced ${esc(run.provenance.producedAt)}<br>
+          Commit ${esc(run.provenance.commitSha ?? "not supplied")} · ${run.provenance.dirty ? "dirty" : "clean"}<br>
+          Artifact sha256:${esc(run.artifact.sha256)} · ${run.artifact.bytes} bytes</p>
+        <p class="dim">Answer snapshot ${esc(run.answerSnapshotId)}<br>${esc(run.treeMatch.reason)}</p>
+        <p class="dim">Source roots and explicit mappings are stored in the canonical run. No filesystem
+          lookup, suffix match or basename guess is performed when this page opens.</p>
+      </aside></div>
+    </section>`,
   );
 }
 

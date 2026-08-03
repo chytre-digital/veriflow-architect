@@ -5,8 +5,14 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Store } from "@veriflow/store";
-import { fitWholeAnswer, loadStoredAnswer } from "@veriflow/answers";
+import {
+  compareDeclaredArchitecture,
+  fitWholeAnswer,
+  loadDeclaredArchitecture,
+  loadStoredAnswer,
+} from "@veriflow/answers";
 import { isSecretPath } from "@veriflow/snapshot";
+import type { TrafficCell } from "@veriflow/contracts";
 import {
   AnswerKindSchema,
   BranchSchema,
@@ -86,7 +92,33 @@ export function createRunServer(options: RunServerOptions): McpServer {
         "labels are not. Reference ids, never names.",
       inputSchema: {},
     },
-    async () => ok({ snapshotId, modules: store.readModules(snapshotId) }),
+    async () => {
+      const modules = store.readModules(snapshotId).map((module) => ({
+        id: String(module["id"]),
+        label: String(module["label"]),
+        paths: module["paths"] as string[],
+        files: Number(module["files"]),
+        symbols: Number(module["symbols"]),
+      }));
+      const snapshot = store.readSnapshot(snapshotId);
+      const projectId = snapshot?.["project_id"] ? String(snapshot["project_id"]) : undefined;
+      const declared = projectId ? loadDeclaredArchitecture(store, projectId) : undefined;
+      const graph = store.readCallGraph(snapshotId);
+      const comparison = declared
+        ? compareDeclaredArchitecture(declared, {
+            snapshotId,
+            ...(snapshot?.["commit_sha"] ? { commitSha: String(snapshot["commit_sha"]) } : {}),
+            ...(snapshot?.["created_at"] ? { capturedAt: String(snapshot["created_at"]) } : {}),
+            modules,
+            ...(graph ? { traffic: graph.traffic as TrafficCell[] } : {}),
+          })
+        : undefined;
+      return ok({
+        snapshotId,
+        modules,
+        ...(declared ? { declared, comparison } : { declared: null, note: "no declared architecture" }),
+      });
+    },
   );
 
   server.registerTool(
