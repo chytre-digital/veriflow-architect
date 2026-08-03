@@ -313,7 +313,7 @@ Read-only, and a read tool over MCP rather than a write one — §10 of the prop
 
 **Ships.** `veriflow review <answerId> --accept | --reopen [path]`, and the same as a button on the
 answer screen. That is all. `Store.setReviewState` has existed since F005 at
-`packages/store/src/index.ts:919` and only a test has ever called it.
+`packages/store/src/index.ts:937` and only a test has ever called it.
 
 ### Why `--note` is not in this package
 
@@ -503,7 +503,7 @@ A human CLI verb, not an MCP write tool — §10 of the proposal, kept.
 
 §6's G2 says `answer_corrections` "has the right shape". It has the right columns and the wrong
 target. `EDITABLE` allowed exactly one field on an open question — `question`
-(`corrections.ts:59-68`) — and `applyCorrections` writes it in place at `corrections.ts:82` into the
+(`corrections.ts:61-69`) — and `applyCorrections` writes it in place at `corrections.ts:83` into the
 answer every surface serves (`read.ts:99`). Recording a decision that way **overwrites the question
 text**: `get_open_questions` would return the decision where the question used to be, and the
 question would be gone from the browser, the export and the MCP surface at once.
