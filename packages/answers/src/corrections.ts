@@ -34,6 +34,22 @@ export interface Correction {
   createdAt: string;
 }
 
+/**
+ * The one field on an open question that closes it. Named once, because four surfaces have to agree
+ * about which correction rows are decisions and the store counts them by this string in SQL.
+ */
+export const DECISION_FIELD = "decision";
+
+/** A decision and the provenance the correction row carries, which is the whole of the record. */
+export interface QuestionDecision {
+  questionId: string;
+  decision: string;
+  author: string;
+  /** The correction's `note`. Why this was settled the way it was — optional, and usually there. */
+  rationale?: string;
+  decidedAt: string;
+}
+
 export interface CorrectedAnswer {
   answer: FlowAnswer;
   applied: Correction[];
@@ -49,7 +65,7 @@ const EDITABLE: Record<CorrectionTargetKind, readonly string[]> = {
   lane: ["name", "technology"],
   "module-edge": ["contract"],
   external: ["name", "failureBehavior", "boundaryPath"],
-  "open-question": ["question"],
+  "open-question": ["question", DECISION_FIELD],
 };
 
 export function applyCorrections(answer: FlowAnswer, corrections: readonly Correction[]): CorrectedAnswer {
@@ -69,6 +85,26 @@ export function applyCorrections(answer: FlowAnswer, corrections: readonly Corre
   }
 
   return { answer: corrected, applied, unresolved };
+}
+
+/**
+ * Who decided what, by question id. Deciding twice stores both rows and serves the later one, which
+ * is the same rule `applyCorrections` follows when it walks the list in order — so the decision text
+ * on the answer and the attribution beside it always come from the same row.
+ */
+export function decisionsOf(corrections: readonly Correction[]): Map<string, QuestionDecision> {
+  const decisions = new Map<string, QuestionDecision>();
+  for (const correction of corrections) {
+    if (correction.targetKind !== "open-question" || correction.field !== DECISION_FIELD) continue;
+    decisions.set(correction.targetId, {
+      questionId: correction.targetId,
+      decision: correction.corrected,
+      author: correction.author,
+      ...(correction.note ? { rationale: correction.note } : {}),
+      decidedAt: correction.createdAt,
+    });
+  }
+  return decisions;
 }
 
 function locate(answer: FlowAnswer, correction: Correction): object | undefined {

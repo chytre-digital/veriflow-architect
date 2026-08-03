@@ -8,7 +8,17 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createReadServer } from "@veriflow/mcp-server";
 import { createApp } from "@veriflow/server";
-import { loadStoredAnswer } from "@veriflow/answers";
+import {
+  DecideError,
+  decideQuestion,
+  decisionsOf,
+  loadStoredAnswer,
+  projectView,
+  undecidedInRow,
+  type Correction,
+} from "@veriflow/answers";
+import { FlowAnswerSchema } from "@veriflow/flow-answer";
+import { renderDocument } from "@veriflow/export";
 import { Store } from "@veriflow/store";
 import { initWorkspace } from "@veriflow/workspace";
 
@@ -81,7 +91,18 @@ const BODY = {
   openQuestions: [],
 };
 
-function fixture(): { root: string; store: Store } {
+const QUESTIONS = [
+  {
+    id: "oq1",
+    question: "Does a partial refund re-enter this same path?",
+    blocking: true,
+    attemptedEvidence: [REFUND],
+  },
+  { id: "oq2", question: "Who owns the retry window?", blocking: false, attemptedEvidence: [] },
+];
+
+/** With open questions, and without — the review cases predate them and must not need them. */
+function fixture(questions: ReadonlyArray<Record<string, unknown>> = []): { root: string; store: Store } {
   const root = mkdtempSync(join(tmpdir(), "veriflow-f014-"));
   made.push(root);
   execFileSync("git", ["init", "-q"], { cwd: root });
@@ -113,8 +134,8 @@ function fixture(): { root: string; store: Store } {
     title: "How a refund is settled",
     verified: 1,
     unverified: 0,
-    openQuestions: 0,
-    body: BODY,
+    openQuestions: questions.length,
+    body: { ...BODY, openQuestions: questions },
     citations: [
       {
         subjectKind: "step",
@@ -288,5 +309,261 @@ describe("what the review state still does not carry", () => {
 
     expect(names.some((n) => /review/i.test(n))).toBe(false);
     await client.close();
+  });
+});
+
+/* ------------------------------------------------------------------ decide */
+
+/**
+ * The decide verb.
+ *
+ * An answer's open questions could only ever accumulate: nothing could record that a person had
+ * settled one, so the count on an answer read the same next quarter as it did the day it was
+ * written. The two things that make closing one cheap are that the decision is its own field rather
+ * than a rewrite of the question, and that it is stored as a correction row — so the author, the
+ * time and the rationale come from columns that have existed since D13.
+ */
+
+const decide = (
+  store: Store,
+  root: string,
+  questionId: string,
+  decision: string,
+  author = "kuba",
+  rationale?: string,
+) => decideQuestion(store, root, { answerId: ANSWER_ID, questionId, decision, author, ...(rationale ? { rationale } : {}) });
+
+describe("deciding an open question", () => {
+  it("keeps the question, adds the decision, and takes it out of the count", () => {
+    const { root, store } = fixture(QUESTIONS);
+    expect(loadStoredAnswer(store, root, ANSWER_ID)!.answer.openQuestions).toHaveLength(2);
+
+    const result = decide(store, root, "oq1", "Yes — a partial refund is the same path with a smaller amount", "kuba", "settled with billing on the 3rd");
+
+    // The question survives being answered. Recording a decision over `question` — the only field
+    // `EDITABLE` allowed before this package — would have deleted what was asked.
+    expect(result.question.question).toBe("Does a partial refund re-enter this same path?");
+    expect(result.question.decision).toContain("same path with a smaller amount");
+    expect(result.undecided).toBe(1);
+
+    const after = loadStoredAnswer(store, root, ANSWER_ID)!;
+    expect(after.answer.openQuestions.map((q) => q.question)).toEqual([
+      "Does a partial refund re-enter this same path?",
+      "Who owns the retry window?",
+    ]);
+    expect(after.answer.openQuestions[1]!.decision).toBeUndefined();
+  });
+
+  it("is a correction row — attributed, timestamped, and visible as a human edit", () => {
+    const { root, store } = fixture(QUESTIONS);
+    decide(store, root, "oq1", "Yes, same path", "kuba", "settled with billing on the 3rd");
+
+    const stored = loadStoredAnswer(store, root, ANSWER_ID)!;
+    const row = stored.corrections.find((c) => c.targetKind === "open-question" && c.field === "decision");
+    expect(row).toBeDefined();
+    expect(row!.targetId).toBe("oq1");
+    expect(row!.author).toBe("kuba");
+    expect(row!.note).toBe("settled with billing on the 3rd");
+    expect(row!.original).toBe("");
+    expect(row!.corrected).toBe("Yes, same path");
+    expect(Date.parse(row!.createdAt)).not.toBeNaN();
+
+    // The envelope counts it as a correction, so an answer a person has touched says so.
+    expect(stored.corrections.length).toBe(1);
+  });
+
+  it("refuses a question the answer does not have, and writes nothing", () => {
+    const { root, store } = fixture(QUESTIONS);
+
+    expect(() => decide(store, root, "oq9", "settled")).toThrow(DecideError);
+    // The refusal names what there is, because the ids come off a screen and are easy to mistype.
+    expect(() => decide(store, root, "oq9", "settled")).toThrow(/oq1, oq2/);
+
+    expect(store.readCorrections(ANSWER_ID)).toHaveLength(0);
+    expect(loadStoredAnswer(store, root, ANSWER_ID)!.answer.openQuestions[0]!.decision).toBeUndefined();
+  });
+
+  it("refuses an empty decision and an unsigned one", () => {
+    const { root, store } = fixture(QUESTIONS);
+    expect(() => decide(store, root, "oq1", "   ")).toThrow(/cannot be empty/);
+    expect(() => decide(store, root, "oq1", "settled", "  ")).toThrow(/name an author/);
+    expect(store.readCorrections(ANSWER_ID)).toHaveLength(0);
+  });
+
+  it("records both when a person changes their mind, and serves the later one", () => {
+    const { root, store } = fixture(QUESTIONS);
+    decide(store, root, "oq1", "No — it takes the manual path", "kuba");
+    const second = decide(store, root, "oq1", "Yes — same path after all", "ana", "found the shared branch");
+
+    expect(second.previousDecision).toBe("No — it takes the manual path");
+
+    const stored = loadStoredAnswer(store, root, ANSWER_ID)!;
+    const rows = stored.corrections.filter((c) => c.field === "decision");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.corrected)).toEqual([
+      "No — it takes the manual path",
+      "Yes — same path after all",
+    ]);
+    // Both stored, the latest served — and the attribution beside it comes from the same row as the
+    // text, so the answer cannot show ana's decision under kuba's name.
+    expect(stored.answer.openQuestions[0]!.decision).toBe("Yes — same path after all");
+    const decided = decisionsOf(stored.corrections).get("oq1")!;
+    expect(decided.author).toBe("ana");
+    expect(decided.rationale).toBe("found the shared branch");
+
+    // Deciding twice closes one question, not two.
+    expect(undecidedInRow(store.listAnswers()[0]!)).toBe(1);
+  });
+
+  it("parses an answer stored before the field existed", () => {
+    const { root, store } = fixture(QUESTIONS);
+    // Exactly the bytes on disk for every answer written before this package: no `decision` key on
+    // any question. Optional is what makes the whole thing migration-free.
+    const body = JSON.parse(String(store.readAnswer(ANSWER_ID)!["body_json"]));
+    expect(body.openQuestions.every((q: Record<string, unknown>) => !("decision" in q))).toBe(true);
+
+    const parsed = FlowAnswerSchema.parse(body);
+    expect(parsed.openQuestions[0]!.decision).toBeUndefined();
+    expect(loadStoredAnswer(store, root, ANSWER_ID)!.answer.openQuestions).toHaveLength(2);
+  });
+});
+
+describe("every open-question count means undecided", () => {
+  it("says one, not two, on the envelope, the MCP tool, the list row and the project screen", async () => {
+    const { root, store } = fixture(QUESTIONS);
+    decide(store, root, "oq1", "Yes, same path", "kuba", "settled with billing");
+
+    // 1 — the envelope on every answer-scoped response.
+    const stored = loadStoredAnswer(store, root, ANSWER_ID)!;
+    expect(Number(stored.row.open_questions)).toBe(2); // the submitted column is untouched
+    expect(undecidedInRow(store.listAnswers()[0]!)).toBe(1);
+
+    // 2 — the project screen's aggregated list drops the decided one entirely.
+    const view = projectView(store)!;
+    expect(view.openQuestions.map((q) => q.question)).toEqual(["Who owns the retry window?"]);
+
+    store.close();
+
+    // 3 — the MCP surface, both the envelope and the tool that lists them.
+    const client = await connect(root);
+    const questions = envelopeOf(
+      await client.callTool({ name: "get_open_questions", arguments: { answerId: ANSWER_ID } }),
+    );
+    expect((questions["review"] as Record<string, unknown>)["openQuestions"]).toBe(1);
+    expect((questions["data"] as Record<string, unknown>)["undecided"]).toBe(1);
+
+    const listed = envelopeOf(await client.callTool({ name: "list_flow_answers", arguments: {} }));
+    const first = ((listed["data"] as Record<string, unknown>)["answers"] as Array<Record<string, unknown>>)[0]!;
+    expect((first["review"] as Record<string, unknown>)["openQuestions"]).toBe(1);
+
+    const searched = envelopeOf(
+      await client.callTool({ name: "search_answers", arguments: { query: "refund" } }),
+    );
+    const hit = ((searched["data"] as Record<string, unknown>)["results"] as Array<Record<string, unknown>>)[0]!;
+    expect((hit["review"] as Record<string, unknown>)["openQuestions"]).toBe(1);
+    await client.close();
+
+    // 4 — the browser: the answers list and the answer's own header.
+    const app = createApp(root);
+    expect(await (await app.request("/")).text()).toContain("1 open question<");
+    expect(await (await app.request(`/answers/${ANSWER_ID}`)).text()).toContain(">1 open<");
+  });
+
+  it("carries the decision, its author, its time and its rationale to every surface that shows it", async () => {
+    const { root, store } = fixture(QUESTIONS);
+    decide(store, root, "oq1", "Yes, the same path", "kuba", "settled with billing on the 3rd");
+
+    // The export, read on a machine where VeriFlow is not installed.
+    const stored = loadStoredAnswer(store, root, ANSWER_ID)!;
+    const document = renderDocument({
+      answerId: stored.row.id,
+      question: "how is a refund settled?",
+      answer: stored.answer,
+      citations: stored.citations,
+      snapshot: stored.snapshot,
+      freshness: stored.freshness,
+      decisions: decisionsOf(stored.corrections),
+      frontmatter: {},
+    }).text;
+    expect(document).toContain("Does a partial refund re-enter this same path?");
+    expect(document).toContain("**decided:** Yes, the same path — kuba");
+    expect(document).toContain("because: settled with billing on the 3rd");
+
+    store.close();
+
+    // The MCP tool, which is where an agent reading the flow finds out it was settled.
+    const client = await connect(root);
+    const envelope = envelopeOf(
+      await client.callTool({ name: "get_open_questions", arguments: { answerId: ANSWER_ID } }),
+    );
+    const listed = (envelope["data"] as Record<string, unknown>)["openQuestions"] as Array<Record<string, unknown>>;
+    expect(listed[0]!["question"]).toBe("Does a partial refund re-enter this same path?");
+    expect(listed[0]!["decision"]).toBe("Yes, the same path");
+    expect(listed[0]!["decidedBy"]).toBe("kuba");
+    expect(listed[0]!["rationale"]).toBe("settled with billing on the 3rd");
+    expect(Date.parse(String(listed[0]!["decidedAt"]))).not.toBeNaN();
+    expect(listed[1]!["decision"]).toBeUndefined();
+    await client.close();
+
+    // The browser page that lists them.
+    const page = await (await createApp(root).request(`/answers/${ANSWER_ID}/paths`)).text();
+    expect(page).toContain("Does a partial refund re-enter this same path?");
+    expect(page).toContain("Yes, the same path");
+    expect(page).toContain("kuba");
+    expect(page).toContain("settled with billing on the 3rd");
+  });
+
+  it("is not writable over MCP — deciding is a person's verb", async () => {
+    const { root, store } = fixture(QUESTIONS);
+    store.close();
+
+    const client = await connect(root);
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names.some((n) => /decide|decision/i.test(n))).toBe(false);
+    // And the read tool is still there, so this is an absence by design rather than by omission.
+    expect(names).toContain("get_open_questions");
+    await client.close();
+  });
+
+  it("agrees between the parsed answer and the row arithmetic the lists use", () => {
+    const { root, store } = fixture(QUESTIONS);
+    decide(store, root, "oq1", "settled", "kuba");
+    decide(store, root, "oq2", "also settled", "ana");
+    decide(store, root, "oq2", "settled differently", "ana");
+
+    const stored = loadStoredAnswer(store, root, ANSWER_ID)!;
+    const fromAnswer = stored.answer.openQuestions.filter((q) => !q.decision).length;
+    expect(fromAnswer).toBe(0);
+    // The lists never parse a body — they subtract distinct decided ids in SQL. The two derivations
+    // have to land on the same number or the list and the answer would disagree about the same row.
+    expect(undecidedInRow(store.listAnswers()[0]!)).toBe(fromAnswer);
+    expect(undecidedInRow(store.searchAnswers("refund")[0]!)).toBe(fromAnswer);
+  });
+
+  it("never goes negative when a decision names a question the answer lost", () => {
+    const { root, store } = fixture(QUESTIONS);
+    // Not reachable through `decide`, which refuses an unknown id — but `insertCorrection` is
+    // general, and a count that read -1 on a list screen would be worse than a stale one.
+    for (const targetId of ["ghost-1", "ghost-2", "ghost-3"]) {
+      store.insertCorrection({
+        id: `c-${targetId}`,
+        answerId: ANSWER_ID,
+        targetKind: "open-question",
+        targetId,
+        field: "decision",
+        original: "",
+        corrected: "settled elsewhere",
+        author: "kuba",
+      });
+    }
+
+    expect(undecidedInRow(store.listAnswers()[0]!)).toBe(0);
+    // And the correction is reported rather than silently dropped, which is where it shows up.
+    const stored = loadStoredAnswer(store, root, ANSWER_ID)!;
+    expect(stored.unresolvedCorrections.map((c: Correction) => c.targetId)).toEqual([
+      "ghost-1",
+      "ghost-2",
+      "ghost-3",
+    ]);
   });
 });

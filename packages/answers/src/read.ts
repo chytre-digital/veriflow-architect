@@ -28,7 +28,10 @@ export interface AnswerRow {
   title: string;
   verified: number;
   unverified: number;
+  /** What the agent submitted. Never shown on its own — see {@link undecidedInRow}. */
   open_questions: number;
+  /** Present on every list query. Absent on `SELECT *` reads, where the parsed answer says it. */
+  decided_questions?: number;
   review_state: string;
   created_at: string;
   snapshot_id: string;
@@ -53,6 +56,26 @@ export interface StoredAnswer {
   citations: CitationRow[];
   snapshot: SnapshotFacts;
   freshness: Freshness;
+}
+
+/**
+ * The number every surface means when it says "open questions".
+ *
+ * A question a person has settled is not open. Counting all of them instead is the failure this
+ * package exists to avoid — the answer whose count still reads 4 next quarter because nobody could
+ * record that three of them were decided.
+ */
+export function undecidedQuestions(answer: FlowAnswer): number {
+  return answer.openQuestions.filter((q) => !q.decision).length;
+}
+
+/**
+ * The same number for a surface holding a list row rather than a parsed answer. Clamped, because a
+ * decision row whose question is not in the answer would otherwise push the count below zero — that
+ * correction is reported as unresolved elsewhere and must not turn into a negative here.
+ */
+export function undecidedInRow(row: { open_questions?: unknown; decided_questions?: unknown }): number {
+  return Math.max(0, Number(row.open_questions ?? 0) - Number(row.decided_questions ?? 0));
 }
 
 export function loadStoredAnswer(store: Store, root: string, idOrPrefix: string): StoredAnswer | undefined {
@@ -172,7 +195,9 @@ export function answerEnvelope<T>(stored: StoredAnswer, data: T, truncated?: Tru
     freshness: stored.freshness,
     review: {
       state: stored.row.review_state === "reviewed" ? "reviewed" : "unreviewed",
-      openQuestions: Number(stored.row.open_questions ?? 0),
+      // From the corrected answer, not the stored column: the column counts what the agent asked,
+      // and this envelope is on every response the product gives.
+      openQuestions: undecidedQuestions(stored.answer),
       corrections: stored.corrections.length,
     },
     data,

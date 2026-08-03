@@ -7,6 +7,7 @@ import {
   CHANGE_IMPACT_METHOD,
   answerEnvelope,
   changeImpact,
+  decisionsOf,
   fileStates,
   fitWholeAnswer,
   impactOf,
@@ -18,6 +19,8 @@ import {
   paginateWithin,
   projectEnvelope,
   thresholdOf,
+  undecidedInRow,
+  undecidedQuestions,
   verifyStoredAnswer,
   type StoredAnswer,
   type ToolResponseEnvelope,
@@ -162,7 +165,9 @@ export function createReadServer(options: ReadServerOptions): McpServer {
           ...(a["parent_answer_id"] ? { supersedes: a["parent_answer_id"] } : {}),
           review: {
             state: a["review_state"],
-            openQuestions: a["open_questions"],
+            // Undecided, like every other count in the product. The whole answer is already loaded,
+            // so this comes from the corrected body rather than from the row's arithmetic.
+            openQuestions: stored ? undecidedQuestions(stored.answer) : undecidedInRow(a),
             corrections: stored?.corrections.length ?? 0,
           },
           citations: {
@@ -385,13 +390,33 @@ export function createReadServer(options: ReadServerOptions): McpServer {
       title: "What the repository could not answer",
       description:
         "Questions the run could not settle from the code. These are recorded outcomes, not " +
-        "failures — treat them as gaps in the answer, not as things the agent forgot.",
+        "failures — treat them as gaps in the answer, not as things the agent forgot. A question a " +
+        "person has since settled carries its `decision` with `decidedBy`, `decidedAt` and the " +
+        "rationale, and still carries the question, so what was asked is never replaced by what was " +
+        "answered. The envelope's `review.openQuestions` counts only the undecided ones. Deciding is " +
+        "a person's verb: `veriflow decide` writes it and no tool here can.",
       inputSchema: { answerId: z.string() },
     },
     async ({ answerId }) => {
       const stored = answerOr(answerId);
       if (typeof stored === "string") return refuse(stored);
-      return ok(answerEnvelope(stored, { openQuestions: stored.answer.openQuestions }));
+      const decisions = decisionsOf(stored.corrections);
+      const openQuestions = stored.answer.openQuestions.map((question) => {
+        const decided = decisions.get(question.id);
+        if (!decided) return question;
+        return {
+          ...question,
+          decidedBy: decided.author,
+          decidedAt: decided.decidedAt,
+          ...(decided.rationale ? { rationale: decided.rationale } : {}),
+        };
+      });
+      return ok(
+        answerEnvelope(stored, {
+          openQuestions,
+          undecided: undecidedQuestions(stored.answer),
+        }),
+      );
     },
   );
 
@@ -620,7 +645,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         return {
           id,
           title: a["title"],
-          review: { state: a["review_state"], openQuestions: a["open_questions"] },
+          review: { state: a["review_state"], openQuestions: undecidedInRow(a) },
           matchedTitle: String(a["title"]).toLowerCase().includes(needle),
           matchedCitedPaths: matchingPaths,
           citationsInMatchedPaths: citations.filter((c) => matchingPaths.includes(String(c["path"]))).length,

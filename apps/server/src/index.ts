@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import {
+  decisionsOf,
   impactOf,
   loadStoredAnswer,
   metricsForStoredAnswer,
@@ -367,6 +368,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
           chromeOf(store, "paths", { id: found.row.id, title: found.answer.title }),
           found.answer,
           found.row,
+          decisionsOf(found.corrections),
         ),
       );
     }),

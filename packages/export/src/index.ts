@@ -1,4 +1,4 @@
-import { loadStoredAnswer, type StoredAnswer } from "@veriflow/answers";
+import { decisionsOf, loadStoredAnswer, type StoredAnswer } from "@veriflow/answers";
 import type { Store } from "@veriflow/store";
 import { renderDocument, slugify, type Document } from "./markdown.js";
 import { ExportError } from "./mermaid.js";
@@ -71,6 +71,7 @@ export function prepareAnswerExport(store: Store, root: string, options: Prepare
     citations: stored.citations,
     snapshot: stored.snapshot,
     freshness: stored.freshness,
+    decisions: decisionsOf(stored.corrections),
     frontmatter: { ...options.documentation.frontmatter, ...options.frontmatter },
   });
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentSession, type AgentClientAdapter, type RunSink } from "@veriflow/agent-session";
+import { undecidedInRow } from "@veriflow/answers";
 import type { Store } from "@veriflow/store";
 import type { AskPlan } from "./plan.js";
 import { buildFlowPrompt } from "./prompt.js";
@@ -99,6 +100,7 @@ export interface RunAnswerSummary {
   title: string;
   verified: number;
   unverified: number;
+  /** Undecided, not submitted — the same number every other surface calls "open". */
   openQuestions: number;
 }
 
@@ -112,7 +114,7 @@ export function answersFromRun(store: Store, runId: string): RunAnswerSummary[] 
       title: String(a["title"]),
       verified: Number(a["verified"]),
       unverified: Number(a["unverified"]),
-      openQuestions: Number(a["open_questions"]),
+      openQuestions: undecidedInRow(a),
     }));
 }
 

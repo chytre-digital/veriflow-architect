@@ -115,6 +115,18 @@ export interface MigrationReport {
   backup?: string;
 }
 
+/**
+ * How many of an answer's open questions a person has settled — a correlated subquery rather than a
+ * stored column, so nothing has to be kept in step and no migration is owed. It expects the answers
+ * table to be aliased `a`.
+ *
+ * `veriflow decide` refuses a question id the answer does not have, which is what keeps this count
+ * and `openQuestions.filter(q => !q.decision).length` on the parsed body agreeing.
+ */
+const DECIDED_QUESTIONS = `(SELECT COUNT(DISTINCT d.target_id) FROM answer_corrections d
+    WHERE d.answer_id = a.id AND d.target_kind = 'open-question' AND d.field = 'decision')
+   AS decided_questions`;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -871,12 +883,18 @@ export class Store {
     }
   }
 
+  /**
+   * `decided_questions` travels with every list of answers, because `open_questions` is what the
+   * agent submitted and no surface should show that number once a person has settled some of them.
+   * Subtracting it is the whole of the calculation, and it is a count of *distinct* question ids, so
+   * deciding the same question twice does not close it twice.
+   */
   listAnswers(): Array<Record<string, unknown>> {
     return this.db
       .prepare(
         `SELECT id, question_id, run_id, snapshot_id, parent_answer_id, title, status, review_state,
-                verified, unverified, open_questions, created_at
-         FROM answers ORDER BY created_at DESC`,
+                verified, unverified, open_questions, ${DECIDED_QUESTIONS}, created_at
+         FROM answers a ORDER BY created_at DESC`,
       )
       .all() as Array<Record<string, unknown>>;
   }
@@ -960,8 +978,11 @@ export class Store {
     return (
       this.db
         .prepare(
+          // `rowid` breaks the tie: two corrections to the same field within the same millisecond
+          // are ordinary when a decision is recorded twice in a script, and the later row has to be
+          // the one that wins or "the latest is served" stops being true.
           `SELECT id, answer_id, target_kind, target_id, field, original, corrected, author, note, created_at
-           FROM answer_corrections WHERE answer_id = ? ORDER BY created_at`,
+           FROM answer_corrections WHERE answer_id = ? ORDER BY created_at, rowid`,
         )
         .all(answerId) as Array<Record<string, unknown>>
     ).map((r) => ({
@@ -1275,7 +1296,7 @@ export class Store {
     return this.db
       .prepare(
         `SELECT DISTINCT a.id, a.title, a.snapshot_id, a.review_state, a.verified, a.unverified,
-                a.open_questions, a.created_at
+                a.open_questions, ${DECIDED_QUESTIONS}, a.created_at
          FROM answers a LEFT JOIN answer_citations c ON c.answer_id = a.id
          WHERE a.title LIKE ? OR c.path LIKE ? OR a.body_json LIKE ?
          ORDER BY a.created_at DESC LIMIT 50`,

@@ -10,8 +10,15 @@ import {
 } from "@veriflow/diagram";
 import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
-import { THRESHOLDS, moduleOwning, thresholdOf } from "@veriflow/answers";
-import type { AnswerRow, CitationRow, Freshness, SnapshotFacts, Verification } from "@veriflow/answers";
+import { THRESHOLDS, moduleOwning, thresholdOf, undecidedInRow, undecidedQuestions } from "@veriflow/answers";
+import type {
+  AnswerRow,
+  CitationRow,
+  Freshness,
+  QuestionDecision,
+  SnapshotFacts,
+  Verification,
+} from "@veriflow/answers";
 import {
   COVERAGE_RULE,
   DUPLICATION_RULE,
@@ -781,7 +788,7 @@ export function freshnessPill(f: Freshness): string {
 
 export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
   const standing = rows.filter((r) => r.status !== "superseded").length;
-  const open = rows.reduce((total, r) => total + r.open_questions, 0);
+  const open = rows.reduce((total, r) => total + undecidedInRow(r), 0);
 
   const body = rows.length
     ? rows
@@ -789,7 +796,7 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
           (r) => `<a class="card" href="/answers/${r.id}">
   <h2>${esc(r.title)}</h2>
   <div class="meta">${ratioPill(r.verified, r.unverified)}
-    <span class="pill">${r.open_questions} open question${r.open_questions === 1 ? "" : "s"}</span>
+    <span class="pill">${undecidedInRow(r)} open question${undecidedInRow(r) === 1 ? "" : "s"}</span>
     <span class="pill">${esc(r.review_state)}</span>
     ${r.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}
     <span>${esc(r.created_at.slice(0, 16).replace("T", " "))}</span></div></a>`,
@@ -937,7 +944,14 @@ export function flowPage(input: FlowPageInput): string {
          actions: reviewControl(row, freshness),
          meta: `${ratioPill(row.verified, row.unverified)}
        <a href="/answers/${row.id}/freshness" style="text-decoration:none">${freshnessPill(freshness)}</a>
-       <span class="pill">${answer.openQuestions.length} open</span>
+       <a class="pill" href="/answers/${row.id}/paths" style="text-decoration:none">${undecidedQuestions(answer)} open</a>
+       ${
+         answer.openQuestions.length > undecidedQuestions(answer)
+           ? `<a class="pill good" href="/answers/${row.id}/paths" style="text-decoration:none">${
+               answer.openQuestions.length - undecidedQuestions(answer)
+             } decided</a>`
+           : ""
+       }
        ${row.status === "superseded" ? `<span class="pill warn">superseded — a newer answer exists</span>` : ""}
        ${input.snapshot.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}
        ${
@@ -964,23 +978,42 @@ export function flowPage(input: FlowPageInput): string {
   );
 }
 
-export function pathsPage(chrome: Chrome, answer: FlowAnswer, row: AnswerRow): string {
+export function pathsPage(
+  chrome: Chrome,
+  answer: FlowAnswer,
+  row: AnswerRow,
+  decisions: ReadonlyMap<string, QuestionDecision> = new Map(),
+): string {
   const layout = layoutPaths(answer);
   const svg = renderPathsSvg(layout, {
     hrefOf: (branchId) => `/answers/${row.id}?branch=${encodeURIComponent(branchId)}`,
   });
   const forks = new Set(answer.branches.map((b) => b.forkStepId)).size;
 
+  // A decided question keeps its heading. The question is what was asked and the decision is what
+  // was settled; showing the second in place of the first would lose the reason the flow has a gap.
+  const questionCard = (q: FlowAnswer["openQuestions"][number]): string => {
+    const decided = q.decision ? decisions.get(q.id) : undefined;
+    const evidence = q.attemptedEvidence.length
+      ? `examined: ${esc(q.attemptedEvidence.join(", "))}`
+      : "recorded by the agent";
+    if (!q.decision) {
+      return `<div class="branch"><h3>${esc(q.question)}</h3><div class="meta">${evidence}</div></div>`;
+    }
+    return `<div class="branch"><h3>${esc(q.question)}</h3>
+      <div class="meta">${evidence}</div>
+      <div class="ev" style="margin-top:8px"><span class="pill good">decided</span> ${esc(q.decision)}
+        <div class="why">${
+          decided
+            ? `${esc(decided.author)} · ${esc(decided.decidedAt.slice(0, 16).replace("T", " "))}${
+                decided.rationale ? ` — ${esc(decided.rationale)}` : ""
+              }`
+            : "recorded as a correction"
+        }</div></div></div>`;
+  };
+
   const open = answer.openQuestions.length
-    ? `<h2 class="section">Open questions</h2>` +
-      answer.openQuestions
-        .map(
-          (q) =>
-            `<div class="branch"><h3>${esc(q.question)}</h3><div class="meta">${
-              q.attemptedEvidence.length ? `examined: ${esc(q.attemptedEvidence.join(", "))}` : "recorded by the agent"
-            }</div></div>`,
-        )
-        .join("")
+    ? `<h2 class="section">Open questions</h2>` + answer.openQuestions.map(questionCard).join("")
     : "";
 
   return shell(

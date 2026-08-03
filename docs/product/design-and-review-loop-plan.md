@@ -480,7 +480,21 @@ genuinely risky statement in the plan and it is the reason for the backup.
 
 ---
 
-## 6 · WP5 — `veriflow decide`
+## 6 · WP5 — `veriflow decide` · **shipped**
+
+> Built on 2026-08-03: `decision` on `OpenQuestionSchema`
+> (`packages/flow-answer/src/contract.ts:86`), `decideQuestion` in
+> `packages/answers/src/decide.ts:51`, and eleven cases added to
+> `tests/f014-review-and-decide.test.ts` — whole suite 494 green, typecheck clean. No migration was
+> needed and none was taken.
+>
+> **Rehearsed on a copy of the real thing.** `main-panel`'s `cd1557a2` — *Zrušení rezervace lekce a
+> vrácení peněz zákazníkovi*, the answer whose count reads 4 — was decided on a scratch copy. `oq3`,
+> the hard-coded 24-hour cancellation deadline, was settled with an author and a rationale; the count
+> read 3 on the CLI list, the question kept its text on the paths screen and in the export with the
+> decision beneath it, and the project screen's aggregate fell from 19 to 18. Deciding it a second
+> time under a different name stored both rows and served the later one. The original database was
+> not touched.
 
 **Ships.** `veriflow decide <answerId> <questionId> --decision "…" --rationale "…" --author "…"`.
 A human CLI verb, not an MCP write tool — §10 of the proposal, kept.
@@ -488,9 +502,9 @@ A human CLI verb, not an MCP write tool — §10 of the proposal, kept.
 ### The collision the proposal does not see
 
 §6's G2 says `answer_corrections` "has the right shape". It has the right columns and the wrong
-target. `EDITABLE` allows exactly one field on an open question — `question`
-(`corrections.ts:45-53`) — and `applyCorrections` writes it in place at `corrections.ts:67` into the
-answer every surface serves (`read.ts:65`). Recording a decision that way **overwrites the question
+target. `EDITABLE` allowed exactly one field on an open question — `question`
+(`corrections.ts:59-68`) — and `applyCorrections` writes it in place at `corrections.ts:82` into the
+answer every surface serves (`read.ts:99`). Recording a decision that way **overwrites the question
 text**: `get_open_questions` would return the decision where the question used to be, and the
 question would be gone from the browser, the export and the MCP surface at once.
 
@@ -499,7 +513,7 @@ question would be gone from the browser, the export and the MCP surface at once.
 One optional field on the contract:
 
 ```ts
-// packages/flow-answer/src/contract.ts:74
+// packages/flow-answer/src/contract.ts:86
 export const OpenQuestionSchema = z.object({
   …
   decision: z.string().optional(),
@@ -516,25 +530,53 @@ Q5 stays untouched: closing a question amends no step and adds no claim.
 
 ### The ripple that must not be missed
 
-`answerEnvelope` reports open questions from the stored column at `packages/answers/src/read.ts:175`,
-and that column counts *all* questions. Left alone, this package ships the exact failure the proposal
-names — *"next quarter the open-question count on that answer will still read 4"*. The count must be
-computed from the corrected answer, `openQuestions.filter(q => !q.decision).length`, in the envelope,
-in `get_open_questions` (`packages/mcp-server/src/read-server.ts:383`), in `listAnswers` output and on the project screen's
-aggregated list. Four call sites, all in this package.
+`answerEnvelope` reported open questions from the stored column, and that column counts *all*
+questions. Left alone, this package ships the exact failure the proposal names — *"next quarter the
+open-question count on that answer will still read 4"*. The count has to mean *undecided* everywhere.
+
+**This section said four call sites. There were nine.** The four it named are the ones that hold a
+parsed answer; the rest hold a database row and never parse a body, which is a different problem with
+a different fix.
+
+Where the corrected answer is in hand, `undecidedQuestions(answer)` counts it directly
+(`packages/answers/src/read.ts:68`) — the envelope (`read.ts:200`), `list_flow_answers`
+(`read-server.ts:170`), the answer page's header pill, and the project screen, which drops a decided
+question from the aggregate entirely (`packages/answers/src/project.ts:166`) rather than counting it.
+
+Where only a row is in hand, parsing every `body_json` to render a list would be the wrong trade, so
+the count travels with the row: `DECIDED_QUESTIONS` (`packages/store/src/index.ts:126`) is a
+correlated subquery over `answer_corrections` added to `listAnswers` and `searchAnswers`, and
+`undecidedInRow` (`read.ts:77`) subtracts it. That covers the CLI's `answers` list
+(`apps/cli/src/main.ts:810`), the browser's answers screen (`views.ts:791`), `search_answers`
+(`read-server.ts:648`) and `answersFromRun`, which is what the CLI and the run console both print
+after a run (`packages/ask/src/start.ts:117`).
+
+Two derivations, and they have to agree. What makes them agree is that `decide` refuses a question id
+the answer does not have, so a decision row always has something to decide; the subquery counts
+*distinct* ids, so deciding twice closes one question; and `undecidedInRow` clamps at zero, so a
+correction row inserted by some other path can make the count stale but never negative. There is a
+test asserting the two land on the same number.
+
+`readBody` on the project screen was also not applying corrections at all — so that screen showed the
+agent's original question text while the answer's own page showed a person's rewrite of it. Fixed
+here because filtering on `decision` requires the corrected body anyway.
 
 ### Files
 
 | File | Change |
 |---|---|
 | `packages/flow-answer/src/contract.ts` | optional `decision` on `OpenQuestionSchema` |
-| `packages/answers/src/corrections.ts` | `decision` in `EDITABLE` |
-| `packages/answers/src/read.ts` | envelope counts undecided, not all |
-| `packages/answers/src/project.ts` | aggregated open questions exclude decided |
+| `packages/answers/src/corrections.ts` | `decision` in `EDITABLE`; `decisionsOf` reads the attribution back |
+| `packages/answers/src/decide.ts` | new — `decideQuestion`, so the verb is testable and the CLI is a printer |
+| `packages/answers/src/read.ts` | `undecidedQuestions`, `undecidedInRow`, envelope counts undecided |
+| `packages/answers/src/project.ts` | corrected bodies; aggregated open questions exclude decided |
+| `packages/store/src/index.ts` | `decided_questions` on the list queries; corrections ordered by `created_at, rowid` |
 | `packages/mcp-server/src/read-server.ts` | `get_open_questions` returns the decision, its author and its rationale |
-| `apps/cli/src/main.ts` | `decide` command |
+| `packages/ask/src/start.ts` | `answersFromRun` reports undecided |
+| `packages/export/src/markdown.ts` | the decision under the question it settles, with who and when |
+| `apps/cli/src/main.ts` | `decide` command; `answers` list says undecided, and how many were decided |
 | `apps/server/src/views.ts` | decided questions rendered with rationale and author |
-| `tests/f014-review-and-decide.test.ts` | extended |
+| `tests/f014-review-and-decide.test.ts` | extended, 11 cases |
 
 ### Acceptance
 
@@ -555,6 +597,12 @@ aggregated list. Four call sites, all in this package.
 - an old `body_json` with no `decision` field parsing;
 - a decision on an unknown question id failing without writing;
 - the correction row's author and note surviving into every read surface.
+
+Plus three the section did not ask for and the implementation earned: the two derivations of
+*undecided* agreeing on an answer where every question is decided; the row count clamping at zero
+rather than going negative when a decision names a question the answer does not have; and an empty
+decision or an unsigned one being refused — a decision nobody signed is not a decision, and the
+attribution is the only thing this feature stores that the answer body does not.
 
 ---
 

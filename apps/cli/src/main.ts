@@ -15,13 +15,16 @@ import {
   DRIFT_WINDOW,
   THRESHOLDS,
   changeImpact,
+  DecideError,
   checkClaims,
+  decideQuestion,
   diffAnswers,
   impactOf,
   loadStoredAnswer,
   refExists,
   metricsForStoredAnswer,
   thresholdOf,
+  undecidedInRow,
   verifyStoredAnswer,
   type AnswerMetrics,
   type StoredAnswer,
@@ -801,8 +804,12 @@ program
     } else {
       for (const a of answers) {
         const total = Number(a["verified"]) + Number(a["unverified"]);
+        const decided = Number(a["decided_questions"] ?? 0);
         log(`${String(a["id"]).slice(0, 8)}  ${a["title"]}`);
-        log(`          ${a["verified"]}/${total} verified - ${a["open_questions"]} open - ${a["review_state"]}`);
+        log(
+          `          ${a["verified"]}/${total} verified - ${undecidedInRow(a)} open` +
+            `${decided ? ` (${decided} decided)` : ""} - ${a["review_state"]}`,
+        );
       }
     }
     ctx.close();
@@ -972,6 +979,75 @@ program
       log(`  ${state}`);
       // Said rather than silently dropped: the columns that would carry these do not exist yet.
       log("  no reviewer or note is recorded — both arrive with the next schema version");
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ decide */
+
+program
+  .command("decide")
+  .argument("<answerId>")
+  .argument("<questionId>")
+  .argument("[path]")
+  .requiredOption("--decision <text>", "what was settled")
+  .requiredOption("--author <name>", "who settled it — a decision nobody signed is not a decision")
+  .option("--rationale <text>", "why it was settled that way")
+  .option("--json", "machine-readable output")
+  .description("close an open question a person has settled — the question stays, the decision joins it")
+  .action((
+    answerArg: string,
+    questionArg: string,
+    pathArg: string | undefined,
+    options: { decision: string; author: string; rationale?: string; json?: boolean },
+  ) => {
+    const ctx = open(pathArg);
+    let result;
+    try {
+      result = decideQuestion(ctx.store, ctx.root, {
+        answerId: answerArg,
+        questionId: questionArg,
+        decision: options.decision,
+        author: options.author,
+        ...(options.rationale ? { rationale: options.rationale } : {}),
+      });
+    } catch (error) {
+      ctx.close();
+      if (error instanceof DecideError) fail(error.message);
+      throw error;
+    }
+
+    const { stored, question, decision } = result;
+    if (options.json) {
+      log(
+        JSON.stringify(
+          {
+            contractVersion: 1,
+            answerId: stored.row.id,
+            questionId: question.id,
+            question: question.question,
+            decision: decision.decision,
+            decidedBy: decision.author,
+            decidedAt: decision.decidedAt,
+            ...(decision.rationale ? { rationale: decision.rationale } : {}),
+            ...(result.previousDecision ? { replaced: result.previousDecision } : {}),
+            openQuestions: result.undecided,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      log(`${stored.row.id.slice(0, 8)}  ${stored.answer.title}`);
+      log(`  ${question.question}`);
+      if (result.previousDecision) log(`  was: ${result.previousDecision}`);
+      log(`  decided: ${decision.decision}`);
+      log(`  by ${decision.author} at ${decision.decidedAt}`);
+      if (decision.rationale) log(`  because ${decision.rationale}`);
+      log(`  ${result.undecided} open question${result.undecided === 1 ? "" : "s"} left on this answer`);
+      // Both rows stay. A decision that quietly replaced the last one would lose the fact that
+      // somebody changed their mind, which is usually the interesting part.
+      if (result.previousDecision) log(`  both decisions are stored; the latest is served`);
     }
     ctx.close();
   });

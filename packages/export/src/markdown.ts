@@ -1,4 +1,4 @@
-import type { Freshness, SnapshotFacts, StoredCitation } from "@veriflow/answers";
+import type { Freshness, QuestionDecision, SnapshotFacts, StoredCitation } from "@veriflow/answers";
 import type { FlowAnswer } from "@veriflow/flow-answer";
 import { renderMermaid } from "./mermaid.js";
 
@@ -15,6 +15,11 @@ export interface DocumentInput {
   citations: readonly StoredCitation[];
   snapshot: SnapshotFacts;
   freshness: Freshness;
+  /**
+   * Who settled which question, by question id. The decision itself is already on the answer — this
+   * is the attribution beside it, which lives on the correction row rather than in the body.
+   */
+  decisions?: ReadonlyMap<string, QuestionDecision>;
   /** Merged over the defaults by the caller, so the project's convention wins. */
   frontmatter: Record<string, string>;
   /** What the reader should run to check this document against the code. */
@@ -189,10 +194,26 @@ export function renderDocument(input: DocumentInput): Document {
   if (answer.openQuestions.length === 0) {
     out.push("Nothing was left open.", "");
   } else {
+    const undecided = answer.openQuestions.filter((q) => !q.decision).length;
+    if (undecided !== answer.openQuestions.length) {
+      out.push(
+        `${undecided} of ${answer.openQuestions.length} still open; the rest were decided by a person and`,
+        `carry who decided and when.`,
+        "",
+      );
+    }
     for (const question of answer.openQuestions) {
       out.push(`- ${question.blocking ? "**(blocking)** " : ""}${cell(question.question)}`);
       if (question.attemptedEvidence.length > 0) {
         out.push(`  - examined: ${question.attemptedEvidence.map((e) => `\`${e}\``).join(", ")}`);
+      }
+      // The question stays above the decision rather than being replaced by it: a reader six months
+      // out needs to know what was uncertain, not only how it was settled.
+      if (question.decision) {
+        const decided = input.decisions?.get(question.id);
+        const by = decided ? ` — ${cell(decided.author)}, ${decided.decidedAt.slice(0, 10)}` : "";
+        out.push(`  - **decided:** ${cell(question.decision)}${by}`);
+        if (decided?.rationale) out.push(`  - because: ${cell(decided.rationale)}`);
       }
     }
     out.push("");

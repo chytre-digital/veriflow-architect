@@ -82,6 +82,16 @@ export const OpenQuestionSchema = z.object({
       id: z.string(),
     })
     .optional(),
+  /**
+   * What a person settled, once somebody has. Separate from `question` because a decision recorded
+   * over the question text would delete the question: every surface serves the corrected answer, so
+   * the thing that was asked would be gone from the browser, the export and the MCP tools at once.
+   *
+   * Optional, so every answer stored before this field existed still parses. No author or timestamp
+   * lives here — a decision is written as a correction row, and `answer_corrections` already carries
+   * `author`, `note` and `created_at` (D13).
+   */
+  decision: z.string().optional(),
 });
 
 export const FlowAnswerSchema = z.object({

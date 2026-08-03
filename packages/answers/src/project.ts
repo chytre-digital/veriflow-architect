@@ -1,6 +1,7 @@
 import type { FlowAnswer } from "@veriflow/flow-answer";
 import { FlowAnswerSchema } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
+import { applyCorrections, type Correction } from "./corrections.js";
 import { fileStates } from "./freshness.js";
 
 /**
@@ -159,7 +160,10 @@ export function projectView(store: Store): ProjectView | undefined {
       });
       externals.set(system.name, reach);
     }
+    // A settled question is not an open one. This list is the screen's answer to "where should we
+    // ask next", so leaving decided questions in it would send people back to work already done.
     for (const question of answer.openQuestions) {
+      if (question.decision) continue;
       openQuestions.push({ answerId: id, answerTitle: title, question: question.question, blocking: question.blocking });
     }
   }
@@ -289,10 +293,17 @@ export function impactOf(store: Store, root: string, path: string): Impact {
   };
 }
 
+/**
+ * Corrected, like every other read surface. This screen shows question text and external system
+ * names across the whole project, and serving the agent's original words here while the answer's own
+ * page serves a person's rewrite would make the two screens disagree about the same sentence.
+ */
 function readBody(store: Store, answerId: string): FlowAnswer | undefined {
   const row = store.readAnswer(answerId);
   const body = row?.["body_json"];
   if (typeof body !== "string") return undefined;
   const parsed = FlowAnswerSchema.safeParse(JSON.parse(body));
-  return parsed.success ? parsed.data : undefined;
+  if (!parsed.success) return undefined;
+  const corrections = store.readCorrections(answerId) as unknown as Correction[];
+  return applyCorrections(parsed.data, corrections).answer;
 }
