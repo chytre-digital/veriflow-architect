@@ -1,7 +1,6 @@
 # M6 — Compare intent with execution
 
-Status: in progress. This document fixes the boundary of M6; features not yet shipped still need
-their detailed implementation design before their roadmap status moves from `planned` to `ready`.
+Status: shipped. This document records the boundary and the shipped decisions for every M6 feature.
 
 M1–M5 made architecture observable, reviewable and designable one answered flow at a time. M6 adds
 the two measurements that were deliberately left outside the MVP — declared intent and executed test
@@ -145,7 +144,7 @@ the stable answer URL. Opening it starts neither indexing nor an agent and mutat
 The shared renderer remains presentation only; the answer route owns the evidence scope, boundary
 classification and honest empty states required by the F020 acceptance criteria.
 
-## F021 — Browser correction workflow
+## F021 — Browser correction workflow — shipped
 
 ### In
 
@@ -164,14 +163,19 @@ classification and honest empty states required by the F020 acceptance criteria.
 - silently applying a correction whose target disappeared in a newer answer revision;
 - merging corrections from different answers.
 
-### Design decisions before `ready`
+### Shipped decisions
 
-- Decide the authenticated/attributed author source for a loopback-only local application.
-- Decide whether the first UI supports title and open-question decisions only, or every prose field
-  the correction service already accepts.
-- Specify correction conflicts and reversals without deleting history.
+- The loopback application requires the reviewer to enter an explicit author and reason for every
+  change; it does not infer identity from the machine or agent session.
+- The first UI supports every prose field the correction service accepts, including open-question
+  decisions, rather than introducing a smaller browser-only correction vocabulary.
+- Preview writes nothing. Confirmation atomically compares the field revision, so a stale form
+  returns a visible conflict with both values preserved. A reversal is another attributed row;
+  neither it nor a missing target removes earlier history.
+- The submitted `body_json` remains immutable. Effective prose and undecided-question counts agree
+  across the browser, CLI, export and MCP, while MCP exposes no correction writer.
 
-## F022 — Threaded answer lineage in the browser
+## F022 — Threaded answer lineage in the browser — shipped
 
 An answer is still a complete immutable result, not one chat message. Threading only exposes the
 lineage already stored through `parent_answer_id`.
@@ -194,12 +198,18 @@ lineage already stored through `parent_answer_id`.
 - merging proposal lineage with supersession semantics;
 - deleting or hiding superseded history.
 
-### Design decisions before `ready`
+### Shipped decisions
 
-- Define how an ordinary follow-up differs in persisted data from a superseding re-answer; today the
-  same parent column carries both and some meaning is inferred from answer state and command intent.
-- Decide whether the project screen defaults to roots only or a fully expanded hierarchy.
-- Bound the initial tree depth and pagination behavior for large answer histories.
+- Schema 5 keeps `parent_answer_id` as the immutable target and adds the explicit relationship
+  `follow_up`, `supersedes` or `proposes_change_to`. The migration preserves the only two historical
+  writer meanings: proposal parents propose a change and observed re-answers supersede.
+- The answer list is a fully expanded, root-first hierarchy. Roots and every sibling group are newest
+  first with answer id as the stable tie-breaker. Traversal is iterative, every answer remains in the
+  existing unpaginated list, and visual indentation alone is capped after six levels.
+- Missing parents, self-links and every member of a cycle are promoted to visible roots with a
+  diagnostic. Invalid lineage cannot hide or prevent unrelated answers from rendering.
+- The main answer detail shows its direct parent, children and siblings with stable answer links,
+  relationship labels and current, superseded or proposed state. These views only read stored rows.
 
 ## Cross-feature constraints
 

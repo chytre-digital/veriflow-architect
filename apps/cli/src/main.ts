@@ -32,6 +32,7 @@ import {
   importRuntimeCoverage,
   invariantIndex,
   kindOf,
+  listEffectiveAnswerRows,
   loadStoredAnswer,
   loadRuntimeCoverageRun,
   refExists,
@@ -40,6 +41,7 @@ import {
   storedArchitectureConformance,
   thresholdOf,
   undecidedInRow,
+  undecidedQuestions,
   verifyStoredAnswer,
   type AnswerMetrics,
   type StoredAnswer,
@@ -1081,7 +1083,7 @@ program
   .description("list stored answers")
   .action((pathArg: string | undefined, options: { json?: boolean }) => {
     const ctx = open(pathArg);
-    const answers = ctx.store.listAnswers();
+    const answers = listEffectiveAnswerRows(ctx.store, ctx.root);
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, answers }, null, 2));
     } else if (answers.length === 0) {
@@ -1101,6 +1103,57 @@ program
             `${decided ? ` (${decided} decided)` : ""} - ` +
             `${proposed && a["review_state"] === "reviewed" ? "reviewed (accepted)" : a["review_state"]}`,
         );
+      }
+    }
+    ctx.close();
+  });
+
+program
+  .command("answer")
+  .argument("<answerId>", "stored answer id or prefix")
+  .argument("[path]")
+  .option("--json", "machine-readable effective answer and correction history")
+  .description("read one stored answer with human corrections applied")
+  .action((answerId: string, pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const stored = loadStoredAnswer(ctx.store, ctx.root, answerId);
+    if (!stored) {
+      ctx.close();
+      fail(`no stored answer with id or prefix "${answerId}" - run: veriflow answers`);
+    }
+    if (options.json) {
+      log(
+        JSON.stringify(
+          {
+            contractVersion: 1,
+            answerId: stored.row.id,
+            answer: stored.answer,
+            submitted: stored.submitted,
+            corrections: stored.corrections,
+            unresolvedCorrections: stored.unresolvedCorrections,
+            review: {
+              state: stored.row.review_state,
+              openQuestions: undecidedQuestions(stored.answer),
+              corrections: stored.corrections.length,
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      log(`${stored.row.id.slice(0, 8)}  ${stored.answer.title}`);
+      log(
+        `  ${stored.corrections.length} correction${stored.corrections.length === 1 ? "" : "s"}` +
+          ` · ${undecidedQuestions(stored.answer)} open question${undecidedQuestions(stored.answer) === 1 ? "" : "s"}` +
+          ` · ${stored.row.review_state}`,
+      );
+      for (const correction of stored.corrections) {
+        log(`  ${correction.targetKind} ${correction.targetId}.${correction.field}: ${correction.corrected}`);
+        log(`    ${correction.author} · ${correction.createdAt}${correction.note ? ` · ${correction.note}` : ""}`);
+      }
+      for (const correction of stored.unresolvedCorrections) {
+        log(`  unresolved  ${correction.targetKind} ${correction.targetId}.${correction.field}`);
       }
     }
     ctx.close();

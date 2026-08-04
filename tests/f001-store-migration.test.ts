@@ -112,7 +112,7 @@ describe("opening an older database", () => {
     expect(store.schemaVersion()).toBe(SCHEMA_VERSION);
     expect(store.migration?.from).toBe(1);
     expect(store.migration?.to).toBe(SCHEMA_VERSION);
-    expect(store.migration?.applied.map((a) => a.to)).toEqual([2, 3, 4]);
+    expect(store.migration?.applied.map((a) => a.to)).toEqual([2, 3, 4, 5]);
   });
 
   it("keeps every row that was in it", () => {
@@ -233,6 +233,7 @@ describe("what migration adds", () => {
 
     expect(answer["kind"]).toBe("observed");
     expect(answer["intent"]).toBe(0);
+    expect(answer["parent_relationship"]).toBeNull();
     // An answer reviewed before the provenance columns existed was reviewed at a tree state nobody
     // recorded, and saying so is the honest reading.
     expect(answer["reviewed_at"]).toBeNull();

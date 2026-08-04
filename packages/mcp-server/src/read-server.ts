@@ -13,6 +13,7 @@ import {
   impactOf,
   invariantIndex,
   kindOf,
+  listEffectiveAnswerRows,
   listRuntimeCoverageRuns,
   loadRuntimeCoverageRun,
   refExists,
@@ -23,10 +24,12 @@ import {
   storedArchitectureConformance,
   paginateWithin,
   projectEnvelope,
+  relationshipOf,
   thresholdOf,
   undecidedInRow,
   undecidedQuestions,
   verifyStoredAnswer,
+  type AnswerRow,
   type StoredAnswer,
   type ToolResponseEnvelope,
 } from "@veriflow/answers";
@@ -167,8 +170,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
       const snapshotId = latestSnapshot();
       if (!snapshotId) return refuse("nothing indexed yet — run `veriflow index` in the project first");
 
-      const rows = store
-        .listAnswers()
+      const rows = listEffectiveAnswerRows(store, root)
         .filter((a) => !filter || String(a["title"]).toLowerCase().includes(filter.toLowerCase()))
         .filter((a) => !reviewState || a["review_state"] === reviewState)
         .filter((a) => !kind || kindOf(a) === kind);
@@ -181,6 +183,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         // verification, neither of which a citation row carries.
         const stored = loadStoredAnswer(store, root, id);
         const kindOfRow = kindOf(a);
+        const relationship = relationshipOf(a as unknown as AnswerRow);
         return {
           id,
           title: a["title"],
@@ -189,12 +192,20 @@ export function createReadServer(options: ReadServerOptions): McpServer {
           // Stated on every row. A proposal read as an observation is a description of code that
           // does not exist, and the verified ratio is not a signal that would give it away.
           kind: kindOfRow,
-          // The same column threads both relationships, and they are not the same fact: a proposal
-          // changes its parent, a re-answer replaces it.
+          // F022 persists the meaning rather than guessing it from kind. The field names stay
+          // distinct because these are three different product facts, not generic related answers.
           ...(a["parent_answer_id"]
-            ? kindOfRow === "proposed"
-              ? { proposesChangeTo: a["parent_answer_id"] }
-              : { supersedes: a["parent_answer_id"] }
+            ? relationship
+              ? {
+                  [
+                    relationship === "proposes_change_to"
+                      ? "proposesChangeTo"
+                      : relationship === "supersedes"
+                        ? "supersedes"
+                        : "followsUpOn"
+                  ]: a["parent_answer_id"],
+                }
+              : {}
             : {}),
           review: {
             state: a["review_state"],
@@ -738,7 +749,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
             modules: store.readModules(snapshotId),
             entryPoints: store.readEntryPoints(snapshotId),
             traffic: graph?.traffic ?? [],
-            answersPerModule: answersPerModule(store, snapshotId),
+            answersPerModule: answersPerModule(store, root, snapshotId),
           },
         };
       }),
@@ -949,7 +960,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
     "answer",
     new ResourceTemplate("veriflow://answer/{id}", {
       list: async () => ({
-        resources: store.listAnswers().map((a) => ({
+        resources: listEffectiveAnswerRows(store, root).map((a) => ({
           uri: `veriflow://answer/${String(a["id"])}`,
           name: String(a["title"]),
           description: `${a["verified"]}/${Number(a["verified"]) + Number(a["unverified"])} citations verified · ${a["review_state"]}`,
@@ -1075,12 +1086,12 @@ function edgeShape(edge: Record<string, unknown>): Record<string, unknown> {
 }
 
 /** How many citations of each stored answer land in each module — which flows run through here. */
-function answersPerModule(store: Store, snapshotId: string): Array<Record<string, unknown>> {
+function answersPerModule(store: Store, root: string, snapshotId: string): Array<Record<string, unknown>> {
   const modules = store.readModules(snapshotId).map((m) => ({
     id: String(m["id"]),
     paths: (m["paths"] as string[]) ?? [],
   }));
-  return store.listAnswers().map((a) => {
+  return listEffectiveAnswerRows(store, root).map((a) => {
     const counts: Record<string, number> = {};
     for (const citation of store.readAnswerCitations(String(a["id"]))) {
       // An intent citation names a path a proposal would put code at. It is not evidence that a

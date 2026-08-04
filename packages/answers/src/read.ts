@@ -49,6 +49,8 @@ export interface AnswerRow {
   run_id?: string;
   question_id?: string;
   parent_answer_id?: string | null;
+  /** Explicit since F022; older reads are interpreted by `relationshipOf`. */
+  parent_relationship?: string | null;
 }
 
 export interface CitationRow extends StoredCitation {}
@@ -132,6 +134,32 @@ export function loadStoredAnswer(store: Store, root: string, idOrPrefix: string)
     kind: kindOf(row),
     intent: intentCitations(citations).length,
   };
+}
+
+/**
+ * List rows with answer-level corrected prose applied without mutating the immutable SQL summary.
+ * Detail reads have always served the effective answer; F021 makes lists agree when the title was
+ * corrected and carries the effective counts beside it.
+ */
+export function listEffectiveAnswerRows(store: Store, root: string): Array<Record<string, unknown>> {
+  return store.listAnswers().map((row) => {
+    // A list needs corrected prose, not freshness. Parsing the stored body and correction rows here
+    // avoids hashing every cited file merely to draw the sidebar.
+    const parsed = FlowAnswerSchema.safeParse(JSON.parse(String(store.readAnswer(String(row["id"]))?.["body_json"] ?? "null")));
+    const corrected = parsed.success
+      ? applyCorrections(
+          parsed.data,
+          store.readCorrections(String(row["id"])) as unknown as Correction[],
+        )
+      : undefined;
+    return {
+      ...row,
+      title: corrected?.answer.title ?? row["title"],
+      effective_open_questions: corrected ? undecidedQuestions(corrected.answer) : undecidedInRow(row),
+      corrections: corrected?.applied.length ?? 0,
+      unresolved_corrections: corrected?.unresolved.length ?? 0,
+    };
+  });
 }
 
 /**

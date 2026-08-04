@@ -1,13 +1,13 @@
 ---
 status: proposal
 owner: TODO
-last-reviewed: 2026-08-03
+last-reviewed: 2026-08-04
 ---
 
 # Where VeriFlow goes after M6
 
 > **A proposal, not a roadmap commitment.** Nothing here is in `roadmap.yaml`. It is written against
-> the code as it stands on `main` at 2026-08-03 (F001–F020 shipped, F021–F022 planned)
+> the code as it stands after M6 on 2026-08-04 (F001–F022 shipped)
 > and against what the rest of the market shipped while M1–M6 were being built.
 
 ## 0 · The five bets, in one page
@@ -27,7 +27,7 @@ seen.
 
 ## 1 · Where VeriFlow actually stands
 
-Eighteen of twenty-two features shipped. What that adds up to, honestly:
+All twenty-two M1–M6 features shipped. What that adds up to, honestly:
 
 **Deterministic core.** `index` produces the module registry, entry points and call graph with no AI
 involved. That is a genuinely unusual starting point — most tools in this space either hand-author
@@ -61,7 +61,8 @@ Taken from `design-and-review-loop.md` §2, still true:
    asked about.** VeriFlow could not have found it, because nothing in the product says *"you should
    ask about this"*.
 
-Fact 1 is bet 5. Fact 3 is bet 4. Fact 2 is F021, already planned.
+Fact 1 is bet 5. Fact 3 is bet 4. F021 has now shipped the UI needed to change fact 2 through normal
+review work rather than direct database or CLI operations.
 
 ---
 
@@ -437,8 +438,9 @@ also the cheapest path to the languages VeriFlow currently cannot see.
 | 8 | **F030 · plan-adapter protocol** (`claude-code`, `speckit`) | Generalises F024's input. Do it once there is one adapter working, not before. | small | medium |
 | 9 | **F031 · decisions with freshness / exposure** | Valuable, and the most likely to drift toward the banned score. Do it last and read-only. | medium | medium |
 
-F021–F022 continue in parallel; none of the above depends on them, and F021's correction UI is what
-finally puts a row in `answer_corrections`.
+F022 has shipped independently; none of the above depends on it. F021's correction UI gives ordinary
+review work the path that writes attributed rows to `answer_corrections`, while F022 makes follow-ups,
+replacements and proposals explicit and navigable without changing their immutable answers.
 
 ---
 

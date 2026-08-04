@@ -339,21 +339,33 @@ features:
     title: Browser correction workflow
     spec: ../docs/product/m6-plan.md
     iteration: M6-conformance
-    status: planned
+    status: shipped
     dependsOn: [F006, F014]
     outcome: >-
       A person can correct supported answer prose and decide an open question from the answer screen;
       each edit preserves the immutable agent answer, author, timestamp, original value and reason.
+    notes: >-
+      The answer-owned Review tab exposes every prose field supported by the correction service and
+      open-question decisions through a two-step preview and confirmation flow. Author and reason
+      are required explicitly, confirmation uses an atomic field-revision check, reversals append
+      history, missing targets stay visible, and browser, CLI, export and read-only MCP surfaces
+      serve the same corrected values and undecided-question counts.
   F022:
     title: Threaded answer lineage in the browser
     spec: ../docs/product/m6-plan.md
     iteration: M6-conformance
-    status: planned
+    status: shipped
     dependsOn: [F006, F014, F015]
     outcome: >-
       Answer lists and detail views expose their parent and children as navigable lineage, labelling
       whether each edge is a follow-up, a superseding answer or a proposal rather than presenting
       related answers as unrelated siblings.
+    notes: >-
+      Schema 5 stores follow-up, supersedes and proposes-change-to as explicit parent relationships
+      and migrates the two historical writer meanings. The browser flattens the lineage iteratively
+      into one deterministic root-first hierarchy, shows direct parent, children and siblings on
+      answer detail, keeps superseded history reachable, and promotes missing parents, self-links and
+      cycle members to visible diagnostic roots without writing or recomputing answers.
 
 blocking:
   - question: Q2

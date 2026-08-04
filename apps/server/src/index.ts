@@ -4,19 +4,31 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import {
+  CorrectionConflictError,
+  CorrectionError,
+  DECISION_FIELD,
+  DecideConflictError,
+  answerLineageContext,
+  correctAnswer,
+  correctionTargets,
+  decideQuestion,
   decisionsOf,
   diffAnswers,
   impactOf,
   invariantIndex,
   kindOf,
+  listEffectiveAnswerRows,
   listRuntimeCoverageRuns,
   loadRuntimeCoverageRun,
   loadStoredAnswer,
   metricsForStoredAnswer,
   projectView,
+  previewCorrection,
   storedArchitectureConformance,
   verifyStoredAnswer,
   type StoredAnswer,
+  type Correction,
+  type CorrectionDraftRequest,
 } from "@veriflow/answers";
 import {
   ClaudeCodeAdapter,
@@ -59,6 +71,7 @@ import {
   type NavId,
 } from "./views.js";
 import { callGraphPage, type CallGraphEdge, type CallGraphNode } from "./callgraph-page.js";
+import { correctionPreviewPage, correctionReviewPage } from "./correction-page.js";
 import type { TrafficCell } from "@veriflow/contracts";
 
 /** How often the live console looks for what the run has written since it last looked. */
@@ -140,7 +153,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
    * a screen that looked up its own navigation would be a screen that can disagree with it.
    */
   const chromeOf = (store: Store, active: NavId, answer?: { id: string; title: string }): Chrome => {
-    const rows = store.listAnswers() as unknown as AnswerRow[];
+    const rows = listEffectiveAnswerRows(store, root) as unknown as AnswerRow[];
     const answerRow = answer ? rows.find((row) => row.id === answer.id) : undefined;
     const runtimeCoverageRun = answer ? store.listRuntimeCoverageRuns(answer.id)[0] : undefined;
     const snapshot = store.latestSnapshotAny();
@@ -193,7 +206,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
 
   app.get("/", (c) =>
     withStore((store) => {
-      const rows = store.listAnswers() as unknown as AnswerRow[];
+      const rows = listEffectiveAnswerRows(store, root) as unknown as AnswerRow[];
       return c.html(answersPage(chromeOf(store, "answers"), rows));
     }),
   );
@@ -218,7 +231,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
 
       // Which stored flows run through each module. Answers made against an older snapshot still
       // resolve here because module ids are path-derived and stable across a re-index (D18).
-      const answers = store.listAnswers().map((a) => {
+      const answers = listEffectiveAnswerRows(store, root).map((a) => {
         const counts: Record<string, number> = {};
         for (const citation of store.readAnswerCitations(String(a["id"]))) {
           const owner = moduleOwning(String(citation["path"]), modules);
@@ -505,6 +518,10 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
         flowPage({
           chrome: chromeOf(store, "flow", { id: found.row.id, title: found.answer.title }),
           ...found,
+          lineage: answerLineageContext(
+            listEffectiveAnswerRows(store, root) as unknown as AnswerRow[],
+            found.row.id,
+          ),
           selectedStepId: c.req.query("step"),
           ...(!overlay ? { selectedBranchId: c.req.query("branch") } : {}),
           ...(overlay
@@ -622,6 +639,112 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       );
     }),
   );
+
+  /**
+   * The browser correction workflow is deliberately a two-step write. Preview validates against
+   * the field revision without writing; confirmation checks the same revision again inside the
+   * store transaction. Every POST also requires the request's Origin to be this exact local origin.
+   */
+  app.get("/answers/:id/review", (c) =>
+    withStore((store) => {
+      const found = loadAnswer(store, root, c.req.param("id"));
+      if (!found) return c.html(notice(store, "answers", "Not found", "No such answer."), 404);
+      return c.html(
+        correctionReviewPage({
+          chrome: chromeOf(store, "review", { id: found.row.id, title: found.answer.title }),
+          stored: found,
+          targets: correctionTargets(found),
+          history: store.readCorrections(found.row.id) as unknown as Correction[],
+          saved: c.req.query("saved") === "1",
+        }),
+      );
+    }),
+  );
+
+  app.post("/answers/:id/corrections/preview", async (c) => {
+    if (!sameOrigin(c.req.raw)) {
+      return withStore((store) =>
+        c.html(
+          notice(store, "answers", "Forbidden", "Correction forms require the same local Origin as VeriFlow."),
+          403,
+        ),
+      );
+    }
+    const body = await c.req.parseBody();
+    const request = correctionRequest(c.req.param("id"), body);
+    return withStore((store) => {
+      try {
+        const preview = previewCorrection(store, root, request);
+        return c.html(
+          correctionPreviewPage(
+            chromeOf(store, "review", { id: preview.stored.row.id, title: preview.stored.answer.title }),
+            preview,
+          ),
+        );
+      } catch (error) {
+        const found = loadAnswer(store, root, c.req.param("id"));
+        if (!found) return c.html(notice(store, "answers", "Not found", "No such answer."), 404);
+        return c.html(
+          correctionReviewPage({
+            chrome: chromeOf(store, "review", { id: found.row.id, title: found.answer.title }),
+            stored: found,
+            targets: correctionTargets(found),
+            history: store.readCorrections(found.row.id) as unknown as Correction[],
+            error: correctionMessage(error),
+            draft: request,
+          }),
+          correctionStatus(error),
+        );
+      }
+    });
+  });
+
+  app.post("/answers/:id/corrections", async (c) => {
+    if (!sameOrigin(c.req.raw)) {
+      return withStore((store) =>
+        c.html(
+          notice(store, "answers", "Forbidden", "Correction forms require the same local Origin as VeriFlow."),
+          403,
+        ),
+      );
+    }
+    const body = await c.req.parseBody();
+    const request = correctionRequest(c.req.param("id"), body);
+    return withStore((store) => {
+      try {
+        // Preview again at confirmation so crafted POSTs get the same validation as the visible
+        // two-step path. The following write performs the atomic revision check once more.
+        const preview = previewCorrection(store, root, request);
+        if (preview.target.field === DECISION_FIELD) {
+          decideQuestion(store, root, {
+            answerId: preview.stored.row.id,
+            questionId: preview.target.targetId,
+            decision: preview.corrected,
+            author: preview.author,
+            rationale: preview.reason,
+            expectedRevision: preview.target.revision,
+          });
+        } else {
+          correctAnswer(store, root, request);
+        }
+        return c.redirect(`/answers/${preview.stored.row.id}/review?saved=1`, 303);
+      } catch (error) {
+        const found = loadAnswer(store, root, c.req.param("id"));
+        if (!found) return c.html(notice(store, "answers", "Not found", "No such answer."), 404);
+        return c.html(
+          correctionReviewPage({
+            chrome: chromeOf(store, "review", { id: found.row.id, title: found.answer.title }),
+            stored: found,
+            targets: correctionTargets(found),
+            history: store.readCorrections(found.row.id) as unknown as Correction[],
+            error: correctionMessage(error),
+            draft: request,
+          }),
+          correctionStatus(error),
+        );
+      }
+    });
+  });
 
   app.get("/answers/:id/freshness", (c) =>
     withStore((store) => {
@@ -1007,7 +1130,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
   });
 
   app.get("/api/answers", (c) =>
-    withStore((store) => c.json({ contractVersion: 1, answers: store.listAnswers() })),
+    withStore((store) => c.json({ contractVersion: 1, answers: listEffectiveAnswerRows(store, root) })),
   );
 
   app.get("/api/answers/:id", (c) =>
@@ -1034,6 +1157,46 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
  */
 function loadAnswer(store: Store, root: string, id: string): StoredAnswer | undefined {
   return loadStoredAnswer(store, root, id);
+}
+
+function sameOrigin(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).origin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
+}
+
+function correctionRequest(
+  answerId: string,
+  body: Record<string, string | File | string[]>,
+): CorrectionDraftRequest {
+  const value = (key: string): string => {
+    const raw = body[key];
+    return Array.isArray(raw) ? String(raw[0] ?? "") : raw instanceof File ? "" : String(raw ?? "");
+  };
+  return {
+    answerId,
+    targetKind: value("targetKind"),
+    targetId: value("targetId"),
+    field: value("field"),
+    corrected: value("corrected"),
+    author: value("author"),
+    reason: value("reason"),
+    expectedRevision: value("expectedRevision"),
+  };
+}
+
+function correctionStatus(error: unknown): 409 | 422 {
+  return error instanceof CorrectionConflictError || error instanceof DecideConflictError ? 409 : 422;
+}
+
+function correctionMessage(error: unknown): string {
+  return error instanceof CorrectionError || error instanceof DecideConflictError || error instanceof Error
+    ? error.message
+    : String(error);
 }
 
 /**

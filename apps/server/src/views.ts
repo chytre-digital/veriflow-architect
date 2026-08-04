@@ -11,8 +11,18 @@ import {
 } from "@veriflow/diagram";
 import type { TrafficCell } from "@veriflow/contracts";
 import type { FlowAnswer, Step } from "@veriflow/flow-answer";
-import { THRESHOLDS, kindOf, moduleOwning, thresholdOf, undecidedInRow, undecidedQuestions } from "@veriflow/answers";
+import {
+  THRESHOLDS,
+  buildAnswerLineage,
+  kindOf,
+  moduleOwning,
+  thresholdOf,
+  undecidedInRow,
+  undecidedQuestions,
+} from "@veriflow/answers";
 import type {
+  AnswerLineageContext,
+  AnswerRelationship,
   AnswerDiff,
   AnswerRow,
   CitationRow,
@@ -183,6 +193,23 @@ h2.section { font-size:15px; font-weight:600; margin:28px 0 10px; }
   padding:13px 15px; text-decoration:none; display:block; }
 a.card:hover { border-color:var(--line-strong); background:var(--panel-2); }
 .card h2 { margin:0 0 6px; font-size:15px; font-weight:590; }
+.lineage-list { display:grid; gap:8px; max-width:1000px; }
+.lineage-row { margin-left:min(calc(var(--lineage-depth) * 22px),132px); position:relative; }
+.lineage-row.is-child::before { content:""; position:absolute; left:-13px; top:0; bottom:50%; width:10px;
+  border-left:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); }
+.lineage-edge { min-height:20px; margin:0 0 3px; color:var(--muted); font-size:11.5px; }
+.lineage-edge a { color:var(--ink-2); }
+.lineage-diagnostic { margin:8px 0 0; color:var(--danger); font-size:11.5px; }
+.lineage-panel { max-width:1000px; margin:0 0 16px; padding:12px 14px; border:1px solid var(--line);
+  border-radius:var(--radius); background:var(--panel); }
+.lineage-panel h2 { margin:0 0 8px; font-size:13px; font-weight:590; }
+.lineage-groups { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.lineage-group h3 { margin:0 0 4px; color:var(--quiet); font-size:10.5px; font-weight:560;
+  letter-spacing:.07em; text-transform:uppercase; }
+.lineage-link { display:block; padding:4px 0; border-bottom:1px solid var(--line); font-size:12px; }
+.lineage-link:last-child { border-bottom:0; }
+.lineage-link a { font-weight:540; text-decoration:none; }
+.lineage-link a:hover { color:var(--accent); }
 .split { display:grid; grid-template-columns:minmax(0,1fr) 312px; gap:18px; align-items:start; }
 @media (max-width:1100px) { .split { grid-template-columns:1fr; } }
 .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg);
@@ -518,6 +545,26 @@ svg.hier { display:block; }
 form.ask { max-width:820px; display:grid; gap:12px; }
 form.ask textarea { width:100%; min-height:74px; padding:11px 13px; border:1px solid var(--line-strong);
   border-radius:var(--radius); background:var(--bg); color:var(--ink); font:inherit; resize:vertical; }
+.correction-list, .correction-fields, .correction-history { display:grid; gap:10px; }
+.correction-group summary { cursor:pointer; display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.correction-group[open] summary { margin-bottom:12px; }
+.correction-field { padding:12px; border:1px solid var(--line); border-radius:7px; background:var(--panel); }
+.correction-field-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.correction-original { display:grid; grid-template-columns:120px minmax(0,1fr); gap:10px; margin-top:8px;
+  font-size:12px; color:var(--muted); }
+.correction-text { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--ink); }
+.correction-form { display:grid; gap:9px; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+.correction-form label { display:grid; gap:5px; font-size:11px; color:var(--muted); }
+.correction-form textarea, .correction-form input { width:100%; padding:8px 10px; border:1px solid var(--line-strong);
+  border-radius:6px; background:var(--bg); color:var(--ink); font:inherit; resize:vertical; }
+.correction-attribution { display:grid; grid-template-columns:minmax(150px,.5fr) minmax(240px,1.5fr); gap:9px; }
+.correction-form button { justify-self:start; }
+.correction-compare { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:14px 0; }
+.correction-compare.compact { grid-template-columns:repeat(2,minmax(0,1fr)); margin:10px 0; }
+.correction-value { padding:12px; border:1px solid var(--line); border-radius:7px; background:var(--panel); }
+.correction-value .correction-text { margin:7px 0; }
+.correction-confirm { display:flex; align-items:center; justify-content:flex-end; gap:16px; margin-top:16px; }
+.correction-error { border-color:var(--danger); background:var(--danger-soft); }
 button.primary, button.quiet { padding:7px 15px; border-radius:6px; }
 button.primary { background:var(--ink); color:var(--bg); font-size:13px; font-weight:540; border:1px solid var(--ink); }
 button.primary:disabled { opacity:.45; cursor:default; }
@@ -543,6 +590,7 @@ button.quiet { background:transparent; color:var(--muted); border:1px solid var(
 
 /* ------------------------------------------------------------ responsive */
 @media (max-width:900px) {
+  .lineage-groups { grid-template-columns:1fr; }
   .shell { grid-template-columns:1fr; }
   .rail { border-right:0; border-bottom:1px solid var(--line); }
   .sidebar { position:static; height:auto; }
@@ -552,6 +600,8 @@ button.quiet { background:transparent; color:var(--muted); border:1px solid var(
   .answer-tabs { padding:0 14px; }
   .canvas { padding:20px 14px 44px; }
   .detail-cols { grid-template-columns:1fr; gap:16px; }
+  .correction-compare, .correction-compare.compact, .correction-attribution { grid-template-columns:1fr; }
+  .correction-original { grid-template-columns:1fr; gap:3px; }
   .screen-head { flex-direction:column; }
 }
 `;
@@ -603,6 +653,7 @@ export type NavId =
   | "callgraph"
   | "flow-callgraph"
   | "flow"
+  | "review"
   | "paths"
   | "modules"
   | "freshness"
@@ -648,6 +699,7 @@ export interface Chrome {
 
 const ANSWER_VIEWS: Array<{ id: NavId; label: string; hint: string; path: (id: string) => string }> = [
   { id: "flow", label: "Flow", hint: "who talks to whom, in order", path: (id) => `/answers/${id}` },
+  { id: "review", label: "Review", hint: "correct prose and decide questions", path: (id) => `/answers/${id}/review` },
   { id: "paths", label: "Paths", hint: "every outcome, not just the happy one", path: (id) => `/answers/${id}/paths` },
   { id: "flow-callgraph", label: "Call graph", hint: "calls inside this flow's files", path: (id) => `/answers/${id}/callgraph` },
   { id: "modules", label: "Modules", hint: "boundaries and contracts", path: (id) => `/answers/${id}/modules` },
@@ -672,6 +724,7 @@ const NAV_LABEL: Record<NavId, string> = {
   callgraph: "Call graph",
   "flow-callgraph": "Call graph",
   flow: "Flow",
+  review: "Review",
   paths: "Paths",
   modules: "Modules",
   freshness: "Freshness",
@@ -882,6 +935,70 @@ function kindPill(kind: string): string {
     : "";
 }
 
+function answerStatePill(row: AnswerRow): string {
+  if (row.status === "superseded") return `<span class="pill warn">superseded</span>`;
+  if (kindOf(row) === "proposed") return `<span class="pill warn">proposed</span>`;
+  return `<span class="pill good">current</span>`;
+}
+
+function relationshipLabel(relationship: AnswerRelationship): string {
+  switch (relationship) {
+    case "follow_up":
+      return "follow-up to";
+    case "supersedes":
+      return "supersedes";
+    case "proposes_change_to":
+      return "proposes change to";
+  }
+}
+
+function relationshipPill(relationship: AnswerRelationship): string {
+  return `<span class="pill">${relationshipLabel(relationship)}</span>`;
+}
+
+function lineageDiagnostic(diagnostic: AnswerLineageContext["diagnostics"][number]): string {
+  switch (diagnostic.kind) {
+    case "missing_parent":
+      return `Lineage diagnostic: parent ${diagnostic.parentId} is missing. This answer remains reachable as a root.`;
+    case "self_link":
+      return "Lineage diagnostic: this answer points to itself. The self-link is ignored in the hierarchy.";
+    case "cycle":
+      return `Lineage diagnostic: cycle detected among ${diagnostic.answerIds.join(", ")}. The answers remain reachable without recursive traversal.`;
+  }
+}
+
+function lineageDiagnostics(diagnostics: AnswerLineageContext["diagnostics"]): string {
+  return diagnostics
+    .map((diagnostic) => `<div class="lineage-diagnostic">${esc(lineageDiagnostic(diagnostic))}</div>`)
+    .join("");
+}
+
+function answerLineagePanel(lineage: AnswerLineageContext<AnswerRow> | undefined): string {
+  if (!lineage) return "";
+  const link = (item: { answer: AnswerRow; relationship: AnswerRelationship }): string =>
+    `<div class="lineage-link">${relationshipPill(item.relationship)}
+       <a href="/answers/${esc(item.answer.id)}">${esc(item.answer.title)}</a>
+       ${answerStatePill(item.answer)}</div>`;
+  const parent = lineage.parent
+    ? link(lineage.parent)
+    : `<div class="lineage-link"><span class="pill">root answer</span> no stored parent</div>`;
+  const children = lineage.children.length
+    ? lineage.children.map(link).join("")
+    : `<div class="lineage-link meta">No direct children.</div>`;
+  const siblings = lineage.siblings.length
+    ? lineage.siblings.map(link).join("")
+    : `<div class="lineage-link meta">No siblings with this parent.</div>`;
+  return `<section class="lineage-panel" aria-label="Answer lineage">
+    <h2>Answer lineage</h2>
+    <div class="lineage-groups">
+      <div class="lineage-group"><h3>Parent</h3>${parent}</div>
+      <div class="lineage-group"><h3>Children</h3>${children}</div>
+      <div class="lineage-group"><h3>Siblings</h3>${siblings}</div>
+    </div>
+    ${lineageDiagnostics(lineage.diagnostics)}
+  </section>`;
+}
+
 /**
  * State first, then the number it came from. The word is the claim and the count is the evidence;
  * showing only the count made the reader do the classification the product is supposed to do.
@@ -903,10 +1020,11 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
   const standing = rows.filter((r) => r.status !== "superseded").length;
   const open = rows.reduce((total, r) => total + undecidedInRow(r), 0);
   const proposals = rows.filter((r) => kindOf(r) === "proposed").length;
+  const byId = new Map(rows.map((row) => [row.id, row]));
 
   const body = rows.length
-    ? rows
-        .map((r) => {
+    ? buildAnswerLineage(rows)
+        .map(({ answer: r, depth, relationship, diagnostics }) => {
           const proposal = kindOf(r) === "proposed" && r.parent_answer_id;
           const flowOverlay = proposal
             ? `/answers/${esc(r.parent_answer_id!)}?overlay=${encodeURIComponent(r.id)}`
@@ -914,14 +1032,23 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
           const moduleOverlay = proposal
             ? `/answers/${esc(r.parent_answer_id!)}/modules?overlay=${encodeURIComponent(r.id)}`
             : undefined;
-          return `<div class="card">
+          const parent = r.parent_answer_id ? byId.get(r.parent_answer_id) : undefined;
+          const edge = relationship
+            ? `<div class="lineage-edge">${relationshipPill(relationship)} ${
+                parent
+                  ? `<a href="/answers/${esc(parent.id)}">${esc(parent.title)}</a>`
+                  : `<span class="mono">${esc(r.parent_answer_id ?? "")}</span>`
+              }</div>`
+            : `<div class="lineage-edge"><span class="pill">root answer</span></div>`;
+          return `<div class="lineage-row${depth ? " is-child" : ""}" style="--lineage-depth:${Math.min(depth, 6)}">
+  ${edge}<div class="card">
   <h2><a href="/answers/${r.id}">${esc(r.title)}</a></h2>
   <div class="meta">${kindPill(kindOf(r))}${ratioPill(r.verified, r.unverified, Number(r.intent ?? 0))}
     <span class="pill">${undecidedInRow(r)} open question${undecidedInRow(r) === 1 ? "" : "s"}</span>
     <span class="pill">${
       kindOf(r) === "proposed" && r.review_state === "reviewed" ? "accepted" : esc(r.review_state)
     }</span>
-    ${r.status === "superseded" ? `<span class="pill warn">superseded</span>` : ""}
+    ${answerStatePill(r)}
     <span>${esc(r.created_at.slice(0, 16).replace("T", " "))}</span></div>
     ${
       proposal
@@ -930,7 +1057,7 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
              <a class="primary" href="${moduleOverlay}">Review architecture changes</a>
            </div>`
         : ""
-    }</div>`;
+    }${lineageDiagnostics(diagnostics)}</div></div>`;
         })
         .join("\n")
     : `<p class="meta">No answers yet. <a href="/ask">Ask the first question</a>.</p>`;
@@ -956,7 +1083,7 @@ export function answersPage(chrome: Chrome, rows: AnswerRow[]): string {
               <a href="/architecture">architecture</a> — that one needs no agent at all.`,
          actions: `<a class="primary" href="/ask">Ask a question</a>`,
        })}
-       <div class="list">${body}</div>
+       <div class="lineage-list">${body}</div>
      </section>`,
   );
 }
@@ -989,6 +1116,8 @@ export interface FlowPageInput {
   chrome: Chrome;
   answer: FlowAnswer;
   row: AnswerRow;
+  /** Direct read-only navigation around this immutable answer. */
+  lineage?: AnswerLineageContext<AnswerRow>;
   citations: CitationRow[];
   freshness: Freshness;
   snapshot: SnapshotFacts;
@@ -1199,6 +1328,7 @@ export function flowPage(input: FlowPageInput): string {
            : ""
        }
        ${row.status === "superseded" ? `<span class="pill warn">superseded — a newer answer exists</span>` : ""}
+       ${row.status !== "superseded" && kindOf(row) !== "proposed" ? `<span class="pill good">current</span>` : ""}
        ${input.snapshot.dirtyAtCapture ? `<span class="pill warn">tree was dirty at capture</span>` : ""}
        ${
          input.exports?.length
@@ -1208,6 +1338,7 @@ export function flowPage(input: FlowPageInput): string {
            : ""
        }`,
        })}
+       ${answerLineagePanel(input.lineage)}
        ${input.overlay ? "" : variantChips(answer, row.id, input.selectedBranchId)}
        ${input.overlay ? "" : runtimeCoverage}
        ${

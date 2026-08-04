@@ -6,9 +6,8 @@ import type { FlowAnswer } from "@veriflow/flow-answer";
  * original travels alongside it rather than being overwritten, so a reader can always see what the
  * agent actually said.
  *
- * The editing surface is deliberately still deferred — the schema and the provenance exist because
- * retrofitting them later is expensive, and because a served answer has to be able to say whether a
- * person has changed it.
+ * F021 exposes this contract in the browser. The records remain the boundary: the editor writes one
+ * of these rows and never rewrites the submitted answer.
  */
 
 export type CorrectionTargetKind =
@@ -58,7 +57,7 @@ export interface CorrectedAnswer {
 }
 
 /** Only text a human can meaningfully rewrite. A correction cannot re-point a citation or a fork. */
-const EDITABLE: Record<CorrectionTargetKind, readonly string[]> = {
+export const EDITABLE_CORRECTION_FIELDS: Record<CorrectionTargetKind, readonly string[]> = {
   answer: ["title"],
   step: ["label", "reasoning"],
   branch: ["title", "invariant"],
@@ -74,8 +73,8 @@ export function applyCorrections(answer: FlowAnswer, corrections: readonly Corre
   const unresolved: Correction[] = [];
 
   for (const correction of corrections) {
-    const target = locate(corrected, correction);
-    const allowed = EDITABLE[correction.targetKind] ?? [];
+    const target = locateCorrectionTarget(corrected, correction.targetKind, correction.targetId);
+    const allowed = EDITABLE_CORRECTION_FIELDS[correction.targetKind] ?? [];
     if (!target || !allowed.includes(correction.field)) {
       unresolved.push(correction);
       continue;
@@ -107,26 +106,30 @@ export function decisionsOf(corrections: readonly Correction[]): Map<string, Que
   return decisions;
 }
 
-function locate(answer: FlowAnswer, correction: Correction): object | undefined {
-  switch (correction.targetKind) {
+export function locateCorrectionTarget(
+  answer: FlowAnswer,
+  targetKind: CorrectionTargetKind,
+  targetId: string,
+): object | undefined {
+  switch (targetKind) {
     case "answer":
       return answer;
     case "step":
       // A branch's steps are steps too, and a correction should not care which list holds one.
       return (
-        answer.steps.find((s) => s.id === correction.targetId) ??
-        answer.branches.flatMap((b) => b.steps).find((s) => s.id === correction.targetId)
+        answer.steps.find((s) => s.id === targetId) ??
+        answer.branches.flatMap((b) => b.steps).find((s) => s.id === targetId)
       );
     case "branch":
-      return answer.branches.find((b) => b.id === correction.targetId);
+      return answer.branches.find((b) => b.id === targetId);
     case "lane":
-      return answer.lanes.find((l) => l.id === correction.targetId);
+      return answer.lanes.find((l) => l.id === targetId);
     case "module-edge":
-      return answer.moduleEdges.find((e) => `${e.from}->${e.to}` === correction.targetId);
+      return answer.moduleEdges.find((e) => `${e.from}->${e.to}` === targetId);
     case "external":
-      return answer.externalSystems.find((e) => e.id === correction.targetId);
+      return answer.externalSystems.find((e) => e.id === targetId);
     case "open-question":
-      return answer.openQuestions.find((q) => q.id === correction.targetId);
+      return answer.openQuestions.find((q) => q.id === targetId);
     default:
       return undefined;
   }

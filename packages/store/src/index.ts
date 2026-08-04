@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -127,6 +127,23 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
       `CREATE INDEX runtime_coverage_runs_by_answer
          ON runtime_coverage_runs(answer_id, imported_at DESC, id)`,
+    ],
+  },
+  {
+    to: 5,
+    summary: "an explicit relationship for every answer-lineage edge",
+    statements: [
+      // F022 — `parent_answer_id` used to carry two meanings and had no representation for an
+      // ordinary follow-up. The only historical writers were proposals and `ask --supersedes`, so
+      // their meaning can be preserved from stored facts without reading or deriving repository
+      // state. Future writers state the relationship directly.
+      `ALTER TABLE answers ADD COLUMN parent_relationship TEXT`,
+      `UPDATE answers
+         SET parent_relationship = CASE
+           WHEN parent_answer_id IS NULL THEN NULL
+           WHEN kind = 'proposed' THEN 'proposes_change_to'
+           ELSE 'supersedes'
+         END`,
     ],
   },
 ];
@@ -291,6 +308,7 @@ CREATE TABLE IF NOT EXISTS answers (
   run_id TEXT NOT NULL,
   snapshot_id TEXT NOT NULL,
   parent_answer_id TEXT,
+  parent_relationship TEXT,
   contract_version INTEGER NOT NULL,
   title TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -983,6 +1001,8 @@ export class Store {
     runId: string;
     snapshotId: string;
     parentAnswerId?: string;
+    /** What the parent edge means. Required by F022 whenever a caller knows more than "related". */
+    parentRelationship?: "follow_up" | "supersedes" | "proposes_change_to";
     /** `observed` or `proposed`. Defaulted here as well as in SQL, so an old caller is unchanged. */
     kind?: string;
     title: string;
@@ -1011,9 +1031,10 @@ export class Store {
       this.db
         .prepare(
           `INSERT INTO answers
-           (id, question_id, run_id, snapshot_id, parent_answer_id, contract_version, title, status,
+           (id, question_id, run_id, snapshot_id, parent_answer_id, parent_relationship,
+            contract_version, title, status,
             review_state, kind, verified, unverified, intent, open_questions, body_json, created_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, 'draft', 'unreviewed', ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'draft', 'unreviewed', ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           answer.id,
@@ -1021,6 +1042,10 @@ export class Store {
           answer.runId,
           answer.snapshotId,
           answer.parentAnswerId ?? null,
+          answer.parentAnswerId
+            ? answer.parentRelationship ??
+                (answer.kind === "proposed" ? "proposes_change_to" : "follow_up")
+            : null,
           answer.title,
           answer.kind ?? "observed",
           answer.verified,
@@ -1068,8 +1093,9 @@ export class Store {
   listAnswers(): Array<Record<string, unknown>> {
     return this.db
       .prepare(
-        `SELECT id, question_id, run_id, snapshot_id, parent_answer_id, title, status, review_state,
-                kind, verified, unverified, intent, open_questions, ${DECIDED_QUESTIONS}, created_at
+        `SELECT id, question_id, run_id, snapshot_id, parent_answer_id, parent_relationship, title,
+                status, review_state, kind, verified, unverified, intent, open_questions,
+                ${DECIDED_QUESTIONS}, created_at
          FROM answers a ORDER BY created_at DESC`,
       )
       .all() as Array<Record<string, unknown>>;
@@ -1149,6 +1175,67 @@ export class Store {
         correction.note ?? null,
         new Date().toISOString(),
       );
+  }
+
+  /**
+   * Insert a browser correction only if the exact field still has the revision its form read.
+   * `BEGIN IMMEDIATE` makes the revision check and insert one write operation even when another
+   * VeriFlow process has the database open. The submitted answer is the implicit first revision.
+   */
+  insertCorrectionIfRevision(
+    correction: {
+      id: string;
+      answerId: string;
+      targetKind: string;
+      targetId: string;
+      field: string;
+      original: string;
+      corrected: string;
+      author: string;
+      note?: string;
+    },
+    expectedRevision: string,
+  ): { inserted: true } | { inserted: false; currentRevision: string } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const latest = this.db
+        .prepare(
+          `SELECT id FROM answer_corrections
+           WHERE answer_id = ? AND target_kind = ? AND target_id = ? AND field = ?
+           ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+        )
+        .get(correction.answerId, correction.targetKind, correction.targetId, correction.field) as
+        | { id: string }
+        | undefined;
+      const currentRevision = latest?.id ?? "submitted";
+      if (currentRevision !== expectedRevision) {
+        this.db.exec("ROLLBACK");
+        return { inserted: false, currentRevision };
+      }
+      this.db
+        .prepare(
+          `INSERT INTO answer_corrections
+           (answer_id, id, target_kind, target_id, field, original, corrected, author, note, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          correction.answerId,
+          correction.id,
+          correction.targetKind,
+          correction.targetId,
+          correction.field,
+          correction.original,
+          correction.corrected,
+          correction.author,
+          correction.note ?? null,
+          new Date().toISOString(),
+        );
+      this.db.exec("COMMIT");
+      return { inserted: true };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   readCorrections(answerId: string): Array<Record<string, unknown>> {
@@ -1513,7 +1600,9 @@ export class Store {
     this.db.exec("BEGIN");
     try {
       this.db.prepare("UPDATE answers SET status = 'superseded' WHERE id = ?").run(oldAnswerId);
-      this.db.prepare("UPDATE answers SET parent_answer_id = ? WHERE id = ?").run(oldAnswerId, newAnswerId);
+      this.db
+        .prepare("UPDATE answers SET parent_answer_id = ?, parent_relationship = 'supersedes' WHERE id = ?")
+        .run(oldAnswerId, newAnswerId);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");

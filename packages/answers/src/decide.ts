@@ -28,6 +28,13 @@ export class DecideError extends Error {
   }
 }
 
+export class DecideConflictError extends DecideError {
+  constructor(message: string) {
+    super(message);
+    this.name = "DecideConflictError";
+  }
+}
+
 export interface DecideRequest {
   /** Full id or prefix, the way a person reads one off `veriflow answers`. */
   answerId: string;
@@ -35,6 +42,8 @@ export interface DecideRequest {
   decision: string;
   author: string;
   rationale?: string;
+  /** Browser form revision. CLI callers omit it and keep the original append-only behaviour. */
+  expectedRevision?: string;
 }
 
 export interface Decided {
@@ -71,7 +80,7 @@ export function decideQuestion(store: Store, root: string, request: DecideReques
     );
   }
 
-  store.insertCorrection({
+  const correction = {
     id: randomUUID(),
     answerId: before.row.id,
     targetKind: "open-question",
@@ -83,7 +92,17 @@ export function decideQuestion(store: Store, root: string, request: DecideReques
     corrected: decision,
     author,
     ...(request.rationale?.trim() ? { note: request.rationale.trim() } : {}),
-  });
+  };
+  if (request.expectedRevision) {
+    const inserted = store.insertCorrectionIfRevision(correction, request.expectedRevision);
+    if (!inserted.inserted) {
+      throw new DecideConflictError(
+        `this decision changed before confirmation; expected revision ${request.expectedRevision}, current revision ${inserted.currentRevision}`,
+      );
+    }
+  } else {
+    store.insertCorrection(correction);
+  }
 
   const stored = loadStoredAnswer(store, root, before.row.id)!;
   const recorded = decisionsOf(stored.corrections).get(question.id);

@@ -1,6 +1,6 @@
 # Product roadmap
 
-Twenty-two features in six iterations. The first three iterations produce the original MVP: on a
+Twenty-two shipped features in six iterations. The first three iterations produce the original MVP: on a
 real repository, what the [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a
 verified flow answer out, stored locally, browsable and available to an agent. Iteration 4 assembles
 many answers into a project view. Iteration 5 closes the design loop from written claim and observed
