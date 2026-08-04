@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -164,15 +164,37 @@ describe("the bounded Cobertura adapter", () => {
     expect(parsed.files[1]!.lines[0]).toEqual({ line: 10, hits: 1, branches: { covered: 1, total: 2 } });
   });
 
+  it("accepts the standard inert Cobertura 0.4 DOCTYPE emitted by Vitest", () => {
+    const document = xml("C:\\work\\repo").replace(
+      "<coverage>",
+      '<!DOCTYPE coverage SYSTEM "http://cobertura.sourceforge.net/xml/coverage-04.dtd">\n<coverage>',
+    );
+
+    expect(parseCoberturaXml(Buffer.from(document)).files[0]?.path).toBe("generated/missing.ts");
+  });
+
   it("refuses DTD/entity expansion, malformed nesting and oversized input", () => {
     expect(() => parseCoberturaXml(Buffer.from(`<!DOCTYPE x [<!ENTITY y SYSTEM "file:///etc/passwd">]><coverage/>`)))
       .toThrowError(CoberturaError);
+    expect(() =>
+      parseCoberturaXml(Buffer.from(`<!DOCTYPE coverage SYSTEM "https://example.com/evil.dtd"><coverage/>`)),
+    ).toThrowError(CoberturaError);
     expect(() => parseCoberturaXml(Buffer.from(`<coverage><class filename="a"></coverage>`))).toThrow(/does not match/);
     expect(() => parseCoberturaXml(Buffer.from(`<coverage/><coverage/>`))).toThrow(/more than one root/);
-    expect(() =>
-      parseCoberturaXml(Buffer.from(xml("", `<class filename="a"><lines><line number="1" hits="0" condition-coverage="50% (1/2)"/></lines></class>`))),
-    ).toThrow(/zero hits/);
     expect(() => parseCoberturaXml(new Uint8Array(10 * 1024 * 1024 + 1))).toThrow(/limit/);
+  });
+
+  it("keeps V8 branch evidence when source-map remapping reports zero line hits", () => {
+    const parsed = parseCoberturaXml(
+      Buffer.from(
+        xml(
+          "",
+          `<class filename="a"><lines><line number="1" hits="0" condition-coverage="50% (1/2)"/></lines></class>`,
+        ),
+      ),
+    );
+
+    expect(parsed.files[0]?.lines[0]).toEqual({ line: 1, hits: 0, branches: { covered: 1, total: 2 } });
   });
 });
 
@@ -317,10 +339,19 @@ describe("immutable import and shared read surfaces", () => {
     expect(detail.status).toBe(200);
     const html = await detail.text();
     expect(html).toContain("Executed evidence on exact cited lines");
-    expect(html).toContain("Open F008 proxy");
+    expect(html).toContain("Runtime coverage");
+    expect(html).toContain("How runtime coverage is calculated");
+    expect(html).not.toContain("F019");
+    expect(html).not.toContain("F008");
+    expect(html).toContain('<div class="scroll"><table class="grid">');
+    expect(html).toContain('<aside class="runtime-provenance">');
+    expect(html).toContain("Open test-identifier proxy");
     expect(html).toContain(imported.run.id);
     const answer = await (await createApp(root).request(`/answers/${ANSWER}`)).text();
-    expect(answer).toContain("Imported runtime coverage");
+    expect(answer).toContain("Runtime coverage");
+    expect(answer).not.toContain("F019");
+    expect(answer).not.toContain("F008");
+    expect(answer).toContain("veriflow coverage run");
     expect(answer).toContain(`/answers/${ANSWER}/runtime-coverage/${imported.run.id}`);
     expect((await createApp(root).request(`/answers/${ANSWER}/runtime-coverage/missing`)).status).toBe(404);
 
@@ -386,5 +417,80 @@ describe("immutable import and shared read surfaces", () => {
     expect(missing.stderr).toContain("no runtime coverage run missing");
     expect(readFileSync(join(root, "src", "a.ts"), "utf8")).toBe(beforeSource);
     expect(execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: root, encoding: "utf8" })).toBe(beforeGit);
+  });
+
+  it("runs a conventional coverage:cobertura script and imports it with one command", () => {
+    const { root, store } = fixture();
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ scripts: { "coverage:cobertura": "node write-coverage.mjs" } }),
+    );
+    writeFileSync(
+      join(root, "write-coverage.mjs"),
+      `import { copyFileSync, mkdirSync } from "node:fs";
+mkdirSync("coverage", { recursive: true });
+copyFileSync("coverage.xml", "coverage/cobertura-coverage.xml");
+`,
+    );
+    store.close();
+    stores.splice(stores.indexOf(store), 1);
+
+    const cli = join(resolve("."), "apps", "cli", "src", "main.ts");
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--no-warnings=ExperimentalWarning",
+        "--import",
+        "tsx",
+        cli,
+        "coverage",
+        "run",
+        ANSWER,
+        root,
+        "--json",
+      ],
+      { cwd: resolve("."), encoding: "utf8" },
+    );
+    const run = JSON.parse(output) as Record<string, unknown>;
+    const runProvenance = run["provenance"] as Record<string, unknown>;
+
+    expect(runProvenance["command"]).toBe("npm run coverage:cobertura");
+    expect(runProvenance["producer"]).toBe("coverage:cobertura via npm");
+    expect(runProvenance["dirty"]).toBe(true);
+    expect(existsSync(join(root, "coverage", "cobertura-coverage.xml"))).toBe(true);
+    const reopened = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    stores.push(reopened);
+    expect(reopened.listRuntimeCoverageRuns(ANSWER)).toHaveLength(1);
+  });
+
+  it("does not import an old artifact when the explicit producer fails", () => {
+    const { root, store } = fixture();
+    store.close();
+    stores.splice(stores.indexOf(store), 1);
+    const cli = join(resolve("."), "apps", "cli", "src", "main.ts");
+    const failed = spawnSync(
+      process.execPath,
+      [
+        "--no-warnings=ExperimentalWarning",
+        "--import",
+        "tsx",
+        cli,
+        "coverage",
+        "run",
+        ANSWER,
+        root,
+        "--command",
+        `"${process.execPath}" -e "process.exit(7)"`,
+        "--artifact",
+        "coverage.xml",
+      ],
+      { cwd: resolve("."), encoding: "utf8" },
+    );
+
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toContain("artifact was not imported");
+    const reopened = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+    stores.push(reopened);
+    expect(reopened.listRuntimeCoverageRuns(ANSWER)).toEqual([]);
   });
 });

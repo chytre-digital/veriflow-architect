@@ -3,11 +3,14 @@
  *
  * This is deliberately a small, bounded Cobertura reader rather than a general XML facility. It
  * accepts the elements Cobertura uses for sources, classes and lines, validates the XML nesting,
- * and rejects declarations/entities instead of expanding input controlled by a coverage producer.
+ * and rejects entities instead of expanding input controlled by a coverage producer. The canonical
+ * Cobertura 0.4 DOCTYPE emitted by common reporters is ignored as inert metadata; no DTD is loaded.
  */
 
 export const MAX_COBERTURA_BYTES = 10 * 1024 * 1024;
 const MAX_XML_ELEMENTS = 500_000;
+const STANDARD_COBERTURA_DOCTYPE =
+  /<!DOCTYPE\s+coverage\s+SYSTEM\s+(["'])http:\/\/cobertura\.sourceforge\.net\/xml\/coverage-04\.dtd\1\s*>/gi;
 
 export interface CoberturaLine {
   line: number;
@@ -60,10 +63,21 @@ export function parseCoberturaXml(bytes: Uint8Array): CoberturaArtifact {
   } catch {
     throw new CoberturaError("artifact.malformed", "Cobertura artifact is not valid UTF-8");
   }
+  const doctypes = [...xml.matchAll(STANDARD_COBERTURA_DOCTYPE)];
+  if (doctypes.length > 1) {
+    throw new CoberturaError("artifact.malformed", "Cobertura artifact contains more than one DOCTYPE");
+  }
+  const coverageRoot = xml.search(/<coverage(?:\s|>)/i);
+  if (doctypes[0]?.index !== undefined && (coverageRoot < 0 || doctypes[0].index > coverageRoot)) {
+    throw new CoberturaError("artifact.malformed", "Cobertura DOCTYPE must appear before the root element");
+  }
+  // Preserve offsets while making the declaration invisible to the deliberately small parser.
+  // The URI is never opened and a declaration with an internal subset cannot match this pattern.
+  xml = xml.replace(STANDARD_COBERTURA_DOCTYPE, (doctype) => " ".repeat(doctype.length));
   if (/<!DOCTYPE\b|<!ENTITY\b/i.test(xml)) {
     throw new CoberturaError(
       "artifact.unsafe_xml",
-      "Cobertura artifact contains a DTD or entity declaration; external/entity expansion is forbidden",
+      "Cobertura artifact contains an unsupported DTD or entity declaration; expansion is forbidden",
     );
   }
 
@@ -100,11 +114,9 @@ export function parseCoberturaXml(bytes: Uint8Array): CoberturaArtifact {
       if (source && !sources.includes(source)) sources.push(source);
     }
     if (!entry.line) return;
-    if (entry.line.hits === 0 && (entry.line.branches?.covered ?? 0) > 0) {
-      malformed(
-        `line ${entry.line.line} reports zero hits but ${entry.line.branches!.covered} covered branch conditions`,
-      );
-    }
+    // V8 source-map remapping can legitimately attach covered branch conditions to a generated
+    // line whose line hit counter is zero. Keep both facts: the mapper still classifies the exact
+    // line as uncovered because hits=0, without discarding the reporter's branch evidence.
     const path = entry.classPath ?? activeClass();
     if (!path) malformed("a <line> appears outside a class with a filename");
     const lines = byFile.get(path) ?? new Map<number, CoberturaLine>();

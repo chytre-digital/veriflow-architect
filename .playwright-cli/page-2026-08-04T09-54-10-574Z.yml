@@ -1,0 +1,2079 @@
+- generic [ref=e2]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - link "VF VeriFlow" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: VF
+        - generic [ref=e8]: VeriFlow
+      - generic [ref=e9]: local · read-only · nothing runs on open
+    - generic [ref=e10]:
+      - generic [ref=e11]: NaLekci
+      - generic [ref=e12]: 18 modules · 9 answers
+    - navigation [ref=e13]:
+      - link "Ask question in, flow out" [ref=e14] [cursor=pointer]:
+        - /url: /ask
+        - generic [ref=e15]: Ask
+        - generic [ref=e16]: question in, flow out
+      - generic [ref=e17]:
+        - generic [ref=e18]: Project
+        - link "All answers what has been asked" [ref=e19] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e20]: All answers
+          - generic [ref=e21]: what has been asked
+        - link "Project what the answers add up to" [ref=e22] [cursor=pointer]:
+          - /url: /project
+          - generic [ref=e23]: Project
+          - generic [ref=e24]: what the answers add up to
+        - link "Invariants what outcomes say they protect" [ref=e25] [cursor=pointer]:
+          - /url: /invariants
+          - generic [ref=e26]: Invariants
+          - generic [ref=e27]: what outcomes say they protect
+        - link "Architecture modules and the traffic between them" [ref=e28] [cursor=pointer]:
+          - /url: /architecture
+          - generic [ref=e29]: Architecture
+          - generic [ref=e30]: modules and the traffic between them
+        - link "Call graph every function the doors reach" [ref=e31] [cursor=pointer]:
+          - /url: /callgraph
+          - generic [ref=e32]: Call graph
+          - generic [ref=e33]: every function the doors reach
+      - generic [ref=e34]:
+        - generic [ref=e35]: Answered flows
+        - generic [ref=e36]:
+          - link "Životní cyklus kreditu v zákaznické peněžence lektora" [ref=e38] [cursor=pointer]:
+            - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc
+          - link "Vznik účetního/daňového dokladu po settlementu lekce nebo dobití kreditu" [ref=e41] [cursor=pointer]:
+            - /url: /answers/3bc3c547-b02e-4ca3-973f-f1a174946c6f
+          - link "Rezervace lekce a atomická úhrada kreditem zákazníka u lektora" [ref=e44] [cursor=pointer]:
+            - /url: /answers/88c61a32-d51d-4550-a6dd-49c3394c0456
+          - link "Vyrovnání již existující rezervace z interního kreditu — entry point POST /api/instructor/bookings/[id]/pay-from-credit" [ref=e47] [cursor=pointer]:
+            - /url: /answers/b739e2a6-5f03-4375-a0d7-484cc82938df
+          - 'link "Lektor vytvoří skupinovou aktivitu a následně jí přiřadí termíny (entry point: EventsTabPanel.submitEvent)" [ref=e50] [cursor=pointer]':
+            - /url: /answers/ac4ed34f-3e88-48cb-94ca-48fedba18351
+          - link "Refundace rezervace při zrušení lekce lektorem přes PATCH /api/instructor/bookings/[id]" [ref=e53] [cursor=pointer]:
+            - /url: /answers/1d1bbc84-e37d-49a6-bf79-5d5fe61ef9ba
+          - link "Zrušení rezervace lekce a vrácení peněz zákazníkovi" [ref=e56] [cursor=pointer]:
+            - /url: /answers/cd1557a2-d181-496a-92ba-16d62e0318df
+          - link "Rezervace a zaplacení lekce přes marketplace checkout (pay_then_book s kapacitním holdem)" [ref=e59] [cursor=pointer]:
+            - /url: /answers/9a197a1c-bf9f-4219-bf9c-ab51f1c4324a
+          - link "… and 1 more" [ref=e61] [cursor=pointer]:
+            - /url: /
+    - generic [ref=e63]:
+      - button "Dark" [ref=e64] [cursor=pointer]
+      - generic [ref=e65]: no API key · runs in your agent
+  - main [ref=e66]:
+    - generic [ref=e67]:
+      - generic [ref=e68]:
+        - link "NaLekci" [ref=e69] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e70]: /
+        - link "Životní cyklus kreditu v zákaznické peněžence lekto…" [ref=e71] [cursor=pointer]:
+          - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc
+        - generic [ref=e72]: /
+        - generic [ref=e73]: Runtime coverage
+      - generic [ref=e74]:
+        - generic [ref=e75]: fbd0e96
+        - generic [ref=e77]: staging
+        - generic [ref=e79]: 1743 files · 7122 symbols
+    - navigation "Flow views" [ref=e80]:
+      - link "Flow" [ref=e81] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc
+      - link "Review" [ref=e82] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/review
+      - link "Paths" [ref=e83] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/paths
+      - link "Call graph" [ref=e84] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/callgraph
+      - link "Modules" [ref=e85] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/modules
+      - link "Freshness" [ref=e86] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/freshness
+      - link "Metrics" [ref=e87] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/metrics
+      - link "Runtime" [ref=e88] [cursor=pointer]:
+        - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/runtime-coverage/rc_f8133a7a079f0984f1fdada7eb58d75c
+    - generic [ref=e90]:
+      - generic [ref=e91]:
+        - generic [ref=e92]:
+          - generic [ref=e93]: VeriFlow Runtime Coverage · F019
+          - heading "Executed evidence on exact cited lines" [level=1] [ref=e94]
+          - paragraph [ref=e95]: Cobertura XML produced by Vitest v4 unit + integration suites. Test execution and import happen only through an explicit CLI writer; opening this page is read-only. This run is never averaged with the F008 identifier proxy.
+          - generic [ref=e96]:
+            - generic [ref=e97]: stale tree evidence
+            - generic [ref=e98]: complete artifact
+            - generic [ref=e99]: 77/154 cited lines mapped
+            - generic [ref=e100]: 26460 artifact lines outside flow
+            - generic [ref=e101]: rc_f8133a7a079f0984f1fdada7eb58d75c
+        - link "Open F008 proxy" [ref=e103] [cursor=pointer]:
+          - /url: /answers/c3f6d1de-6f59-417d-b0be-560fa247e9dc/metrics?view=coverage
+      - generic [ref=e104]:
+        - generic [ref=e105]:
+          - generic [ref=e106]: Mapped-line coverage
+          - generic [ref=e107]: 80.5%
+          - generic [ref=e108]: raw producer facts · snapshot mismatch
+        - generic [ref=e109]:
+          - generic [ref=e110]: Covered cited lines
+          - generic [ref=e111]: 62/ 77
+          - generic [ref=e112]: hit and every reported branch covered
+        - generic [ref=e113]:
+          - generic [ref=e114]: Uncovered cited lines
+          - generic [ref=e115]: "15"
+          - generic [ref=e116]: zero hits or an uncovered condition
+        - generic [ref=e117]:
+          - generic [ref=e118]: Not reported
+          - generic [ref=e119]: 77/ 154
+          - generic [ref=e120]: SQL or source absent from this producer
+        - generic [ref=e121]:
+          - generic [ref=e122]: Branch coverage
+          - generic [ref=e123]: 79.3%
+          - generic [ref=e124]: 46/58 reported conditions
+      - generic [ref=e125]:
+        - generic [ref=e126]:
+          - heading "Line and branch facts" [level=2] [ref=e127]
+          - paragraph [ref=e128]: "Only exact citations of this flow are expanded below; 26460 other artifact lines remain stored but do not enter the flow score. Lines: covered 0 · uncovered 0 · stale 154 · missing-source 0 · out-of-scope 0Branches: covered 0 · uncovered 0 · stale 58 · missing-source 0 · out-of-scope 0"
+          - table [ref=e130]:
+            - rowgroup [ref=e131]:
+              - row [ref=e132]:
+                - columnheader "State" [ref=e133]
+                - columnheader "Source" [ref=e134]
+                - columnheader "Execution" [ref=e135]
+                - columnheader "Why" [ref=e136]
+              - row [ref=e137]:
+                - cell "stale" [ref=e138]
+                - 'cell "src/app/api/instructor/bookings/[id]/pay-from-credit/route.ts:23 artifact: src\\app\\api\\instructor\\bookings\\[id]\\pay-from-credit\\route.ts" [ref=e140]':
+                  - link "src/app/api/instructor/bookings/[id]/pay-from-credit/route.ts:23" [ref=e141] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Finstructor%2Fbookings%2F%5Bid%5D%2Fpay-from-credit%2Froute.ts&line=23#L23
+                  - generic [ref=e142]: "artifact: src\\app\\api\\instructor\\bookings\\[id]\\pay-from-credit\\route.ts"
+                - cell "0 no branch fact" [ref=e143]:
+                  - text: "0"
+                  - generic [ref=e144]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s1 · module-edge app->payments complete artifact" [ref=e145]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e146]: step b7s1 · module-edge app->payments
+                  - generic [ref=e147]: complete artifact
+              - row [ref=e148]:
+                - cell "stale" [ref=e149]
+                - 'cell "src/app/api/instructor/customers/wallet/topup/route.ts:21 artifact: src\\app\\api\\instructor\\customers\\wallet\\topup\\route.ts" [ref=e151]':
+                  - link "src/app/api/instructor/customers/wallet/topup/route.ts:21" [ref=e152] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Finstructor%2Fcustomers%2Fwallet%2Ftopup%2Froute.ts&line=21#L21
+                  - generic [ref=e153]: "artifact: src\\app\\api\\instructor\\customers\\wallet\\topup\\route.ts"
+                - cell "0 no branch fact" [ref=e154]:
+                  - text: "0"
+                  - generic [ref=e155]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s1 complete artifact" [ref=e156]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e157]: step b4s1
+                  - generic [ref=e158]: complete artifact
+              - row [ref=e159]:
+                - cell "stale" [ref=e160]
+                - 'cell "src/app/api/user/bookings/pay-from-credit/route.ts:23 artifact: src\\app\\api\\user\\bookings\\pay-from-credit\\route.ts" [ref=e162]':
+                  - link "src/app/api/user/bookings/pay-from-credit/route.ts:23" [ref=e163] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fuser%2Fbookings%2Fpay-from-credit%2Froute.ts&line=23#L23
+                  - generic [ref=e164]: "artifact: src\\app\\api\\user\\bookings\\pay-from-credit\\route.ts"
+                - cell "0 no branch fact" [ref=e165]:
+                  - text: "0"
+                  - generic [ref=e166]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s12 complete artifact" [ref=e167]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e168]: step s12
+                  - generic [ref=e169]: complete artifact
+              - row [ref=e170]:
+                - cell "stale" [ref=e171]
+                - 'cell "src/app/api/user/credit-confirmations/[id]/route.ts:48 artifact: src\\app\\api\\user\\credit-confirmations\\[id]\\route.ts" [ref=e173]':
+                  - link "src/app/api/user/credit-confirmations/[id]/route.ts:48" [ref=e174] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fuser%2Fcredit-confirmations%2F%5Bid%5D%2Froute.ts&line=48#L48
+                  - generic [ref=e175]: "artifact: src\\app\\api\\user\\credit-confirmations\\[id]\\route.ts"
+                - cell "0 branches 0/2" [ref=e176]:
+                  - text: "0"
+                  - generic [ref=e177]: branches 0/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s15 complete artifact" [ref=e178]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e179]: step s15
+                  - generic [ref=e180]: complete artifact
+              - row [ref=e181]:
+                - cell "stale" [ref=e182]
+                - 'cell "src/app/api/user/credit-confirmations/[id]/route.ts:55 artifact: src\\app\\api\\user\\credit-confirmations\\[id]\\route.ts" [ref=e184]':
+                  - link "src/app/api/user/credit-confirmations/[id]/route.ts:55" [ref=e185] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fuser%2Fcredit-confirmations%2F%5Bid%5D%2Froute.ts&line=55#L55
+                  - generic [ref=e186]: "artifact: src\\app\\api\\user\\credit-confirmations\\[id]\\route.ts"
+                - cell "0 branches 0/4" [ref=e187]:
+                  - text: "0"
+                  - generic [ref=e188]: branches 0/4
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b14s1 complete artifact" [ref=e189]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e190]: step b14s1
+                  - generic [ref=e191]: complete artifact
+              - row [ref=e192]:
+                - cell "stale" [ref=e193]
+                - 'cell "src/app/api/user/credit-confirmations/[id]/route.ts:59 artifact: src\\app\\api\\user\\credit-confirmations\\[id]\\route.ts" [ref=e195]':
+                  - link "src/app/api/user/credit-confirmations/[id]/route.ts:59" [ref=e196] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fuser%2Fcredit-confirmations%2F%5Bid%5D%2Froute.ts&line=59#L59
+                  - generic [ref=e197]: "artifact: src\\app\\api\\user\\credit-confirmations\\[id]\\route.ts"
+                - cell "0 no branch fact" [ref=e198]:
+                  - text: "0"
+                  - generic [ref=e199]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s15 complete artifact" [ref=e200]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e201]: step s15
+                  - generic [ref=e202]: complete artifact
+              - row [ref=e203]:
+                - cell "stale" [ref=e204]
+                - 'cell "src/app/api/user/wallet/topup/route.ts:9 artifact: src\\app\\api\\user\\wallet\\topup\\route.ts" [ref=e206]':
+                  - link "src/app/api/user/wallet/topup/route.ts:9" [ref=e207] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fuser%2Fwallet%2Ftopup%2Froute.ts&line=9#L9
+                  - generic [ref=e208]: "artifact: src\\app\\api\\user\\wallet\\topup\\route.ts"
+                - cell "0 no branch fact" [ref=e209]:
+                  - text: "0"
+                  - generic [ref=e210]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s1 complete artifact" [ref=e211]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e212]: step s1
+                  - generic [ref=e213]: complete artifact
+              - row [ref=e214]:
+                - cell "stale" [ref=e215]
+                - 'cell "src/app/api/user/wallet/topup/route.ts:31 artifact: src\\app\\api\\user\\wallet\\topup\\route.ts" [ref=e217]':
+                  - link "src/app/api/user/wallet/topup/route.ts:31" [ref=e218] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fuser%2Fwallet%2Ftopup%2Froute.ts&line=31#L31
+                  - generic [ref=e219]: "artifact: src\\app\\api\\user\\wallet\\topup\\route.ts"
+                - cell "0 no branch fact" [ref=e220]:
+                  - text: "0"
+                  - generic [ref=e221]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s2 · module-edge app->payments complete artifact" [ref=e222]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e223]: step s2 · module-edge app->payments
+                  - generic [ref=e224]: complete artifact
+              - row [ref=e225]:
+                - cell "stale" [ref=e226]
+                - 'cell "src/app/api/webhooks/stripe/route.ts:71 artifact: src\\app\\api\\webhooks\\stripe\\route.ts" [ref=e228]':
+                  - link "src/app/api/webhooks/stripe/route.ts:71" [ref=e229] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=71#L71
+                  - generic [ref=e230]: "artifact: src\\app\\api\\webhooks\\stripe\\route.ts"
+                - cell "21 no branch fact" [ref=e231]:
+                  - text: "21"
+                  - generic [ref=e232]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s5 · external ext_stripe complete artifact" [ref=e233]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e234]: step s5 · external ext_stripe
+                  - generic [ref=e235]: complete artifact
+              - row [ref=e236]:
+                - cell "stale" [ref=e237]
+                - 'cell "src/app/api/webhooks/stripe/route.ts:77 artifact: src\\app\\api\\webhooks\\stripe\\route.ts" [ref=e239]':
+                  - link "src/app/api/webhooks/stripe/route.ts:77" [ref=e240] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=77#L77
+                  - generic [ref=e241]: "artifact: src\\app\\api\\webhooks\\stripe\\route.ts"
+                - cell "21 no branch fact" [ref=e242]:
+                  - text: "21"
+                  - generic [ref=e243]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge stripe->app complete artifact" [ref=e244]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e245]: module-edge stripe->app
+                  - generic [ref=e246]: complete artifact
+              - row [ref=e247]:
+                - cell "stale" [ref=e248]
+                - 'cell "src/app/api/webhooks/stripe/route.ts:90 artifact: src\\app\\api\\webhooks\\stripe\\route.ts" [ref=e250]':
+                  - link "src/app/api/webhooks/stripe/route.ts:90" [ref=e251] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=90#L90
+                  - generic [ref=e252]: "artifact: src\\app\\api\\webhooks\\stripe\\route.ts"
+                - cell "21 no branch fact" [ref=e253]:
+                  - text: "21"
+                  - generic [ref=e254]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s5 complete artifact" [ref=e255]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e256]: step s5
+                  - generic [ref=e257]: complete artifact
+              - row [ref=e258]:
+                - cell "stale" [ref=e259]
+                - cell [ref=e261]:
+                  - link "src/app/api/webhooks/stripe/route.ts:111" [ref=e262] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=111#L111
+                - cell "— no branch fact" [ref=e263]:
+                  - text: —
+                  - generic [ref=e264]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s5 · module-edge stripe->app complete artifact" [ref=e265]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e266]: step s5 · module-edge stripe->app
+                  - generic [ref=e267]: complete artifact
+              - row [ref=e268]:
+                - cell "stale" [ref=e269]
+                - cell [ref=e271]:
+                  - link "src/app/api/webhooks/stripe/route.ts:150" [ref=e272] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=150#L150
+                - cell "— no branch fact" [ref=e273]:
+                  - text: —
+                  - generic [ref=e274]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s6 complete artifact" [ref=e275]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e276]: step s6
+                  - generic [ref=e277]: complete artifact
+              - row [ref=e278]:
+                - cell "stale" [ref=e279]
+                - cell [ref=e281]:
+                  - link "src/app/api/webhooks/stripe/route.ts:186" [ref=e282] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=186#L186
+                - cell "— no branch fact" [ref=e283]:
+                  - text: —
+                  - generic [ref=e284]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s1 complete artifact" [ref=e285]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e286]: step b10s1
+                  - generic [ref=e287]: complete artifact
+              - row [ref=e288]:
+                - cell "stale" [ref=e289]
+                - 'cell "src/app/api/webhooks/stripe/route.ts:196 artifact: src\\app\\api\\webhooks\\stripe\\route.ts" [ref=e291]':
+                  - link "src/app/api/webhooks/stripe/route.ts:196" [ref=e292] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=196#L196
+                  - generic [ref=e293]: "artifact: src\\app\\api\\webhooks\\stripe\\route.ts"
+                - cell "1 no branch fact" [ref=e294]:
+                  - text: "1"
+                  - generic [ref=e295]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s1 complete artifact" [ref=e296]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e297]: step b10s1
+                  - generic [ref=e298]: complete artifact
+              - row [ref=e299]:
+                - cell "stale" [ref=e300]
+                - 'cell "src/app/api/webhooks/stripe/route.ts:203 artifact: src\\app\\api\\webhooks\\stripe\\route.ts" [ref=e302]':
+                  - link "src/app/api/webhooks/stripe/route.ts:203" [ref=e303] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=203#L203
+                  - generic [ref=e304]: "artifact: src\\app\\api\\webhooks\\stripe\\route.ts"
+                - cell "1 branches 1/2" [ref=e305]:
+                  - text: "1"
+                  - generic [ref=e306]: branches 1/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b12s1 · external ext_stripe complete artifact" [ref=e307]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e308]: step b12s1 · external ext_stripe
+                  - generic [ref=e309]: complete artifact
+              - row [ref=e310]:
+                - cell "stale" [ref=e311]
+                - cell [ref=e313]:
+                  - link "src/app/api/webhooks/stripe/route.ts:284" [ref=e314] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapp%2Fapi%2Fwebhooks%2Fstripe%2Froute.ts&line=284#L284
+                - cell "— no branch fact" [ref=e315]:
+                  - text: —
+                  - generic [ref=e316]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b2s2 · external ext_stripe complete artifact" [ref=e317]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e318]: step b2s2 · external ext_stripe
+                  - generic [ref=e319]: complete artifact
+              - row [ref=e320]:
+                - cell "stale" [ref=e321]
+                - 'cell "src/application/instructor/refundStrandedCredit.ts:52 artifact: src\\application\\instructor\\refundStrandedCredit.ts" [ref=e323]':
+                  - link "src/application/instructor/refundStrandedCredit.ts:52" [ref=e324] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=52#L52
+                  - generic [ref=e325]: "artifact: src\\application\\instructor\\refundStrandedCredit.ts"
+                - cell "4 no branch fact" [ref=e326]:
+                  - text: "4"
+                  - generic [ref=e327]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s1 complete artifact" [ref=e328]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e329]: step b9s1
+                  - generic [ref=e330]: complete artifact
+              - row [ref=e331]:
+                - cell "stale" [ref=e332]
+                - 'cell "src/application/instructor/refundStrandedCredit.ts:64 artifact: src\\application\\instructor\\refundStrandedCredit.ts" [ref=e334]':
+                  - link "src/application/instructor/refundStrandedCredit.ts:64" [ref=e335] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=64#L64
+                  - generic [ref=e336]: "artifact: src\\application\\instructor\\refundStrandedCredit.ts"
+                - cell "4 branches 4/4" [ref=e337]:
+                  - text: "4"
+                  - generic [ref=e338]: branches 4/4
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s1 complete artifact" [ref=e339]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e340]: step b9s1
+                  - generic [ref=e341]: complete artifact
+              - row [ref=e342]:
+                - cell "stale" [ref=e343]
+                - 'cell "src/application/instructor/refundStrandedCredit.ts:68 artifact: src\\application\\instructor\\refundStrandedCredit.ts" [ref=e345]':
+                  - link "src/application/instructor/refundStrandedCredit.ts:68" [ref=e346] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=68#L68
+                  - generic [ref=e347]: "artifact: src\\application\\instructor\\refundStrandedCredit.ts"
+                - cell "3 no branch fact" [ref=e348]:
+                  - text: "3"
+                  - generic [ref=e349]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s1 complete artifact" [ref=e350]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e351]: step b9s1
+                  - generic [ref=e352]: complete artifact
+              - row [ref=e353]:
+                - cell "stale" [ref=e354]
+                - cell [ref=e356]:
+                  - link "src/application/instructor/refundStrandedCredit.ts:79" [ref=e357] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=79#L79
+                - cell "— no branch fact" [ref=e358]:
+                  - text: —
+                  - generic [ref=e359]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s2 complete artifact" [ref=e360]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e361]: step b9s2
+                  - generic [ref=e362]: complete artifact
+              - row [ref=e363]:
+                - cell "stale" [ref=e364]
+                - 'cell "src/application/instructor/refundStrandedCredit.ts:104 artifact: src\\application\\instructor\\refundStrandedCredit.ts" [ref=e366]':
+                  - link "src/application/instructor/refundStrandedCredit.ts:104" [ref=e367] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=104#L104
+                  - generic [ref=e368]: "artifact: src\\application\\instructor\\refundStrandedCredit.ts"
+                - cell "4 branches 2/2" [ref=e369]:
+                  - text: "4"
+                  - generic [ref=e370]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s2 complete artifact" [ref=e371]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e372]: step b9s2
+                  - generic [ref=e373]: complete artifact
+              - row [ref=e374]:
+                - cell "stale" [ref=e375]
+                - 'cell "src/application/instructor/refundStrandedCredit.ts:106 artifact: src\\application\\instructor\\refundStrandedCredit.ts" [ref=e377]':
+                  - link "src/application/instructor/refundStrandedCredit.ts:106" [ref=e378] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=106#L106
+                  - generic [ref=e379]: "artifact: src\\application\\instructor\\refundStrandedCredit.ts"
+                - cell "1 no branch fact" [ref=e380]:
+                  - text: "1"
+                  - generic [ref=e381]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge payments->stripe_gateway complete artifact" [ref=e382]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e383]: module-edge payments->stripe_gateway
+                  - generic [ref=e384]: complete artifact
+              - row [ref=e385]:
+                - cell "stale" [ref=e386]
+                - cell [ref=e388]:
+                  - link "src/application/instructor/refundStrandedCredit.ts:123" [ref=e389] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=123#L123
+                - cell "— no branch fact" [ref=e390]:
+                  - text: —
+                  - generic [ref=e391]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s3 · external ext_stripe complete artifact" [ref=e392]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e393]: step b9s3 · external ext_stripe
+                  - generic [ref=e394]: complete artifact
+              - row [ref=e395]:
+                - cell "stale" [ref=e396]
+                - cell [ref=e398]:
+                  - link "src/application/instructor/refundStrandedCredit.ts:135" [ref=e399] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=135#L135
+                - cell "— no branch fact" [ref=e400]:
+                  - text: —
+                  - generic [ref=e401]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s3 complete artifact" [ref=e402]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e403]: step b9s3
+                  - generic [ref=e404]: complete artifact
+              - row [ref=e405]:
+                - cell "stale" [ref=e406]
+                - 'cell "src/application/instructor/refundStrandedCredit.ts:143 artifact: src\\application\\instructor\\refundStrandedCredit.ts" [ref=e408]':
+                  - link "src/application/instructor/refundStrandedCredit.ts:143" [ref=e409] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=143#L143
+                  - generic [ref=e410]: "artifact: src\\application\\instructor\\refundStrandedCredit.ts"
+                - cell "2 no branch fact" [ref=e411]:
+                  - text: "2"
+                  - generic [ref=e412]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge application->wallet_db complete artifact" [ref=e413]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e414]: module-edge application->wallet_db
+                  - generic [ref=e415]: complete artifact
+              - row [ref=e416]:
+                - cell "stale" [ref=e417]
+                - cell [ref=e419]:
+                  - link "src/application/instructor/refundStrandedCredit.ts:153" [ref=e420] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=153#L153
+                - cell "— no branch fact" [ref=e421]:
+                  - text: —
+                  - generic [ref=e422]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s4 complete artifact" [ref=e423]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e424]: step b9s4
+                  - generic [ref=e425]: complete artifact
+              - row [ref=e426]:
+                - cell "stale" [ref=e427]
+                - 'cell "src/application/instructor/refundStrandedCredit.ts:161 artifact: src\\application\\instructor\\refundStrandedCredit.ts" [ref=e429]':
+                  - link "src/application/instructor/refundStrandedCredit.ts:161" [ref=e430] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Finstructor%2FrefundStrandedCredit.ts&line=161#L161
+                  - generic [ref=e431]: "artifact: src\\application\\instructor\\refundStrandedCredit.ts"
+                - cell "2 no branch fact" [ref=e432]:
+                  - text: "2"
+                  - generic [ref=e433]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s4 · module-edge application->invoicing complete artifact" [ref=e434]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e435]: step b9s4 · module-edge application->invoicing
+                  - generic [ref=e436]: complete artifact
+              - row [ref=e437]:
+                - cell "stale" [ref=e438]
+                - cell [ref=e440]:
+                  - link "src/application/marketplace/payBookingFromCredit.ts:44" [ref=e441] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FpayBookingFromCredit.ts&line=44#L44
+                - cell "— no branch fact" [ref=e442]:
+                  - text: —
+                  - generic [ref=e443]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s12 · module-edge application->wallet_db complete artifact" [ref=e444]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e445]: step s12 · module-edge application->wallet_db
+                  - generic [ref=e446]: complete artifact
+              - row [ref=e447]:
+                - cell "stale" [ref=e448]
+                - 'cell "src/application/marketplace/payBookingFromCredit.ts:67 artifact: src\\application\\marketplace\\payBookingFromCredit.ts" [ref=e450]':
+                  - link "src/application/marketplace/payBookingFromCredit.ts:67" [ref=e451] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FpayBookingFromCredit.ts&line=67#L67
+                  - generic [ref=e452]: "artifact: src\\application\\marketplace\\payBookingFromCredit.ts"
+                - cell "13 no branch fact" [ref=e453]:
+                  - text: "13"
+                  - generic [ref=e454]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s12 complete artifact" [ref=e455]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e456]: step s12
+                  - generic [ref=e457]: complete artifact
+              - row [ref=e458]:
+                - cell "stale" [ref=e459]
+                - 'cell "src/application/marketplace/payBookingFromCredit.ts:135 artifact: src\\application\\marketplace\\payBookingFromCredit.ts" [ref=e461]':
+                  - link "src/application/marketplace/payBookingFromCredit.ts:135" [ref=e462] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FpayBookingFromCredit.ts&line=135#L135
+                  - generic [ref=e463]: "artifact: src\\application\\marketplace\\payBookingFromCredit.ts"
+                - cell "5 no branch fact" [ref=e464]:
+                  - text: "5"
+                  - generic [ref=e465]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s14 complete artifact" [ref=e466]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e467]: step s14
+                  - generic [ref=e468]: complete artifact
+              - row [ref=e469]:
+                - cell "stale" [ref=e470]
+                - 'cell "src/application/marketplace/payBookingFromCredit.ts:152 artifact: src\\application\\marketplace\\payBookingFromCredit.ts" [ref=e472]':
+                  - link "src/application/marketplace/payBookingFromCredit.ts:152" [ref=e473] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FpayBookingFromCredit.ts&line=152#L152
+                  - generic [ref=e474]: "artifact: src\\application\\marketplace\\payBookingFromCredit.ts"
+                - cell "5 no branch fact" [ref=e475]:
+                  - text: "5"
+                  - generic [ref=e476]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s14 complete artifact" [ref=e477]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e478]: step s14
+                  - generic [ref=e479]: complete artifact
+              - row [ref=e480]:
+                - cell "stale" [ref=e481]
+                - 'cell "src/application/marketplace/refundBookingPayment.ts:30 artifact: src\\application\\marketplace\\refundBookingPayment.ts" [ref=e483]':
+                  - link "src/application/marketplace/refundBookingPayment.ts:30" [ref=e484] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FrefundBookingPayment.ts&line=30#L30
+                  - generic [ref=e485]: "artifact: src\\application\\marketplace\\refundBookingPayment.ts"
+                - cell "4 no branch fact" [ref=e486]:
+                  - text: "4"
+                  - generic [ref=e487]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s1 complete artifact" [ref=e488]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e489]: step b8s1
+                  - generic [ref=e490]: complete artifact
+              - row [ref=e491]:
+                - cell "stale" [ref=e492]
+                - 'cell "src/application/marketplace/refundBookingPayment.ts:35 artifact: src\\application\\marketplace\\refundBookingPayment.ts" [ref=e494]':
+                  - link "src/application/marketplace/refundBookingPayment.ts:35" [ref=e495] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FrefundBookingPayment.ts&line=35#L35
+                  - generic [ref=e496]: "artifact: src\\application\\marketplace\\refundBookingPayment.ts"
+                - cell "4 no branch fact" [ref=e497]:
+                  - text: "4"
+                  - generic [ref=e498]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s1 complete artifact" [ref=e499]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e500]: step b8s1
+                  - generic [ref=e501]: complete artifact
+              - row [ref=e502]:
+                - cell "stale" [ref=e503]
+                - cell [ref=e505]:
+                  - link "src/application/marketplace/refundBookingPayment.ts:37" [ref=e506] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FrefundBookingPayment.ts&line=37#L37
+                - cell "— no branch fact" [ref=e507]:
+                  - text: —
+                  - generic [ref=e508]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s3 complete artifact" [ref=e509]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e510]: step b8s3
+                  - generic [ref=e511]: complete artifact
+              - row [ref=e512]:
+                - cell "stale" [ref=e513]
+                - 'cell "src/application/marketplace/refundBookingPayment.ts:41 artifact: src\\application\\marketplace\\refundBookingPayment.ts" [ref=e515]':
+                  - link "src/application/marketplace/refundBookingPayment.ts:41" [ref=e516] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fmarketplace%2FrefundBookingPayment.ts&line=41#L41
+                  - generic [ref=e517]: "artifact: src\\application\\marketplace\\refundBookingPayment.ts"
+                - cell "0 no branch fact" [ref=e518]:
+                  - text: "0"
+                  - generic [ref=e519]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s3 complete artifact" [ref=e520]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e521]: step b8s3
+                  - generic [ref=e522]: complete artifact
+              - row [ref=e523]:
+                - cell "stale" [ref=e524]
+                - cell [ref=e526]:
+                  - link "src/application/payments/subscribers.ts:12" [ref=e527] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=12#L12
+                - cell "— no branch fact" [ref=e528]:
+                  - text: —
+                  - generic [ref=e529]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge payments->application complete artifact" [ref=e530]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e531]: module-edge payments->application
+                  - generic [ref=e532]: complete artifact
+              - row [ref=e533]:
+                - cell "stale" [ref=e534]
+                - 'cell "src/application/payments/subscribers.ts:69 artifact: src\\application\\payments\\subscribers.ts" [ref=e536]':
+                  - link "src/application/payments/subscribers.ts:69" [ref=e537] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=69#L69
+                  - generic [ref=e538]: "artifact: src\\application\\payments\\subscribers.ts"
+                - cell "6 no branch fact" [ref=e539]:
+                  - text: "6"
+                  - generic [ref=e540]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s14 complete artifact" [ref=e541]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e542]: step s14
+                  - generic [ref=e543]: complete artifact
+              - row [ref=e544]:
+                - cell "stale" [ref=e545]
+                - 'cell "src/application/payments/subscribers.ts:107 artifact: src\\application\\payments\\subscribers.ts" [ref=e547]':
+                  - link "src/application/payments/subscribers.ts:107" [ref=e548] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=107#L107
+                  - generic [ref=e549]: "artifact: src\\application\\payments\\subscribers.ts"
+                - cell "26 no branch fact" [ref=e550]:
+                  - text: "26"
+                  - generic [ref=e551]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge application->invoicing complete artifact" [ref=e552]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e553]: module-edge application->invoicing
+                  - generic [ref=e554]: complete artifact
+              - row [ref=e555]:
+                - cell "stale" [ref=e556]
+                - 'cell "src/application/payments/subscribers.ts:145 artifact: src\\application\\payments\\subscribers.ts" [ref=e558]':
+                  - link "src/application/payments/subscribers.ts:145" [ref=e559] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=145#L145
+                  - generic [ref=e560]: "artifact: src\\application\\payments\\subscribers.ts"
+                - cell "26 branches 2/2" [ref=e561]:
+                  - text: "26"
+                  - generic [ref=e562]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s14 complete artifact" [ref=e563]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e564]: step s14
+                  - generic [ref=e565]: complete artifact
+              - row [ref=e566]:
+                - cell "stale" [ref=e567]
+                - 'cell "src/application/payments/subscribers.ts:161 artifact: src\\application\\payments\\subscribers.ts" [ref=e569]':
+                  - link "src/application/payments/subscribers.ts:161" [ref=e570] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=161#L161
+                  - generic [ref=e571]: "artifact: src\\application\\payments\\subscribers.ts"
+                - cell "51 no branch fact" [ref=e572]:
+                  - text: "51"
+                  - generic [ref=e573]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s10 complete artifact" [ref=e574]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e575]: step s10
+                  - generic [ref=e576]: complete artifact
+              - row [ref=e577]:
+                - cell "stale" [ref=e578]
+                - 'cell "src/application/payments/subscribers.ts:164 artifact: src\\application\\payments\\subscribers.ts" [ref=e580]':
+                  - link "src/application/payments/subscribers.ts:164" [ref=e581] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=164#L164
+                  - generic [ref=e582]: "artifact: src\\application\\payments\\subscribers.ts"
+                - cell "8 branches 1/2" [ref=e583]:
+                  - text: "8"
+                  - generic [ref=e584]: branches 1/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b5s1 complete artifact" [ref=e585]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e586]: step b5s1
+                  - generic [ref=e587]: complete artifact
+              - row [ref=e588]:
+                - cell "stale" [ref=e589]
+                - 'cell "src/application/payments/subscribers.ts:176 artifact: src\\application\\payments\\subscribers.ts" [ref=e591]':
+                  - link "src/application/payments/subscribers.ts:176" [ref=e592] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=176#L176
+                  - generic [ref=e593]: "artifact: src\\application\\payments\\subscribers.ts"
+                - cell "8 branches 1/2" [ref=e594]:
+                  - text: "8"
+                  - generic [ref=e595]: branches 1/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s10 · step b5s1 complete artifact" [ref=e596]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e597]: step s10 · step b5s1
+                  - generic [ref=e598]: complete artifact
+              - row [ref=e599]:
+                - cell "stale" [ref=e600]
+                - 'cell "src/application/payments/subscribers.ts:184 artifact: src\\application\\payments\\subscribers.ts" [ref=e602]':
+                  - link "src/application/payments/subscribers.ts:184" [ref=e603] [cursor=pointer]:
+                    - /url: /source?path=src%2Fapplication%2Fpayments%2Fsubscribers.ts&line=184#L184
+                  - generic [ref=e604]: "artifact: src\\application\\payments\\subscribers.ts"
+                - cell "8 no branch fact" [ref=e605]:
+                  - text: "8"
+                  - generic [ref=e606]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s10 · step b4s3 · module-edge application->invoicing complete artifact" [ref=e607]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e608]: step s10 · step b4s3 · module-edge application->invoicing
+                  - generic [ref=e609]: complete artifact
+              - row [ref=e610]:
+                - cell "stale" [ref=e611]
+                - cell [ref=e613]:
+                  - link "src/modules/invoicing/pipeline/creditSpendConfirmation.ts:9" [ref=e614] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FcreditSpendConfirmation.ts&line=9#L9
+                - cell "— no branch fact" [ref=e615]:
+                  - text: —
+                  - generic [ref=e616]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s15 complete artifact" [ref=e617]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e618]: step s15
+                  - generic [ref=e619]: complete artifact
+              - row [ref=e620]:
+                - cell "stale" [ref=e621]
+                - cell [ref=e623]:
+                  - link "src/modules/invoicing/pipeline/creditSpendConfirmation.ts:17" [ref=e624] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FcreditSpendConfirmation.ts&line=17#L17
+                - cell "— no branch fact" [ref=e625]:
+                  - text: —
+                  - generic [ref=e626]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge invoicing->document_store complete artifact" [ref=e627]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e628]: module-edge invoicing->document_store
+                  - generic [ref=e629]: complete artifact
+              - row [ref=e630]:
+                - cell "stale" [ref=e631]
+                - cell [ref=e633]:
+                  - link "src/modules/invoicing/pipeline/creditSpendConfirmation.ts:61" [ref=e634] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FcreditSpendConfirmation.ts&line=61#L61
+                - cell "— no branch fact" [ref=e635]:
+                  - text: —
+                  - generic [ref=e636]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s15 · step b7s3 · step b14s1 complete artifact" [ref=e637]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e638]: step s15 · step b7s3 · step b14s1
+                  - generic [ref=e639]: complete artifact
+              - row [ref=e640]:
+                - cell "stale" [ref=e641]
+                - 'cell "src/modules/invoicing/pipeline/creditSpendConfirmation.ts:70 artifact: src\\modules\\invoicing\\pipeline\\creditSpendConfirmation.ts" [ref=e643]':
+                  - link "src/modules/invoicing/pipeline/creditSpendConfirmation.ts:70" [ref=e644] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FcreditSpendConfirmation.ts&line=70#L70
+                  - generic [ref=e645]: "artifact: src\\modules\\invoicing\\pipeline\\creditSpendConfirmation.ts"
+                - cell "2 no branch fact" [ref=e646]:
+                  - text: "2"
+                  - generic [ref=e647]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s15 complete artifact" [ref=e648]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e649]: step s15
+                  - generic [ref=e650]: complete artifact
+              - row [ref=e651]:
+                - cell "stale" [ref=e652]
+                - 'cell "src/modules/invoicing/pipeline/issueDocument.ts:51 artifact: src\\modules\\invoicing\\pipeline\\issueDocument.ts" [ref=e654]':
+                  - link "src/modules/invoicing/pipeline/issueDocument.ts:51" [ref=e655] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FissueDocument.ts&line=51#L51
+                  - generic [ref=e656]: "artifact: src\\modules\\invoicing\\pipeline\\issueDocument.ts"
+                - cell "71 no branch fact" [ref=e657]:
+                  - text: "71"
+                  - generic [ref=e658]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s11 complete artifact" [ref=e659]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e660]: step s11
+                  - generic [ref=e661]: complete artifact
+              - row [ref=e662]:
+                - cell "stale" [ref=e663]
+                - cell [ref=e665]:
+                  - link "src/modules/invoicing/pipeline/issueDocument.ts:85" [ref=e666] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FissueDocument.ts&line=85#L85
+                - cell "— no branch fact" [ref=e667]:
+                  - text: —
+                  - generic [ref=e668]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s11 · module-edge invoicing->document_store complete artifact" [ref=e669]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e670]: step s11 · module-edge invoicing->document_store
+                  - generic [ref=e671]: complete artifact
+              - row [ref=e672]:
+                - cell "stale" [ref=e673]
+                - cell [ref=e675]:
+                  - link "src/modules/invoicing/pipeline/issueDocument.ts:109" [ref=e676] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FissueDocument.ts&line=109#L109
+                - cell "— no branch fact" [ref=e677]:
+                  - text: —
+                  - generic [ref=e678]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s11 · module-edge invoicing->document_store · external ext_supabase complete artifact" [ref=e679]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e680]: step s11 · module-edge invoicing->document_store · external ext_supabase
+                  - generic [ref=e681]: complete artifact
+              - row [ref=e682]:
+                - cell "stale" [ref=e683]
+                - cell [ref=e685]:
+                  - link "src/modules/invoicing/pipeline/issueDocument.ts:125" [ref=e686] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FissueDocument.ts&line=125#L125
+                - cell "— no branch fact" [ref=e687]:
+                  - text: —
+                  - generic [ref=e688]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge invoicing->email · external ext_email complete artifact" [ref=e689]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e690]: module-edge invoicing->email · external ext_email
+                  - generic [ref=e691]: complete artifact
+              - row [ref=e692]:
+                - cell "stale" [ref=e693]
+                - cell [ref=e695]:
+                  - link "src/modules/invoicing/pipeline/issueDocument.ts:149" [ref=e696] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2FissueDocument.ts&line=149#L149
+                - cell "— no branch fact" [ref=e697]:
+                  - text: —
+                  - generic [ref=e698]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 external ext_email complete artifact" [ref=e699]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e700]: external ext_email
+                  - generic [ref=e701]: complete artifact
+              - row [ref=e702]:
+                - cell "stale" [ref=e703]
+                - 'cell "src/modules/invoicing/pipeline/resolvers.ts:291 artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts" [ref=e705]':
+                  - link "src/modules/invoicing/pipeline/resolvers.ts:291" [ref=e706] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2Fresolvers.ts&line=291#L291
+                  - generic [ref=e707]: "artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts"
+                - cell "7 no branch fact" [ref=e708]:
+                  - text: "7"
+                  - generic [ref=e709]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s3 complete artifact" [ref=e710]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e711]: step b8s3
+                  - generic [ref=e712]: complete artifact
+              - row [ref=e713]:
+                - cell "stale" [ref=e714]
+                - 'cell "src/modules/invoicing/pipeline/resolvers.ts:300 artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts" [ref=e716]':
+                  - link "src/modules/invoicing/pipeline/resolvers.ts:300" [ref=e717] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2Fresolvers.ts&line=300#L300
+                  - generic [ref=e718]: "artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts"
+                - cell "7 branches 2/2" [ref=e719]:
+                  - text: "7"
+                  - generic [ref=e720]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s3 complete artifact" [ref=e721]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e722]: step b8s3
+                  - generic [ref=e723]: complete artifact
+              - row [ref=e724]:
+                - cell "stale" [ref=e725]
+                - cell [ref=e727]:
+                  - link "src/modules/invoicing/pipeline/resolvers.ts:429" [ref=e728] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2Fresolvers.ts&line=429#L429
+                - cell "— no branch fact" [ref=e729]:
+                  - text: —
+                  - generic [ref=e730]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s11 complete artifact" [ref=e731]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e732]: step s11
+                  - generic [ref=e733]: complete artifact
+              - row [ref=e734]:
+                - cell "stale" [ref=e735]
+                - 'cell "src/modules/invoicing/pipeline/resolvers.ts:512 artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts" [ref=e737]':
+                  - link "src/modules/invoicing/pipeline/resolvers.ts:512" [ref=e738] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2Fresolvers.ts&line=512#L512
+                  - generic [ref=e739]: "artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts"
+                - cell "19 no branch fact" [ref=e740]:
+                  - text: "19"
+                  - generic [ref=e741]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s4 complete artifact" [ref=e742]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e743]: step b9s4
+                  - generic [ref=e744]: complete artifact
+              - row [ref=e745]:
+                - cell "stale" [ref=e746]
+                - 'cell "src/modules/invoicing/pipeline/resolvers.ts:521 artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts" [ref=e748]':
+                  - link "src/modules/invoicing/pipeline/resolvers.ts:521" [ref=e749] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2Fresolvers.ts&line=521#L521
+                  - generic [ref=e750]: "artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts"
+                - cell "19 branches 2/2" [ref=e751]:
+                  - text: "19"
+                  - generic [ref=e752]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s4 complete artifact" [ref=e753]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e754]: step b9s4
+                  - generic [ref=e755]: complete artifact
+              - row [ref=e756]:
+                - cell "stale" [ref=e757]
+                - 'cell "src/modules/invoicing/pipeline/resolvers.ts:537 artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts" [ref=e759]':
+                  - link "src/modules/invoicing/pipeline/resolvers.ts:537" [ref=e760] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fpipeline%2Fresolvers.ts&line=537#L537
+                  - generic [ref=e761]: "artifact: src\\modules\\invoicing\\pipeline\\resolvers.ts"
+                - cell "19 no branch fact" [ref=e762]:
+                  - text: "19"
+                  - generic [ref=e763]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s4 complete artifact" [ref=e764]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e765]: step b9s4
+                  - generic [ref=e766]: complete artifact
+              - row [ref=e767]:
+                - cell "stale" [ref=e768]
+                - cell [ref=e770]:
+                  - link "src/modules/invoicing/ports/documentDelivery.ts:10" [ref=e771] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fports%2FdocumentDelivery.ts&line=10#L10
+                - cell "— no branch fact" [ref=e772]:
+                  - text: —
+                  - generic [ref=e773]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 external ext_email complete artifact" [ref=e774]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e775]: external ext_email
+                  - generic [ref=e776]: complete artifact
+              - row [ref=e777]:
+                - cell "stale" [ref=e778]
+                - cell [ref=e780]:
+                  - link "src/modules/invoicing/ports/documentDelivery.ts:29" [ref=e781] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Finvoicing%2Fports%2FdocumentDelivery.ts&line=29#L29
+                - cell "— no branch fact" [ref=e782]:
+                  - text: —
+                  - generic [ref=e783]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge invoicing->email complete artifact" [ref=e784]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e785]: module-edge invoicing->email
+                  - generic [ref=e786]: complete artifact
+              - row [ref=e787]:
+                - cell "stale" [ref=e788]
+                - cell [ref=e790]:
+                  - link "src/modules/payments/reconciliation/reconcileLessonPayments.ts:203" [ref=e791] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Freconciliation%2FreconcileLessonPayments.ts&line=203#L203
+                - cell "— no branch fact" [ref=e792]:
+                  - text: —
+                  - generic [ref=e793]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b12s1 complete artifact" [ref=e794]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e795]: step b12s1
+                  - generic [ref=e796]: complete artifact
+              - row [ref=e797]:
+                - cell "stale" [ref=e798]
+                - 'cell "src/modules/payments/wallet/adjustWallet.ts:36 artifact: src\\modules\\payments\\wallet\\adjustWallet.ts" [ref=e800]':
+                  - link "src/modules/payments/wallet/adjustWallet.ts:36" [ref=e801] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FadjustWallet.ts&line=36#L36
+                  - generic [ref=e802]: "artifact: src\\modules\\payments\\wallet\\adjustWallet.ts"
+                - cell "2 no branch fact" [ref=e803]:
+                  - text: "2"
+                  - generic [ref=e804]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s3 complete artifact" [ref=e805]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e806]: step b9s3
+                  - generic [ref=e807]: complete artifact
+              - row [ref=e808]:
+                - cell "stale" [ref=e809]
+                - 'cell "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:32 artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts" [ref=e811]':
+                  - link "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:32" [ref=e812] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FcreateWalletTopUpCheckoutSession.ts&line=32#L32
+                  - generic [ref=e813]: "artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts"
+                - cell "3 branches 4/4" [ref=e814]:
+                  - text: "3"
+                  - generic [ref=e815]: branches 4/4
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s3 · step b1s1 complete artifact" [ref=e816]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e817]: step s3 · step b1s1
+                  - generic [ref=e818]: complete artifact
+              - row [ref=e819]:
+                - cell "stale" [ref=e820]
+                - 'cell "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:52 artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts" [ref=e822]':
+                  - link "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:52" [ref=e823] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FcreateWalletTopUpCheckoutSession.ts&line=52#L52
+                  - generic [ref=e824]: "artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts"
+                - cell "3 branches 2/2" [ref=e825]:
+                  - text: "3"
+                  - generic [ref=e826]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s3 · step b1s1 complete artifact" [ref=e827]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e828]: step s3 · step b1s1
+                  - generic [ref=e829]: complete artifact
+              - row [ref=e830]:
+                - cell "stale" [ref=e831]
+                - 'cell "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:56 artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts" [ref=e833]':
+                  - link "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:56" [ref=e834] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FcreateWalletTopUpCheckoutSession.ts&line=56#L56
+                  - generic [ref=e835]: "artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts"
+                - cell "1 no branch fact" [ref=e836]:
+                  - text: "1"
+                  - generic [ref=e837]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b1s1 complete artifact" [ref=e838]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e839]: step b1s1
+                  - generic [ref=e840]: complete artifact
+              - row [ref=e841]:
+                - cell "stale" [ref=e842]
+                - 'cell "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:61 artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts" [ref=e844]':
+                  - link "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:61" [ref=e845] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FcreateWalletTopUpCheckoutSession.ts&line=61#L61
+                  - generic [ref=e846]: "artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts"
+                - cell "1 no branch fact" [ref=e847]:
+                  - text: "1"
+                  - generic [ref=e848]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b1s1 complete artifact" [ref=e849]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e850]: step b1s1
+                  - generic [ref=e851]: complete artifact
+              - row [ref=e852]:
+                - cell "stale" [ref=e853]
+                - 'cell "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:70 artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts" [ref=e855]':
+                  - link "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:70" [ref=e856] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FcreateWalletTopUpCheckoutSession.ts&line=70#L70
+                  - generic [ref=e857]: "artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts"
+                - cell "3 no branch fact" [ref=e858]:
+                  - text: "3"
+                  - generic [ref=e859]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s3 complete artifact" [ref=e860]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e861]: step s3
+                  - generic [ref=e862]: complete artifact
+              - row [ref=e863]:
+                - cell "stale" [ref=e864]
+                - 'cell "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:101 artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts" [ref=e866]':
+                  - link "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:101" [ref=e867] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FcreateWalletTopUpCheckoutSession.ts&line=101#L101
+                  - generic [ref=e868]: "artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts"
+                - cell "3 no branch fact" [ref=e869]:
+                  - text: "3"
+                  - generic [ref=e870]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s3 · module-edge payments->stripe_gateway complete artifact" [ref=e871]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e872]: step s3 · module-edge payments->stripe_gateway
+                  - generic [ref=e873]: complete artifact
+              - row [ref=e874]:
+                - cell "stale" [ref=e875]
+                - 'cell "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:106 artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts" [ref=e877]':
+                  - link "src/modules/payments/wallet/createWalletTopUpCheckoutSession.ts:106" [ref=e878] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FcreateWalletTopUpCheckoutSession.ts&line=106#L106
+                  - generic [ref=e879]: "artifact: src\\modules\\payments\\wallet\\createWalletTopUpCheckoutSession.ts"
+                - cell "1 branches 1/2" [ref=e880]:
+                  - text: "1"
+                  - generic [ref=e881]: branches 1/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 external ext_stripe complete artifact" [ref=e882]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e883]: external ext_stripe
+                  - generic [ref=e884]: complete artifact
+              - row [ref=e885]:
+                - cell "stale" [ref=e886]
+                - 'cell "src/modules/payments/wallet/fulfillWalletTopUp.ts:21 artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts" [ref=e888]':
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:21" [ref=e889] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=21#L21
+                  - generic [ref=e890]: "artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts"
+                - cell "16 no branch fact" [ref=e891]:
+                  - text: "16"
+                  - generic [ref=e892]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s7 complete artifact" [ref=e893]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e894]: step s7
+                  - generic [ref=e895]: complete artifact
+              - row [ref=e896]:
+                - cell "stale" [ref=e897]
+                - 'cell "src/modules/payments/wallet/fulfillWalletTopUp.ts:22 artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts" [ref=e899]':
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:22" [ref=e900] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=22#L22
+                  - generic [ref=e901]: "artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts"
+                - cell "16 branches 4/4" [ref=e902]:
+                  - text: "16"
+                  - generic [ref=e903]: branches 4/4
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b2s1 complete artifact" [ref=e904]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e905]: step b2s1
+                  - generic [ref=e906]: complete artifact
+              - row [ref=e907]:
+                - cell "stale" [ref=e908]
+                - 'cell "src/modules/payments/wallet/fulfillWalletTopUp.ts:27 artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts" [ref=e910]':
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:27" [ref=e911] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=27#L27
+                  - generic [ref=e912]: "artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts"
+                - cell "16 branches 2/2" [ref=e913]:
+                  - text: "16"
+                  - generic [ref=e914]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b2s1 complete artifact" [ref=e915]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e916]: step b2s1
+                  - generic [ref=e917]: complete artifact
+              - row [ref=e918]:
+                - cell "stale" [ref=e919]
+                - cell [ref=e921]:
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:46" [ref=e922] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=46#L46
+                - cell "— no branch fact" [ref=e923]:
+                  - text: —
+                  - generic [ref=e924]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s7 complete artifact" [ref=e925]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e926]: step s7
+                  - generic [ref=e927]: complete artifact
+              - row [ref=e928]:
+                - cell "stale" [ref=e929]
+                - 'cell "src/modules/payments/wallet/fulfillWalletTopUp.ts:53 artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts" [ref=e931]':
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:53" [ref=e932] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=53#L53
+                  - generic [ref=e933]: "artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts"
+                - cell "16 no branch fact" [ref=e934]:
+                  - text: "16"
+                  - generic [ref=e935]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s7 · module-edge payments->wallet_db complete artifact" [ref=e936]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e937]: step s7 · module-edge payments->wallet_db
+                  - generic [ref=e938]: complete artifact
+              - row [ref=e939]:
+                - cell "stale" [ref=e940]
+                - 'cell "src/modules/payments/wallet/fulfillWalletTopUp.ts:78 artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts" [ref=e942]':
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:78" [ref=e943] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=78#L78
+                  - generic [ref=e944]: "artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts"
+                - cell "16 no branch fact" [ref=e945]:
+                  - text: "16"
+                  - generic [ref=e946]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s9 complete artifact" [ref=e947]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e948]: step s9
+                  - generic [ref=e949]: complete artifact
+              - row [ref=e950]:
+                - cell "stale" [ref=e951]
+                - 'cell "src/modules/payments/wallet/fulfillWalletTopUp.ts:85 artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts" [ref=e953]':
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:85" [ref=e954] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=85#L85
+                  - generic [ref=e955]: "artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts"
+                - cell "9 no branch fact" [ref=e956]:
+                  - text: "9"
+                  - generic [ref=e957]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s9 complete artifact" [ref=e958]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e959]: step s9
+                  - generic [ref=e960]: complete artifact
+              - row [ref=e961]:
+                - cell "stale" [ref=e962]
+                - cell [ref=e964]:
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:97" [ref=e965] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=97#L97
+                - cell "— no branch fact" [ref=e966]:
+                  - text: —
+                  - generic [ref=e967]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge payments->application complete artifact" [ref=e968]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e969]: module-edge payments->application
+                  - generic [ref=e970]: complete artifact
+              - row [ref=e971]:
+                - cell "stale" [ref=e972]
+                - 'cell "src/modules/payments/wallet/fulfillWalletTopUp.ts:101 artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts" [ref=e974]':
+                  - link "src/modules/payments/wallet/fulfillWalletTopUp.ts:101" [ref=e975] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FfulfillWalletTopUp.ts&line=101#L101
+                  - generic [ref=e976]: "artifact: src\\modules\\payments\\wallet\\fulfillWalletTopUp.ts"
+                - cell "13 no branch fact" [ref=e977]:
+                  - text: "13"
+                  - generic [ref=e978]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s9 complete artifact" [ref=e979]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e980]: step s9
+                  - generic [ref=e981]: complete artifact
+              - row [ref=e982]:
+                - cell "stale" [ref=e983]
+                - 'cell "src/modules/payments/wallet/chargeBookingFromWallet.ts:35 artifact: src\\modules\\payments\\wallet\\chargeBookingFromWallet.ts" [ref=e985]':
+                  - link "src/modules/payments/wallet/chargeBookingFromWallet.ts:35" [ref=e986] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FchargeBookingFromWallet.ts&line=35#L35
+                  - generic [ref=e987]: "artifact: src\\modules\\payments\\wallet\\chargeBookingFromWallet.ts"
+                - cell "3 no branch fact" [ref=e988]:
+                  - text: "3"
+                  - generic [ref=e989]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s1 · module-edge payments->wallet_db complete artifact" [ref=e990]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e991]: step b7s1 · module-edge payments->wallet_db
+                  - generic [ref=e992]: complete artifact
+              - row [ref=e993]:
+                - cell "stale" [ref=e994]
+                - 'cell "src/modules/payments/wallet/chargeBookingFromWallet.ts:91 artifact: src\\modules\\payments\\wallet\\chargeBookingFromWallet.ts" [ref=e996]':
+                  - link "src/modules/payments/wallet/chargeBookingFromWallet.ts:91" [ref=e997] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FchargeBookingFromWallet.ts&line=91#L91
+                  - generic [ref=e998]: "artifact: src\\modules\\payments\\wallet\\chargeBookingFromWallet.ts"
+                - cell "3 no branch fact" [ref=e999]:
+                  - text: "3"
+                  - generic [ref=e1000]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s3 complete artifact" [ref=e1001]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1002]: step b7s3
+                  - generic [ref=e1003]: complete artifact
+              - row [ref=e1004]:
+                - cell "stale" [ref=e1005]
+                - 'cell "src/modules/payments/wallet/chargeBookingFromWallet.ts:113 artifact: src\\modules\\payments\\wallet\\chargeBookingFromWallet.ts" [ref=e1007]':
+                  - link "src/modules/payments/wallet/chargeBookingFromWallet.ts:113" [ref=e1008] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FchargeBookingFromWallet.ts&line=113#L113
+                  - generic [ref=e1009]: "artifact: src\\modules\\payments\\wallet\\chargeBookingFromWallet.ts"
+                - cell "2 no branch fact" [ref=e1010]:
+                  - text: "2"
+                  - generic [ref=e1011]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s3 complete artifact" [ref=e1012]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1013]: step b7s3
+                  - generic [ref=e1014]: complete artifact
+              - row [ref=e1015]:
+                - cell "stale" [ref=e1016]
+                - 'cell "src/modules/payments/wallet/refundBookingWalletCredit.ts:23 artifact: src\\modules\\payments\\wallet\\refundBookingWalletCredit.ts" [ref=e1018]':
+                  - link "src/modules/payments/wallet/refundBookingWalletCredit.ts:23" [ref=e1019] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FrefundBookingWalletCredit.ts&line=23#L23
+                  - generic [ref=e1020]: "artifact: src\\modules\\payments\\wallet\\refundBookingWalletCredit.ts"
+                - cell "5 no branch fact" [ref=e1021]:
+                  - text: "5"
+                  - generic [ref=e1022]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s1 complete artifact" [ref=e1023]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1024]: step b8s1
+                  - generic [ref=e1025]: complete artifact
+              - row [ref=e1026]:
+                - cell "stale" [ref=e1027]
+                - 'cell "src/modules/payments/wallet/topupClawback.ts:49 artifact: src\\modules\\payments\\wallet\\topupClawback.ts" [ref=e1029]':
+                  - link "src/modules/payments/wallet/topupClawback.ts:49" [ref=e1030] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=49#L49
+                  - generic [ref=e1031]: "artifact: src\\modules\\payments\\wallet\\topupClawback.ts"
+                - cell "4 no branch fact" [ref=e1032]:
+                  - text: "4"
+                  - generic [ref=e1033]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b11s2 complete artifact" [ref=e1034]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1035]: step b11s2
+                  - generic [ref=e1036]: complete artifact
+              - row [ref=e1037]:
+                - cell "stale" [ref=e1038]
+                - 'cell "src/modules/payments/wallet/topupClawback.ts:122 artifact: src\\modules\\payments\\wallet\\topupClawback.ts" [ref=e1040]':
+                  - link "src/modules/payments/wallet/topupClawback.ts:122" [ref=e1041] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=122#L122
+                  - generic [ref=e1042]: "artifact: src\\modules\\payments\\wallet\\topupClawback.ts"
+                - cell "23 branches 2/2" [ref=e1043]:
+                  - text: "23"
+                  - generic [ref=e1044]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s3 complete artifact" [ref=e1045]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1046]: step b10s3
+                  - generic [ref=e1047]: complete artifact
+              - row [ref=e1048]:
+                - cell "stale" [ref=e1049]
+                - 'cell "src/modules/payments/wallet/topupClawback.ts:134 artifact: src\\modules\\payments\\wallet\\topupClawback.ts" [ref=e1051]':
+                  - link "src/modules/payments/wallet/topupClawback.ts:134" [ref=e1052] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=134#L134
+                  - generic [ref=e1053]: "artifact: src\\modules\\payments\\wallet\\topupClawback.ts"
+                - cell "17 branches 4/4" [ref=e1054]:
+                  - text: "17"
+                  - generic [ref=e1055]: branches 4/4
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b11s2 complete artifact" [ref=e1056]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1057]: step b11s2
+                  - generic [ref=e1058]: complete artifact
+              - row [ref=e1059]:
+                - cell "stale" [ref=e1060]
+                - cell [ref=e1062]:
+                  - link "src/modules/payments/wallet/topupClawback.ts:147" [ref=e1063] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=147#L147
+                - cell "— no branch fact" [ref=e1064]:
+                  - text: —
+                  - generic [ref=e1065]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s3 complete artifact" [ref=e1066]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1067]: step b10s3
+                  - generic [ref=e1068]: complete artifact
+              - row [ref=e1069]:
+                - cell "stale" [ref=e1070]
+                - cell [ref=e1072]:
+                  - link "src/modules/payments/wallet/topupClawback.ts:154" [ref=e1073] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=154#L154
+                - cell "— no branch fact" [ref=e1074]:
+                  - text: —
+                  - generic [ref=e1075]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 external ext_supabase complete artifact" [ref=e1076]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1077]: external ext_supabase
+                  - generic [ref=e1078]: complete artifact
+              - row [ref=e1079]:
+                - cell "stale" [ref=e1080]
+                - 'cell "src/modules/payments/wallet/topupClawback.ts:161 artifact: src\\modules\\payments\\wallet\\topupClawback.ts" [ref=e1082]':
+                  - link "src/modules/payments/wallet/topupClawback.ts:161" [ref=e1083] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=161#L161
+                  - generic [ref=e1084]: "artifact: src\\modules\\payments\\wallet\\topupClawback.ts"
+                - cell "17 no branch fact" [ref=e1085]:
+                  - text: "17"
+                  - generic [ref=e1086]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s3 complete artifact" [ref=e1087]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1088]: step b10s3
+                  - generic [ref=e1089]: complete artifact
+              - row [ref=e1090]:
+                - cell "stale" [ref=e1091]
+                - 'cell "src/modules/payments/wallet/topupClawback.ts:191 artifact: src\\modules\\payments\\wallet\\topupClawback.ts" [ref=e1093]':
+                  - link "src/modules/payments/wallet/topupClawback.ts:191" [ref=e1094] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=191#L191
+                  - generic [ref=e1095]: "artifact: src\\modules\\payments\\wallet\\topupClawback.ts"
+                - cell "5 no branch fact" [ref=e1096]:
+                  - text: "5"
+                  - generic [ref=e1097]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b13s1 complete artifact" [ref=e1098]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1099]: step b13s1
+                  - generic [ref=e1100]: complete artifact
+              - row [ref=e1101]:
+                - cell "stale" [ref=e1102]
+                - 'cell "src/modules/payments/wallet/topupClawback.ts:221 artifact: src\\modules\\payments\\wallet\\topupClawback.ts" [ref=e1104]':
+                  - link "src/modules/payments/wallet/topupClawback.ts:221" [ref=e1105] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopupClawback.ts&line=221#L221
+                  - generic [ref=e1106]: "artifact: src\\modules\\payments\\wallet\\topupClawback.ts"
+                - cell "4 branches 1/2" [ref=e1107]:
+                  - text: "4"
+                  - generic [ref=e1108]: branches 1/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b13s2 complete artifact" [ref=e1109]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1110]: step b13s2
+                  - generic [ref=e1111]: complete artifact
+              - row [ref=e1112]:
+                - cell "stale" [ref=e1113]
+                - 'cell "src/modules/payments/wallet/topUpWallet.ts:26 artifact: src\\modules\\payments\\wallet\\topUpWallet.ts" [ref=e1115]':
+                  - link "src/modules/payments/wallet/topUpWallet.ts:26" [ref=e1116] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopUpWallet.ts&line=26#L26
+                  - generic [ref=e1117]: "artifact: src\\modules\\payments\\wallet\\topUpWallet.ts"
+                - cell "1 no branch fact" [ref=e1118]:
+                  - text: "1"
+                  - generic [ref=e1119]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s1 complete artifact" [ref=e1120]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1121]: step b4s1
+                  - generic [ref=e1122]: complete artifact
+              - row [ref=e1123]:
+                - cell "stale" [ref=e1124]
+                - 'cell "src/modules/payments/wallet/topUpWallet.ts:30 artifact: src\\modules\\payments\\wallet\\topUpWallet.ts" [ref=e1126]':
+                  - link "src/modules/payments/wallet/topUpWallet.ts:30" [ref=e1127] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopUpWallet.ts&line=30#L30
+                  - generic [ref=e1128]: "artifact: src\\modules\\payments\\wallet\\topUpWallet.ts"
+                - cell "1 no branch fact" [ref=e1129]:
+                  - text: "1"
+                  - generic [ref=e1130]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s1 · module-edge payments->wallet_db complete artifact" [ref=e1131]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1132]: step b4s1 · module-edge payments->wallet_db
+                  - generic [ref=e1133]: complete artifact
+              - row [ref=e1134]:
+                - cell "stale" [ref=e1135]
+                - 'cell "src/modules/payments/wallet/topUpWallet.ts:40 artifact: src\\modules\\payments\\wallet\\topUpWallet.ts" [ref=e1137]':
+                  - link "src/modules/payments/wallet/topUpWallet.ts:40" [ref=e1138] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopUpWallet.ts&line=40#L40
+                  - generic [ref=e1139]: "artifact: src\\modules\\payments\\wallet\\topUpWallet.ts"
+                - cell "1 branches 1/2" [ref=e1140]:
+                  - text: "1"
+                  - generic [ref=e1141]: branches 1/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 external ext_supabase complete artifact" [ref=e1142]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1143]: external ext_supabase
+                  - generic [ref=e1144]: complete artifact
+              - row [ref=e1145]:
+                - cell "stale" [ref=e1146]
+                - 'cell "src/modules/payments/wallet/topUpWallet.ts:63 artifact: src\\modules\\payments\\wallet\\topUpWallet.ts" [ref=e1148]':
+                  - link "src/modules/payments/wallet/topUpWallet.ts:63" [ref=e1149] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopUpWallet.ts&line=63#L63
+                  - generic [ref=e1150]: "artifact: src\\modules\\payments\\wallet\\topUpWallet.ts"
+                - cell "1 no branch fact" [ref=e1151]:
+                  - text: "1"
+                  - generic [ref=e1152]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s3 complete artifact" [ref=e1153]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1154]: step b4s3
+                  - generic [ref=e1155]: complete artifact
+              - row [ref=e1156]:
+                - cell "stale" [ref=e1157]
+                - 'cell "src/modules/payments/wallet/topUpWallet.ts:74 artifact: src\\modules\\payments\\wallet\\topUpWallet.ts" [ref=e1159]':
+                  - link "src/modules/payments/wallet/topUpWallet.ts:74" [ref=e1160] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwallet%2FtopUpWallet.ts&line=74#L74
+                  - generic [ref=e1161]: "artifact: src\\modules\\payments\\wallet\\topUpWallet.ts"
+                - cell "1 no branch fact" [ref=e1162]:
+                  - text: "1"
+                  - generic [ref=e1163]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s3 complete artifact" [ref=e1164]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1165]: step b4s3
+                  - generic [ref=e1166]: complete artifact
+              - row [ref=e1167]:
+                - cell "stale" [ref=e1168]
+                - 'cell "src/modules/payments/webhooks/syncLessonPaymentStatus.ts:266 artifact: src\\modules\\payments\\webhooks\\syncLessonPaymentStatus.ts" [ref=e1170]':
+                  - link "src/modules/payments/webhooks/syncLessonPaymentStatus.ts:266" [ref=e1171] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwebhooks%2FsyncLessonPaymentStatus.ts&line=266#L266
+                  - generic [ref=e1172]: "artifact: src\\modules\\payments\\webhooks\\syncLessonPaymentStatus.ts"
+                - cell "21 branches 2/2" [ref=e1173]:
+                  - text: "21"
+                  - generic [ref=e1174]: branches 2/2
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s1 complete artifact" [ref=e1175]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1176]: step b10s1
+                  - generic [ref=e1177]: complete artifact
+              - row [ref=e1178]:
+                - cell "stale" [ref=e1179]
+                - 'cell "src/modules/payments/webhooks/syncLessonPaymentStatus.ts:272 artifact: src\\modules\\payments\\webhooks\\syncLessonPaymentStatus.ts" [ref=e1181]':
+                  - link "src/modules/payments/webhooks/syncLessonPaymentStatus.ts:272" [ref=e1182] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwebhooks%2FsyncLessonPaymentStatus.ts&line=272#L272
+                  - generic [ref=e1183]: "artifact: src\\modules\\payments\\webhooks\\syncLessonPaymentStatus.ts"
+                - cell "15 branches 4/4" [ref=e1184]:
+                  - text: "15"
+                  - generic [ref=e1185]: branches 4/4
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s1 complete artifact" [ref=e1186]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1187]: step b10s1
+                  - generic [ref=e1188]: complete artifact
+              - row [ref=e1189]:
+                - cell "stale" [ref=e1190]
+                - 'cell "src/modules/payments/webhooks/syncLessonPaymentStatus.ts:277 artifact: src\\modules\\payments\\webhooks\\syncLessonPaymentStatus.ts" [ref=e1192]':
+                  - link "src/modules/payments/webhooks/syncLessonPaymentStatus.ts:277" [ref=e1193] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fpayments%2Fwebhooks%2FsyncLessonPaymentStatus.ts&line=277#L277
+                  - generic [ref=e1194]: "artifact: src\\modules\\payments\\webhooks\\syncLessonPaymentStatus.ts"
+                - cell "9 branches 4/4" [ref=e1195]:
+                  - text: "9"
+                  - generic [ref=e1196]: branches 4/4
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b13s1 complete artifact" [ref=e1197]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1198]: step b13s1
+                  - generic [ref=e1199]: complete artifact
+              - row [ref=e1200]:
+                - cell "stale" [ref=e1201]
+                - 'cell "src/modules/stripe-gateway/stripe.ts:47 artifact: src\\modules\\stripe-gateway\\stripe.ts" [ref=e1203]':
+                  - link "src/modules/stripe-gateway/stripe.ts:47" [ref=e1204] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fstripe-gateway%2Fstripe.ts&line=47#L47
+                  - generic [ref=e1205]: "artifact: src\\modules\\stripe-gateway\\stripe.ts"
+                - cell "8 no branch fact" [ref=e1206]:
+                  - text: "8"
+                  - generic [ref=e1207]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s4 complete artifact" [ref=e1208]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1209]: step s4
+                  - generic [ref=e1210]: complete artifact
+              - row [ref=e1211]:
+                - cell "stale" [ref=e1212]
+                - 'cell "src/modules/stripe-gateway/stripe.ts:83 artifact: src\\modules\\stripe-gateway\\stripe.ts" [ref=e1214]':
+                  - link "src/modules/stripe-gateway/stripe.ts:83" [ref=e1215] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fstripe-gateway%2Fstripe.ts&line=83#L83
+                  - generic [ref=e1216]: "artifact: src\\modules\\stripe-gateway\\stripe.ts"
+                - cell "8 no branch fact" [ref=e1217]:
+                  - text: "8"
+                  - generic [ref=e1218]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s4 · module-edge stripe_gateway->stripe · external ext_stripe complete artifact" [ref=e1219]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1220]: step s4 · module-edge stripe_gateway->stripe · external ext_stripe
+                  - generic [ref=e1221]: complete artifact
+              - row [ref=e1222]:
+                - cell "stale" [ref=e1223]
+                - 'cell "src/modules/stripe-gateway/stripe.ts:129 artifact: src\\modules\\stripe-gateway\\stripe.ts" [ref=e1225]':
+                  - link "src/modules/stripe-gateway/stripe.ts:129" [ref=e1226] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fstripe-gateway%2Fstripe.ts&line=129#L129
+                  - generic [ref=e1227]: "artifact: src\\modules\\stripe-gateway\\stripe.ts"
+                - cell "14 no branch fact" [ref=e1228]:
+                  - text: "14"
+                  - generic [ref=e1229]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s2 complete artifact" [ref=e1230]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1231]: step b9s2
+                  - generic [ref=e1232]: complete artifact
+              - row [ref=e1233]:
+                - cell "stale" [ref=e1234]
+                - 'cell "src/modules/stripe-gateway/stripe.ts:133 artifact: src\\modules\\stripe-gateway\\stripe.ts" [ref=e1236]':
+                  - link "src/modules/stripe-gateway/stripe.ts:133" [ref=e1237] [cursor=pointer]:
+                    - /url: /source?path=src%2Fmodules%2Fstripe-gateway%2Fstripe.ts&line=133#L133
+                  - generic [ref=e1238]: "artifact: src\\modules\\stripe-gateway\\stripe.ts"
+                - cell "14 no branch fact" [ref=e1239]:
+                  - text: "14"
+                  - generic [ref=e1240]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 module-edge stripe_gateway->stripe complete artifact" [ref=e1241]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1242]: module-edge stripe_gateway->stripe
+                  - generic [ref=e1243]: complete artifact
+              - row [ref=e1244]:
+                - cell "stale" [ref=e1245]
+                - cell [ref=e1247]:
+                  - link "supabase/migrations/20260610120000_instructor_customer_wallets.sql:16" [ref=e1248] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260610120000_instructor_customer_wallets.sql&line=16#L16
+                - cell "— no branch fact" [ref=e1249]:
+                  - text: —
+                  - generic [ref=e1250]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 external ext_supabase complete artifact" [ref=e1251]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1252]: external ext_supabase
+                  - generic [ref=e1253]: complete artifact
+              - row [ref=e1254]:
+                - cell "stale" [ref=e1255]
+                - cell [ref=e1257]:
+                  - link "supabase/migrations/20260716153809_fix_wallet_rpc_ambiguous_returning.sql:179" [ref=e1258] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260716153809_fix_wallet_rpc_ambiguous_returning.sql&line=179#L179
+                - cell "— no branch fact" [ref=e1259]:
+                  - text: —
+                  - generic [ref=e1260]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s3 complete artifact" [ref=e1261]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1262]: step b9s3
+                  - generic [ref=e1263]: complete artifact
+              - row [ref=e1264]:
+                - cell "stale" [ref=e1265]
+                - cell [ref=e1267]:
+                  - link "supabase/migrations/20260716153809_fix_wallet_rpc_ambiguous_returning.sql:183" [ref=e1268] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260716153809_fix_wallet_rpc_ambiguous_returning.sql&line=183#L183
+                - cell "— no branch fact" [ref=e1269]:
+                  - text: —
+                  - generic [ref=e1270]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b9s3 complete artifact" [ref=e1271]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1272]: step b9s3
+                  - generic [ref=e1273]: complete artifact
+              - row [ref=e1274]:
+                - cell "stale" [ref=e1275]
+                - cell [ref=e1277]:
+                  - link "supabase/migrations/20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql:59" [ref=e1278] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql&line=59#L59
+                - cell "— no branch fact" [ref=e1279]:
+                  - text: —
+                  - generic [ref=e1280]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s2 complete artifact" [ref=e1281]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1282]: step b8s2
+                  - generic [ref=e1283]: complete artifact
+              - row [ref=e1284]:
+                - cell "stale" [ref=e1285]
+                - cell [ref=e1287]:
+                  - link "supabase/migrations/20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql:95" [ref=e1288] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql&line=95#L95
+                - cell "— no branch fact" [ref=e1289]:
+                  - text: —
+                  - generic [ref=e1290]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s2 complete artifact" [ref=e1291]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1292]: step b8s2
+                  - generic [ref=e1293]: complete artifact
+              - row [ref=e1294]:
+                - cell "stale" [ref=e1295]
+                - cell [ref=e1297]:
+                  - link "supabase/migrations/20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql:108" [ref=e1298] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql&line=108#L108
+                - cell "— no branch fact" [ref=e1299]:
+                  - text: —
+                  - generic [ref=e1300]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s2 complete artifact" [ref=e1301]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1302]: step b8s2
+                  - generic [ref=e1303]: complete artifact
+              - row [ref=e1304]:
+                - cell "stale" [ref=e1305]
+                - cell [ref=e1307]:
+                  - link "supabase/migrations/20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql:113" [ref=e1308] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260716153955_fix_wallet_refund_rpc_ambiguous_returning.sql&line=113#L113
+                - cell "— no branch fact" [ref=e1309]:
+                  - text: —
+                  - generic [ref=e1310]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b8s2 complete artifact" [ref=e1311]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1312]: step b8s2
+                  - generic [ref=e1313]: complete artifact
+              - row [ref=e1314]:
+                - cell "stale" [ref=e1315]
+                - cell [ref=e1317]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:75" [ref=e1318] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=75#L75
+                - cell "— no branch fact" [ref=e1319]:
+                  - text: —
+                  - generic [ref=e1320]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s2 complete artifact" [ref=e1321]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1322]: step b10s2
+                  - generic [ref=e1323]: complete artifact
+              - row [ref=e1324]:
+                - cell "stale" [ref=e1325]
+                - cell [ref=e1327]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:82" [ref=e1328] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=82#L82
+                - cell "— no branch fact" [ref=e1329]:
+                  - text: —
+                  - generic [ref=e1330]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b12s1 complete artifact" [ref=e1331]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1332]: step b12s1
+                  - generic [ref=e1333]: complete artifact
+              - row [ref=e1334]:
+                - cell "stale" [ref=e1335]
+                - cell [ref=e1337]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:88" [ref=e1338] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=88#L88
+                - cell "— no branch fact" [ref=e1339]:
+                  - text: —
+                  - generic [ref=e1340]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s2 complete artifact" [ref=e1341]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1342]: step b10s2
+                  - generic [ref=e1343]: complete artifact
+              - row [ref=e1344]:
+                - cell "stale" [ref=e1345]
+                - cell [ref=e1347]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:101" [ref=e1348] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=101#L101
+                - cell "— no branch fact" [ref=e1349]:
+                  - text: —
+                  - generic [ref=e1350]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s2 complete artifact" [ref=e1351]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1352]: step b10s2
+                  - generic [ref=e1353]: complete artifact
+              - row [ref=e1354]:
+                - cell "stale" [ref=e1355]
+                - cell [ref=e1357]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:111" [ref=e1358] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=111#L111
+                - cell "— no branch fact" [ref=e1359]:
+                  - text: —
+                  - generic [ref=e1360]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s2 complete artifact" [ref=e1361]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1362]: step b10s2
+                  - generic [ref=e1363]: complete artifact
+              - row [ref=e1364]:
+                - cell "stale" [ref=e1365]
+                - cell [ref=e1367]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:121" [ref=e1368] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=121#L121
+                - cell "— no branch fact" [ref=e1369]:
+                  - text: —
+                  - generic [ref=e1370]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b11s1 complete artifact" [ref=e1371]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1372]: step b11s1
+                  - generic [ref=e1373]: complete artifact
+              - row [ref=e1374]:
+                - cell "stale" [ref=e1375]
+                - cell [ref=e1377]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:132" [ref=e1378] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=132#L132
+                - cell "— no branch fact" [ref=e1379]:
+                  - text: —
+                  - generic [ref=e1380]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s2 complete artifact" [ref=e1381]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1382]: step b10s2
+                  - generic [ref=e1383]: complete artifact
+              - row [ref=e1384]:
+                - cell "stale" [ref=e1385]
+                - cell [ref=e1387]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:139" [ref=e1388] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=139#L139
+                - cell "— no branch fact" [ref=e1389]:
+                  - text: —
+                  - generic [ref=e1390]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b10s2 complete artifact" [ref=e1391]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1392]: step b10s2
+                  - generic [ref=e1393]: complete artifact
+              - row [ref=e1394]:
+                - cell "stale" [ref=e1395]
+                - cell [ref=e1397]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:144" [ref=e1398] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=144#L144
+                - cell "— no branch fact" [ref=e1399]:
+                  - text: —
+                  - generic [ref=e1400]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b11s1 complete artifact" [ref=e1401]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1402]: step b11s1
+                  - generic [ref=e1403]: complete artifact
+              - row [ref=e1404]:
+                - cell "stale" [ref=e1405]
+                - cell [ref=e1407]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:200" [ref=e1408] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=200#L200
+                - cell "— no branch fact" [ref=e1409]:
+                  - text: —
+                  - generic [ref=e1410]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b13s1 complete artifact" [ref=e1411]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1412]: step b13s1
+                  - generic [ref=e1413]: complete artifact
+              - row [ref=e1414]:
+                - cell "stale" [ref=e1415]
+                - cell [ref=e1417]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:210" [ref=e1418] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=210#L210
+                - cell "— no branch fact" [ref=e1419]:
+                  - text: —
+                  - generic [ref=e1420]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b13s1 complete artifact" [ref=e1421]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1422]: step b13s1
+                  - generic [ref=e1423]: complete artifact
+              - row [ref=e1424]:
+                - cell "stale" [ref=e1425]
+                - cell [ref=e1427]:
+                  - link "supabase/migrations/20260731140000_wallet_clawback_cumulative.sql:222" [ref=e1428] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260731140000_wallet_clawback_cumulative.sql&line=222#L222
+                - cell "— no branch fact" [ref=e1429]:
+                  - text: —
+                  - generic [ref=e1430]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b13s1 complete artifact" [ref=e1431]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1432]: step b13s1
+                  - generic [ref=e1433]: complete artifact
+              - row [ref=e1434]:
+                - cell "stale" [ref=e1435]
+                - cell [ref=e1437]:
+                  - link "supabase/migrations/20260802110000_vat_snapshot_rpcs.sql:394" [ref=e1438] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260802110000_vat_snapshot_rpcs.sql&line=394#L394
+                - cell "— no branch fact" [ref=e1439]:
+                  - text: —
+                  - generic [ref=e1440]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s2 complete artifact" [ref=e1441]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1442]: step b7s2
+                  - generic [ref=e1443]: complete artifact
+              - row [ref=e1444]:
+                - cell "stale" [ref=e1445]
+                - cell [ref=e1447]:
+                  - link "supabase/migrations/20260802110000_vat_snapshot_rpcs.sql:415" [ref=e1448] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260802110000_vat_snapshot_rpcs.sql&line=415#L415
+                - cell "— no branch fact" [ref=e1449]:
+                  - text: —
+                  - generic [ref=e1450]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s2 complete artifact" [ref=e1451]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1452]: step b7s2
+                  - generic [ref=e1453]: complete artifact
+              - row [ref=e1454]:
+                - cell "stale" [ref=e1455]
+                - cell [ref=e1457]:
+                  - link "supabase/migrations/20260802110000_vat_snapshot_rpcs.sql:456" [ref=e1458] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260802110000_vat_snapshot_rpcs.sql&line=456#L456
+                - cell "— no branch fact" [ref=e1459]:
+                  - text: —
+                  - generic [ref=e1460]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s2 complete artifact" [ref=e1461]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1462]: step b7s2
+                  - generic [ref=e1463]: complete artifact
+              - row [ref=e1464]:
+                - cell "stale" [ref=e1465]
+                - cell [ref=e1467]:
+                  - link "supabase/migrations/20260802110000_vat_snapshot_rpcs.sql:460" [ref=e1468] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260802110000_vat_snapshot_rpcs.sql&line=460#L460
+                - cell "— no branch fact" [ref=e1469]:
+                  - text: —
+                  - generic [ref=e1470]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s2 complete artifact" [ref=e1471]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1472]: step b7s2
+                  - generic [ref=e1473]: complete artifact
+              - row [ref=e1474]:
+                - cell "stale" [ref=e1475]
+                - cell [ref=e1477]:
+                  - link "supabase/migrations/20260802110000_vat_snapshot_rpcs.sql:475" [ref=e1478] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260802110000_vat_snapshot_rpcs.sql&line=475#L475
+                - cell "— no branch fact" [ref=e1479]:
+                  - text: —
+                  - generic [ref=e1480]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s2 complete artifact" [ref=e1481]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1482]: step b7s2
+                  - generic [ref=e1483]: complete artifact
+              - row [ref=e1484]:
+                - cell "stale" [ref=e1485]
+                - cell [ref=e1487]:
+                  - link "supabase/migrations/20260802110000_vat_snapshot_rpcs.sql:491" [ref=e1488] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260802110000_vat_snapshot_rpcs.sql&line=491#L491
+                - cell "— no branch fact" [ref=e1489]:
+                  - text: —
+                  - generic [ref=e1490]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b7s2 complete artifact" [ref=e1491]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1492]: step b7s2
+                  - generic [ref=e1493]: complete artifact
+              - row [ref=e1494]:
+                - cell "stale" [ref=e1495]
+                - cell [ref=e1497]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:75" [ref=e1498] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=75#L75
+                - cell "— no branch fact" [ref=e1499]:
+                  - text: —
+                  - generic [ref=e1500]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b3s1 complete artifact" [ref=e1501]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1502]: step b3s1
+                  - generic [ref=e1503]: complete artifact
+              - row [ref=e1504]:
+                - cell "stale" [ref=e1505]
+                - cell [ref=e1507]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:83" [ref=e1508] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=83#L83
+                - cell "— no branch fact" [ref=e1509]:
+                  - text: —
+                  - generic [ref=e1510]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b3s1 complete artifact" [ref=e1511]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1512]: step b3s1
+                  - generic [ref=e1513]: complete artifact
+              - row [ref=e1514]:
+                - cell "stale" [ref=e1515]
+                - cell [ref=e1517]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:94" [ref=e1518] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=94#L94
+                - cell "— no branch fact" [ref=e1519]:
+                  - text: —
+                  - generic [ref=e1520]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b3s2 complete artifact" [ref=e1521]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1522]: step b3s2
+                  - generic [ref=e1523]: complete artifact
+              - row [ref=e1524]:
+                - cell "stale" [ref=e1525]
+                - cell [ref=e1527]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:152" [ref=e1528] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=152#L152
+                - cell "— no branch fact" [ref=e1529]:
+                  - text: —
+                  - generic [ref=e1530]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s2 complete artifact" [ref=e1531]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1532]: step b4s2
+                  - generic [ref=e1533]: complete artifact
+              - row [ref=e1534]:
+                - cell "stale" [ref=e1535]
+                - cell [ref=e1537]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:161" [ref=e1538] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=161#L161
+                - cell "— no branch fact" [ref=e1539]:
+                  - text: —
+                  - generic [ref=e1540]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s2 complete artifact" [ref=e1541]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1542]: step b4s2
+                  - generic [ref=e1543]: complete artifact
+              - row [ref=e1544]:
+                - cell "stale" [ref=e1545]
+                - cell [ref=e1547]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:225" [ref=e1548] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=225#L225
+                - cell "— no branch fact" [ref=e1549]:
+                  - text: —
+                  - generic [ref=e1550]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s2 complete artifact" [ref=e1551]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1552]: step b4s2
+                  - generic [ref=e1553]: complete artifact
+              - row [ref=e1554]:
+                - cell "stale" [ref=e1555]
+                - cell [ref=e1557]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:228" [ref=e1558] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=228#L228
+                - cell "— no branch fact" [ref=e1559]:
+                  - text: —
+                  - generic [ref=e1560]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s2 complete artifact" [ref=e1561]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1562]: step b4s2
+                  - generic [ref=e1563]: complete artifact
+              - row [ref=e1564]:
+                - cell "stale" [ref=e1565]
+                - cell [ref=e1567]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:244" [ref=e1568] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=244#L244
+                - cell "— no branch fact" [ref=e1569]:
+                  - text: —
+                  - generic [ref=e1570]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b4s2 complete artifact" [ref=e1571]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1572]: step b4s2
+                  - generic [ref=e1573]: complete artifact
+              - row [ref=e1574]:
+                - cell "stale" [ref=e1575]
+                - cell [ref=e1577]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:289" [ref=e1578] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=289#L289
+                - cell "— no branch fact" [ref=e1579]:
+                  - text: —
+                  - generic [ref=e1580]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s8 complete artifact" [ref=e1581]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1582]: step s8
+                  - generic [ref=e1583]: complete artifact
+              - row [ref=e1584]:
+                - cell "stale" [ref=e1585]
+                - cell [ref=e1587]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:348" [ref=e1588] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=348#L348
+                - cell "— no branch fact" [ref=e1589]:
+                  - text: —
+                  - generic [ref=e1590]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b3s2 complete artifact" [ref=e1591]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1592]: step b3s2
+                  - generic [ref=e1593]: complete artifact
+              - row [ref=e1594]:
+                - cell "stale" [ref=e1595]
+                - cell [ref=e1597]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:351" [ref=e1598] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=351#L351
+                - cell "— no branch fact" [ref=e1599]:
+                  - text: —
+                  - generic [ref=e1600]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s8 complete artifact" [ref=e1601]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1602]: step s8
+                  - generic [ref=e1603]: complete artifact
+              - row [ref=e1604]:
+                - cell "stale" [ref=e1605]
+                - cell [ref=e1607]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:353" [ref=e1608] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=353#L353
+                - cell "— no branch fact" [ref=e1609]:
+                  - text: —
+                  - generic [ref=e1610]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s8 complete artifact" [ref=e1611]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1612]: step s8
+                  - generic [ref=e1613]: complete artifact
+              - row [ref=e1614]:
+                - cell "stale" [ref=e1615]
+                - cell [ref=e1617]:
+                  - link "supabase/migrations/20260803140000_wallet_tax_regime.sql:370" [ref=e1618] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803140000_wallet_tax_regime.sql&line=370#L370
+                - cell "— no branch fact" [ref=e1619]:
+                  - text: —
+                  - generic [ref=e1620]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s8 complete artifact" [ref=e1621]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1622]: step s8
+                  - generic [ref=e1623]: complete artifact
+              - row [ref=e1624]:
+                - cell "stale" [ref=e1625]
+                - cell [ref=e1627]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:147" [ref=e1628] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=147#L147
+                - cell "— no branch fact" [ref=e1629]:
+                  - text: —
+                  - generic [ref=e1630]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b6s1 complete artifact" [ref=e1631]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1632]: step b6s1
+                  - generic [ref=e1633]: complete artifact
+              - row [ref=e1634]:
+                - cell "stale" [ref=e1635]
+                - cell [ref=e1637]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:167" [ref=e1638] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=167#L167
+                - cell "— no branch fact" [ref=e1639]:
+                  - text: —
+                  - generic [ref=e1640]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b6s1 complete artifact" [ref=e1641]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1642]: step b6s1
+                  - generic [ref=e1643]: complete artifact
+              - row [ref=e1644]:
+                - cell "stale" [ref=e1645]
+                - cell [ref=e1647]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:171" [ref=e1648] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=171#L171
+                - cell "— no branch fact" [ref=e1649]:
+                  - text: —
+                  - generic [ref=e1650]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b6s1 complete artifact" [ref=e1651]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1652]: step b6s1
+                  - generic [ref=e1653]: complete artifact
+              - row [ref=e1654]:
+                - cell "stale" [ref=e1655]
+                - cell [ref=e1657]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:180" [ref=e1658] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=180#L180
+                - cell "— no branch fact" [ref=e1659]:
+                  - text: —
+                  - generic [ref=e1660]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b6s1 complete artifact" [ref=e1661]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1662]: step b6s1
+                  - generic [ref=e1663]: complete artifact
+              - row [ref=e1664]:
+                - cell "stale" [ref=e1665]
+                - cell [ref=e1667]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:194" [ref=e1668] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=194#L194
+                - cell "— no branch fact" [ref=e1669]:
+                  - text: —
+                  - generic [ref=e1670]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s13 complete artifact" [ref=e1671]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1672]: step s13
+                  - generic [ref=e1673]: complete artifact
+              - row [ref=e1674]:
+                - cell "stale" [ref=e1675]
+                - cell [ref=e1677]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:235" [ref=e1678] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=235#L235
+                - cell "— no branch fact" [ref=e1679]:
+                  - text: —
+                  - generic [ref=e1680]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b6s2 complete artifact" [ref=e1681]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1682]: step b6s2
+                  - generic [ref=e1683]: complete artifact
+              - row [ref=e1684]:
+                - cell "stale" [ref=e1685]
+                - cell [ref=e1687]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:237" [ref=e1688] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=237#L237
+                - cell "— no branch fact" [ref=e1689]:
+                  - text: —
+                  - generic [ref=e1690]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s13 complete artifact" [ref=e1691]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1692]: step s13
+                  - generic [ref=e1693]: complete artifact
+              - row [ref=e1694]:
+                - cell "stale" [ref=e1695]
+                - cell [ref=e1697]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:244" [ref=e1698] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=244#L244
+                - cell "— no branch fact" [ref=e1699]:
+                  - text: —
+                  - generic [ref=e1700]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b6s2 complete artifact" [ref=e1701]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1702]: step b6s2
+                  - generic [ref=e1703]: complete artifact
+              - row [ref=e1704]:
+                - cell "stale" [ref=e1705]
+                - cell [ref=e1707]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:259" [ref=e1708] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=259#L259
+                - cell "— no branch fact" [ref=e1709]:
+                  - text: —
+                  - generic [ref=e1710]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s13 · step b6s2 complete artifact" [ref=e1711]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1712]: step s13 · step b6s2
+                  - generic [ref=e1713]: complete artifact
+              - row [ref=e1714]:
+                - cell "stale" [ref=e1715]
+                - cell [ref=e1717]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:272" [ref=e1718] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=272#L272
+                - cell "— no branch fact" [ref=e1719]:
+                  - text: —
+                  - generic [ref=e1720]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step b6s2 complete artifact" [ref=e1721]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1722]: step b6s2
+                  - generic [ref=e1723]: complete artifact
+              - row [ref=e1724]:
+                - cell "stale" [ref=e1725]
+                - cell [ref=e1727]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:273" [ref=e1728] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=273#L273
+                - cell "— no branch fact" [ref=e1729]:
+                  - text: —
+                  - generic [ref=e1730]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s13 complete artifact" [ref=e1731]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1732]: step s13
+                  - generic [ref=e1733]: complete artifact
+              - row [ref=e1734]:
+                - cell "stale" [ref=e1735]
+                - cell [ref=e1737]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:280" [ref=e1738] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=280#L280
+                - cell "— no branch fact" [ref=e1739]:
+                  - text: —
+                  - generic [ref=e1740]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s13 complete artifact" [ref=e1741]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1742]: step s13
+                  - generic [ref=e1743]: complete artifact
+              - row [ref=e1744]:
+                - cell "stale" [ref=e1745]
+                - cell [ref=e1747]:
+                  - link "supabase/migrations/20260803150000_customer_wallet_pay_booking.sql:295" [ref=e1748] [cursor=pointer]:
+                    - /url: /source?path=supabase%2Fmigrations%2F20260803150000_customer_wallet_pay_booking.sql&line=295#L295
+                - cell "— no branch fact" [ref=e1749]:
+                  - text: —
+                  - generic [ref=e1750]: no branch fact
+                - cell "producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13 step s13 complete artifact" [ref=e1751]:
+                  - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+                  - generic [ref=e1752]: step s13
+                  - generic [ref=e1753]: complete artifact
+          - heading "Diagnostics" [level=2] [ref=e1754]
+          - generic [ref=e1755]:
+            - generic [ref=e1756]: tree-mismatch
+            - text: producer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+        - complementary [ref=e1757]:
+          - heading "Provenance" [level=3] [ref=e1758]
+          - paragraph [ref=e1759]: Vitest v4 unit + integration suitesnode coverage/veriflow-combined-coverage.mjs
+          - paragraph [ref=e1760]: Produced 2026-08-04T09:42:36.107Z Commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 · clean Artifact sha256:75e7b9eccce501ebec8810fc0f7561294489e75d9690cc8817fbb526ad138fc2 · 2757395 bytes
+          - paragraph [ref=e1761]: Answer snapshot 9c9c55c1-7dce-4256-b413-e6cf86ff320aproducer commit 64747b39966dd0c5e8dc169b1d26cbc65535b2a1 differs from answer commit fbd0e96697ba025becb664ab2174bdadabd2ed13
+          - paragraph [ref=e1762]: Source roots and explicit mappings are stored in the canonical run. No filesystem lookup, suffix match or basename guess is performed when this page opens.
+          - heading "How F019 works" [level=3] [ref=e1763]
+          - paragraph [ref=e1764]:
+            - code [ref=e1765]: veriflow coverage run <answer-id>
+            - text: explicitly invokes the configured test producer and requires a fresh Cobertura artifact. The bounded adapter parses it without loading external entities, exact path+line facts are mapped to the stored answer snapshot, and the immutable run keeps the command, commit, tree state, timestamp and artifact hash.
+          - paragraph [ref=e1766]: "Five states stay distinct: covered, uncovered, stale, missing source and outside the flow. F008's identifier-name proxy is linked for comparison, never blended into this execution score."

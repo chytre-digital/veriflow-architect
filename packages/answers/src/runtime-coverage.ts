@@ -41,6 +41,17 @@ export interface RuntimeCoverageImportResult {
   source: "imported" | "existing";
 }
 
+export interface RuntimeCoverageExecutionSummary {
+  lines: {
+    covered: number;
+    uncovered: number;
+    unreported: number;
+    reported: number;
+    total: number;
+  };
+  branches: { covered: number; uncovered: number; total: number };
+}
+
 /**
  * The only F019 writer. It validates provenance and resolves the answer before opening the artifact,
  * parses the bounded bytes once, builds one canonical payload, then inserts that payload once.
@@ -144,6 +155,8 @@ export function listRuntimeCoverageRuns(
   completeness: "complete" | "partial";
   current: boolean;
   totals: RuntimeCoverageRunV1["totals"];
+  scope: RuntimeCoverageRunV1["scope"];
+  execution: RuntimeCoverageExecutionSummary;
 }> {
   return store.listRuntimeCoverageRuns(answerId).map((row) => {
     const run = parseRuntimeCoverageRun(row);
@@ -154,8 +167,46 @@ export function listRuntimeCoverageRuns(
       completeness: run.provenance.completeness,
       current: run.treeMatch.current,
       totals: run.totals,
+      scope: run.scope,
+      execution: summarizeRuntimeCoverageExecution(run),
     };
   });
+}
+
+/** Flow-only execution facts. Artifact lines outside exact answer citations never enter this score. */
+export function summarizeRuntimeCoverageExecution(
+  run: RuntimeCoverageRunV1,
+): RuntimeCoverageExecutionSummary {
+  const citationEvidence = run.evidence.filter((item) => item.kind === "citation");
+  let covered = 0;
+  let uncovered = 0;
+  let unreported = 0;
+  let coveredBranches = 0;
+  let uncoveredBranches = 0;
+  for (const item of citationEvidence) {
+    if (item.hits === undefined) unreported += 1;
+    else if (item.hits === 0 || Boolean(item.branches && item.branches.covered < item.branches.total)) {
+      uncovered += 1;
+    } else covered += 1;
+    if (item.branches) {
+      coveredBranches += item.branches.covered;
+      uncoveredBranches += item.branches.total - item.branches.covered;
+    }
+  }
+  return {
+    lines: {
+      covered,
+      uncovered,
+      unreported,
+      reported: covered + uncovered,
+      total: citationEvidence.length,
+    },
+    branches: {
+      covered: coveredBranches,
+      uncovered: uncoveredBranches,
+      total: coveredBranches + uncoveredBranches,
+    },
+  };
 }
 
 export function validateRuntimeCoverageProvenance(

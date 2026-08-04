@@ -85,8 +85,9 @@ M6 starts from the observed module registry and proposal overlay that now exist.
 
 The reviewed implementation contract is
 [`f019-runtime-coverage-plan.md`](f019-runtime-coverage-plan.md). It fixes Cobertura XML as the first
-adapter, an import-only workflow, exact citation-line mapping, immutable provenance and stale-state
-rules. The scope below remains the acceptance boundary.
+adapter, one canonical import workflow, exact citation-line mapping, immutable provenance and
+stale-state rules. A post-ship convenience command now explicitly runs a configured producer before
+calling that same importer. The scope below remains the acceptance boundary.
 
 ### In
 
@@ -109,7 +110,9 @@ rules. The scope below remains the acceptance boundary.
 ### Settled design decisions
 
 - Cobertura XML is the first adapter over a format-neutral runtime-coverage contract.
-- F019 is import-only; VeriFlow never invokes a project's test command.
+- `coverage import` remains process-free. `coverage run` is the one explicit opt-in that invokes the
+  displayed user/configured producer, requires a fresh Cobertura artifact and imports it with derived
+  Git/time provenance; no browser, MCP or read command can trigger it.
 - Paths map only through exact snapshot paths, declared source roots and explicit root mappings;
   ambiguity is reported and never guessed.
 - Missing/different commits or dirty producer/answer trees make mapped evidence stale while

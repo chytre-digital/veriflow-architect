@@ -1,4 +1,5 @@
 node_modules/
 .veriflow/
+coverage/
 dist/
 *.tsbuildinfo

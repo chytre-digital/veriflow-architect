@@ -10,8 +10,10 @@ The user-facing import and read contract is documented in
 [`docs/runtime-coverage.md`](../runtime-coverage.md).
 
 F019 adds executed line and branch evidence without changing the meaning of the existing F008
-identifier proxy. It is an explicit import workflow: VeriFlow never starts a project's tests, never
-changes source or Git state, and never combines the two measurements into one score.
+identifier proxy. Its canonical writer is an explicit import. The post-ship `coverage run` convenience
+command may explicitly start the producer selected by the user or the checked-in
+`coverage:cobertura` convention, then hands its fresh artifact to that same importer. No read surface
+starts tests, and the two measurements are never combined into one score.
 
 The plan was dogfooded through VeriFlow itself. The reviewed observed answer is
 `e727488b-6ec1-4c18-aa51-7274e28405da`; the accepted proposal is
@@ -27,8 +29,11 @@ the contract below is the durable implementation source.
    `RuntimeCoverageRunV1`; Cobertura-specific XML and path rules stay in
    `packages/metrics/src/cobertura.ts`, outside the canonical mapper in
    `packages/metrics/src/runtime-coverage.ts`.
-2. **Import only.** The only writer is an explicit `veriflow coverage import` command. The command
-   accepts an artifact already produced by the user and has no test-command execution path.
+2. **One importer, two explicit entry points.** `veriflow coverage import` accepts an artifact already
+   produced by the user and never executes a process. `veriflow coverage run` visibly executes the
+   supplied command or checked-in `coverage:cobertura` package script, verifies that it refreshed the
+   expected artifact, derives Git/time provenance and calls the same immutable importer. A failed
+   producer stores nothing.
 3. **One answer and one immutable run.** Every import targets an existing answer and produces one
    content-addressed run. Re-importing byte-equivalent evidence and provenance returns the existing
    row; a run is never updated or replaced.
@@ -60,6 +65,7 @@ F019 does not replace, rename or remove any of those steps or their failure outc
 
 | Step | Boundary | Contract |
 |---|---|---|
+| `f019_cli_run` | CLI → explicit producer | Echo and execute the selected coverage command, require a fresh in-workspace artifact, derive producer provenance, then call the canonical import path. Never runs from a read surface. |
 | `f019_cli_import` | CLI → answers | Receive answer id, Cobertura path and explicit provenance. Do not start a process other than reading the artifact. |
 | `f019_resolve_answer` | answers → store | Resolve the corrected answer, observed citations, snapshot paths, commit and dirty-at-capture facts. Refuse an unknown answer before parsing or writing. |
 | `f019_read_artifact` | CLI/answers → Cobertura adapter | Read bounded XML once, reject unsafe or malformed input, and compute artifact SHA-256 and byte length. |
@@ -143,7 +149,8 @@ correct. VeriFlow reports counts and exact facts, not a synthetic full-flow cove
 
 ## Read surfaces
 
-- CLI: `veriflow coverage import <answer> <artifact> ...` writes; `veriflow coverage show <answer>
+- CLI: `veriflow coverage run <answer> [workspace]` explicitly produces and imports;
+  `veriflow coverage import <answer> <artifact> ...` imports only; `veriflow coverage show <answer>
   <run> [--json]` only reads.
 - Browser: `/answers/:answerId/runtime-coverage/:runId` is stable and shareable; the answer view lists
   imported runs and links to the independent F008 metrics coverage view.
@@ -164,7 +171,8 @@ not parse XML, re-map paths, read Git, start tests or write the store.
 - an answer with no observed citation lines may store provenance but reports zero mapped ranges;
 - an exact duplicate returns the immutable existing run;
 - an unknown answer/run pair fails consistently in CLI, browser and MCP;
-- no import/read path starts tests or changes files, Git state, answers or F008 rows.
+- no import/read path starts tests or changes files, Git state, answers or F008 rows; only the
+  explicit `coverage run` producer may create its declared artifact before import.
 
 ## Implementation order
 

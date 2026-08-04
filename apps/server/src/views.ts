@@ -16,6 +16,7 @@ import {
   buildAnswerLineage,
   kindOf,
   moduleOwning,
+  summarizeRuntimeCoverageExecution,
   thresholdOf,
   undecidedInRow,
   undecidedQuestions,
@@ -31,6 +32,7 @@ import type {
   QuestionDecision,
   SnapshotFacts,
   StoredArchitectureConformance,
+  RuntimeCoverageExecutionSummary,
   Verification,
 } from "@veriflow/answers";
 import {
@@ -211,13 +213,16 @@ a.card:hover { border-color:var(--line-strong); background:var(--panel-2); }
 .lineage-link a { font-weight:540; text-decoration:none; }
 .lineage-link a:hover { color:var(--accent); }
 .split { display:grid; grid-template-columns:minmax(0,1fr) 312px; gap:18px; align-items:start; }
+.split > * { min-width:0; }
 @media (max-width:1100px) { .split { grid-template-columns:1fr; } }
 .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg);
   padding:4px; scrollbar-width:thin; min-width:0; }
 .scroll > table.grid { border:0; border-radius:0; }
 .split > .scroll { padding:0; }
 aside { position:sticky; top:60px; background:var(--panel); border:1px solid var(--line);
-  border-radius:var(--radius); padding:14px 16px; }
+  border-radius:var(--radius); padding:14px 16px; min-width:0; max-width:100%; overflow-wrap:anywhere; }
+aside code { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+@media (max-width:1100px) { .split > aside { position:static; } }
 aside h3 { margin:0 0 8px; font-size:13px; font-weight:590; }
 .ev { font:11.5px/1.5 var(--mono); padding:6px 0; border-bottom:1px solid var(--line); }
 .ev:last-child { border-bottom:0; }
@@ -1139,6 +1144,8 @@ export interface FlowPageInput {
     completeness: "complete" | "partial";
     current: boolean;
     totals: RuntimeCoverageRunV1["totals"];
+    scope: RuntimeCoverageRunV1["scope"];
+    execution: RuntimeCoverageExecutionSummary;
   }>;
 }
 
@@ -1271,21 +1278,32 @@ export function flowPage(input: FlowPageInput): string {
     : undefined;
   const runtimeRuns = input.runtimeCoverageRuns ?? [];
   const runtimeCoverage = runtimeRuns.length
-    ? `<div class="branch" style="margin:0 0 12px"><h3>Imported runtime coverage</h3>
+    ? `<div class="branch" style="margin:0 0 12px"><h3>Runtime coverage</h3>
+       <p class="meta">Real line and branch execution for this flow's exact cited lines. The newest run is listed first.</p>
        ${runtimeRuns
          .map(
-           (run) => `<div class="ev"><a href="/answers/${esc(row.id)}/runtime-coverage/${esc(run.id)}">${esc(
-             run.producer,
-           )} · ${esc(run.importedAt.slice(0, 16).replace("T", " "))}</a>
-             <span class="pill ${run.current ? "good" : "warn"}">${run.current ? "same clean commit" : "stale tree"}</span>
+           (run, index) => {
+             const rate = run.execution.lines.reported
+               ? `${(100 * run.execution.lines.covered / run.execution.lines.reported).toFixed(1)}%`
+               : "—";
+             return `<div class="ev"><a href="/answers/${esc(row.id)}/runtime-coverage/${esc(run.id)}">${esc(
+               run.producer,
+             )} · ${esc(run.importedAt.slice(0, 16).replace("T", " "))}</a>
+             ${index === 0 ? `<span class="pill">latest</span>` : ""}
+             <span class="pill ${run.current ? "good" : "warn"}">${run.current ? "same clean commit" : "snapshot mismatch"}</span>
              <span class="pill">${esc(run.completeness)}</span>
-             <div class="why">lines: ${run.totals.lines.covered} covered · ${run.totals.lines.uncovered} uncovered ·
-               ${run.totals.lines["missing-source"]} missing source · ${run.totals.lines["out-of-scope"]} outside citations</div>
-           </div>`,
+             <div class="why"><b>${rate}</b> on ${run.execution.lines.reported} reported cited lines ·
+               ${run.execution.lines.covered} covered · ${run.execution.lines.uncovered} uncovered ·
+               ${run.execution.lines.unreported} not reported · ${run.scope.observedCitationLines} exact cited lines total</div>
+              ${run.current ? "" : `<div class="why">Raw producer facts are visible, but runtime coverage does not claim them as current for this stored snapshot.</div>`}
+           </div>`;
+           },
          )
          .join("")}
-       <p class="meta" style="margin-bottom:0">This is executed evidence from an imported artifact.
-         <a href="/answers/${esc(row.id)}/metrics?view=coverage">F008 identifier proxy</a> remains a separate measurement.</p></div>`
+       <p class="meta" style="margin-bottom:0"><b>How it works:</b> <code>veriflow coverage run</code> explicitly runs
+         the configured test producer, imports its fresh Cobertura XML, and maps only exact path+line facts to this
+         stored answer. Opening the UI never runs tests. The
+          <a href="/answers/${esc(row.id)}/metrics?view=coverage">test-identifier proxy</a> remains a separate measurement.</p></div>`
     : "";
 
   return shell(
@@ -2113,10 +2131,23 @@ export function runtimeCoveragePage(input: {
   run: RuntimeCoverageRunV1;
 }): string {
   const { run } = input;
+  const execution = summarizeRuntimeCoverageExecution(run);
+  const lineRate = execution.lines.reported
+    ? `${(100 * execution.lines.covered / execution.lines.reported).toFixed(1)}%`
+    : "—";
+  const branchRate = execution.branches.total
+    ? `${(100 * execution.branches.covered / execution.branches.total).toFixed(1)}%`
+    : "—";
+  const citationEvidence = run.evidence.filter((item) => item.kind === "citation");
   const states = ["covered", "uncovered", "stale", "missing-source", "out-of-scope"] as const;
   const counts = (kind: "lines" | "branches"): string =>
-    states.map((state) => `${state} ${run.totals[kind][state]}`).join(" · ");
-  const evidence = run.evidence
+    states.map((state) => {
+      const count = citationEvidence
+        .filter((item) => item.state === state)
+        .reduce((sum, item) => sum + (kind === "lines" ? 1 : item.branches?.total ?? 0), 0);
+      return `${state} ${count}`;
+    }).join(" · ");
+  const evidence = citationEvidence
     .map(
       (item) => `<tr>
         <td><span class="pill ${RUNTIME_STATE_CLASS[item.state] ?? ""}">${esc(item.state)}</span></td>
@@ -2157,31 +2188,35 @@ export function runtimeCoveragePage(input: {
       ${screenHead({
         eyebrow: "Runtime coverage",
         title: "Executed evidence on exact cited lines",
-        lede: `Imported from Cobertura XML produced by <b>${esc(run.provenance.producer)}</b>. VeriFlow did not
-          start tests, and this run is never averaged with the F008 identifier proxy.`,
-        actions: `<a href="/answers/${esc(run.answerId)}/metrics?view=coverage">Open F008 proxy</a>`,
+        lede: `Cobertura XML produced by <b>${esc(run.provenance.producer)}</b>. Test execution and import happen
+          only through an explicit CLI writer; opening this page is read-only. This run is never averaged with the
+          test-identifier proxy.`,
+        actions: `<a href="/answers/${esc(run.answerId)}/metrics?view=coverage">Open test-identifier proxy</a>`,
         meta: `<span class="pill ${run.treeMatch.current ? "good" : "warn"}">${
           run.treeMatch.current ? "same clean commit" : "stale tree evidence"
         }</span>
           <span class="pill">${esc(run.provenance.completeness)} artifact</span>
           <span class="pill">${run.scope.mappedCitationLines}/${run.scope.observedCitationLines} cited lines mapped</span>
+          <span class="pill">${run.scope.artifactLinesOutsideCitations} artifact lines outside flow</span>
           <span class="pill">${esc(run.id)}</span>`,
       })}
       <div class="tiles">
-        ${tile("Covered lines", String(run.totals.lines.covered), "", "exact citation or artifact facts")}
-        ${tile("Uncovered lines", String(run.totals.lines.uncovered), "", "zero hits or an uncovered condition")}
-        ${tile("Stale", String(run.totals.lines.stale), "", "tree equality could not be proven")}
-        ${tile("Missing source", String(run.totals.lines["missing-source"]), "", "never guessed from a basename")}
-        ${tile("Out of scope", String(run.totals.lines["out-of-scope"]), "", "mapped, but outside exact citations")}
+        ${tile("Mapped-line coverage", lineRate, "", run.treeMatch.current ? "covered / reported cited lines" : "raw producer facts · snapshot mismatch")}
+        ${tile("Covered cited lines", String(execution.lines.covered), `/ ${execution.lines.reported}`, "hit and every reported branch covered")}
+        ${tile("Uncovered cited lines", String(execution.lines.uncovered), "", "zero hits or an uncovered condition")}
+        ${tile("Not reported", String(execution.lines.unreported), `/ ${execution.lines.total}`, "SQL or source absent from this producer")}
+        ${tile("Branch coverage", branchRate, "", `${execution.branches.covered}/${execution.branches.total} reported conditions`)}
       </div>
       <div class="split"><div>
         <h2 class="section">Line and branch facts</h2>
-        <p class="meta">Lines: ${esc(counts("lines"))}<br>Branches: ${esc(counts("branches"))}</p>
-        <table class="grid"><tr><th>State</th><th>Source</th><th>Execution</th><th>Why</th></tr>
+        <p class="meta">Only exact citations of this flow are expanded below; ${run.scope.artifactLinesOutsideCitations}
+          other artifact lines remain stored but do not enter the flow score.<br>
+          Lines: ${esc(counts("lines"))}<br>Branches: ${esc(counts("branches"))}</p>
+        <div class="scroll"><table class="grid"><tr><th>State</th><th>Source</th><th>Execution</th><th>Why</th></tr>
           ${evidence || `<tr><td colspan="4" class="dim">This answer has no observed citation lines to map.</td></tr>`}
-        </table>
+        </table></div>
         ${diagnostics}
-      </div><aside>
+      </div><aside class="runtime-provenance">
         <h3>Provenance</h3>
         <p><b>${esc(run.provenance.producer)}</b><br>${esc(run.provenance.command ?? run.provenance.label ?? "")}</p>
         <p class="dim">Produced ${esc(run.provenance.producedAt)}<br>
@@ -2190,6 +2225,13 @@ export function runtimeCoveragePage(input: {
         <p class="dim">Answer snapshot ${esc(run.answerSnapshotId)}<br>${esc(run.treeMatch.reason)}</p>
         <p class="dim">Source roots and explicit mappings are stored in the canonical run. No filesystem
           lookup, suffix match or basename guess is performed when this page opens.</p>
+        <h3>How runtime coverage is calculated</h3>
+        <p class="dim"><code>veriflow coverage run &lt;answer-id&gt;</code> explicitly invokes the configured test
+          producer and requires a fresh Cobertura artifact. The bounded adapter parses it without loading external
+          entities, exact path+line facts are mapped to the stored answer snapshot, and the immutable run keeps the
+          command, commit, tree state, timestamp and artifact hash.</p>
+        <p class="dim">Five states stay distinct: covered, uncovered, stale, missing source and outside the flow.
+          The test-identifier proxy is linked for comparison, never blended into this execution score.</p>
       </aside></div>
     </section>`,
   );

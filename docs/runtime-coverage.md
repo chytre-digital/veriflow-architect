@@ -1,8 +1,55 @@
-# Imported runtime coverage
+# VeriFlow Runtime Coverage (F019)
 
 VeriFlow can map line and branch execution from a Cobertura XML artifact onto the exact observed
-citation lines of one stored answer. It imports an artifact you already produced; it never runs a
-test command, build, package script or coverage producer itself.
+citation lines of one stored answer. The shortest path explicitly runs a configured producer and
+imports its fresh artifact; the lower-level import remains available when CI or another tool already
+produced the XML.
+
+The user-facing module is called **VeriFlow Runtime Coverage**; its roadmap/contract identifier is
+**F019**. It is separate from the older **F008 Coverage Proxy**, which only asks whether tests name
+identifiers and never claims that code executed.
+
+The pipeline is explicit and immutable: `coverage run` invokes the selected producer, requires a
+fresh Cobertura artifact, the bounded adapter parses line/branch facts, and the mapper joins only
+exact repository path + line pairs to citations stored on the answer snapshot. The run records the
+command, producer, commit, clean/dirty tree state, timestamp and artifact hash. Browser, CLI and MCP
+then read that stored run without starting tests or reopening the XML.
+
+## Run and import in one command
+
+```text
+veriflow coverage run <answer-id> [workspace]
+```
+
+In a Node workspace this looks for the checked-in package script `coverage:cobertura`, selects the
+package manager from `packageManager` or its lockfile, expects
+`coverage/cobertura-coverage.xml`, and imports it with the current commit, dirty state, artifact time
+and exact command recorded automatically.
+
+This repository contains that convention, so its complete command is:
+
+```powershell
+pnpm veriflow coverage run <answer-id>
+```
+
+The command and expected artifact are printed before execution. A failed producer, a missing report
+or a report that was not refreshed stores nothing. A different stack can state the same operation
+explicitly:
+
+```powershell
+veriflow coverage run <answer-id> `
+  --command "pytest --cov --cov-report=xml:coverage/cobertura-coverage.xml" `
+  --producer "pytest-cov" `
+  --artifact coverage/cobertura-coverage.xml
+```
+
+Use `--completeness partial` when the command deliberately runs only a test subset. `--source-root`
+and `--map` have the same exact path semantics as the import command below. The run command is an
+explicit process boundary: opening a page, reading MCP, `metrics`, and `coverage show` never start it.
+
+Common reporters may emit the canonical Cobertura 0.4 `DOCTYPE`. VeriFlow treats that one declaration
+as inert metadata and never loads its external URL; entity declarations, internal subsets and unknown
+DTDs remain rejected.
 
 ## Import
 

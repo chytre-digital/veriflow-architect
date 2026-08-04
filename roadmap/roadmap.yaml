@@ -318,9 +318,14 @@ features:
     status: shipped
     dependsOn: [F005, F008]
     outcome: >-
-      VeriFlow imports a real coverage artifact produced by an explicit user-run test command, maps
+      VeriFlow explicitly runs a configured coverage producer or imports its existing artifact, maps
       executed lines and branches onto a flow's evidence, and keeps the existing proxy separate and
       visibly labelled when runtime coverage is absent or incomplete.
+    notes: >-
+      `coverage run` discovers the checked-in `coverage:cobertura` package script or accepts an
+      explicit command, derives commit/tree/time provenance, requires a fresh in-workspace artifact
+      and calls the same immutable importer as `coverage import`. Failed producers store nothing and
+      no browser, MCP, metrics or coverage read starts a process.
   F020:
     title: Flow-scoped call graph review
     spec: ../docs/product/m6-plan.md

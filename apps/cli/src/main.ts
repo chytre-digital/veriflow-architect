@@ -1,9 +1,9 @@
 import { Command } from "commander";
-import { basename, join, relative as relative_, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative as relative_, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
 import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
@@ -63,6 +63,7 @@ import {
 } from "@veriflow/export";
 import { startServer } from "@veriflow/server";
 import { createInterface } from "node:readline/promises";
+import { createTerminalQuestionPump } from "./run-questions.js";
 import {
   IGNORE_FILE,
   applyIgnore,
@@ -848,29 +849,20 @@ program
       },
     });
 
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answered = new Set<string>();
-    const poller = setInterval(() => {
-      for (const pending of ctx.store.pendingQuestions(runId)) {
-        if (answered.has(pending.id)) continue;
-        answered.add(pending.id);
-        void (async () => {
-          log(``);
-          log(`? ${pending.question}`);
-          if (pending.options?.length) log(`  options: ${pending.options.join(" | ")}`);
-          const value = await rl.question("> ");
-          ctx.store.answerQuestion(runId, pending.id, value);
-        })();
-      }
-    }, 300);
+    const questions = createTerminalQuestionPump({
+      store: ctx.store,
+      runId,
+      session,
+      input: process.stdin,
+      output: process.stdout,
+      log,
+    });
 
     process.once("SIGINT", () => {
       void session.cancel("interrupted");
     });
 
-    const result = await session.run();
-    clearInterval(poller);
-    rl.close();
+    const result = await session.run().finally(() => questions.stop());
 
     log(``);
     log(`Run ${result.runId.slice(0, 8)} - ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
@@ -1008,29 +1000,20 @@ program
       },
     });
 
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const answered = new Set<string>();
-    const poller = setInterval(() => {
-      for (const pending of ctx.store.pendingQuestions(runId)) {
-        if (answered.has(pending.id)) continue;
-        answered.add(pending.id);
-        void (async () => {
-          log(``);
-          log(`? ${pending.question}`);
-          if (pending.options?.length) log(`  options: ${pending.options.join(" | ")}`);
-          const value = await rl.question("> ");
-          ctx.store.answerQuestion(runId, pending.id, value);
-        })();
-      }
-    }, 300);
+    const questions = createTerminalQuestionPump({
+      store: ctx.store,
+      runId,
+      session,
+      input: process.stdin,
+      output: process.stdout,
+      log,
+    });
 
     process.once("SIGINT", () => {
       void session.cancel("interrupted");
     });
 
-    const result = await session.run();
-    clearInterval(poller);
-    rl.close();
+    const result = await session.run().finally(() => questions.stop());
 
     log(``);
     log(`Run ${result.runId.slice(0, 8)} - ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
@@ -1801,7 +1784,109 @@ program
 
 const coverageCommand = program
   .command("coverage")
-  .description("import and read executed line/branch coverage without running project tests");
+  .description("run, import, and read executed line/branch coverage");
+
+/**
+ * The one-command path. A checked-in `coverage:cobertura` package script is the convention, while
+ * `--command` keeps the wrapper language-neutral for pytest, dotnet, Go adapters, and CI helpers.
+ * Either way the command is explicit and echoed before it runs; the importer below remains the one
+ * canonical writer and receives provenance measured before the producer starts.
+ */
+coverageCommand
+  .command("run")
+  .argument("<answerId>", "stored answer whose exact citation lines are the mapping boundary")
+  .argument("[path]", "VeriFlow workspace")
+  .option("--command <command>", "coverage command; defaults to the package script coverage:cobertura")
+  .option("--artifact <path>", "Cobertura XML written by the command", "coverage/cobertura-coverage.xml")
+  .option("--producer <name>", "coverage producer label; defaults to the selected command")
+  .option("--completeness <state>", "artifact scope: complete or partial", "complete")
+  .option("--source-root <root...>", "additional source roots declared by the producer")
+  .option("--map <mapping...>", "artifact-root=repository-prefix mapping; ambiguity is never guessed")
+  .option("--json", "machine-readable canonical run; producer output is sent to stderr")
+  .description("explicitly run one coverage command and import its fresh Cobertura artifact")
+  .action((
+    answerId: string,
+    pathArg: string | undefined,
+    options: {
+      command?: string;
+      artifact: string;
+      producer?: string;
+      completeness: string;
+      sourceRoot?: string[];
+      map?: string[];
+      json?: boolean;
+    },
+  ) => {
+    const ctx = open(pathArg);
+    try {
+      if (options.completeness !== "complete" && options.completeness !== "partial") {
+        throw new Error("--completeness must be complete or partial");
+      }
+      const inferred = defaultCoverageCommand(ctx.root);
+      const command = options.command ?? inferred?.command;
+      if (!command) {
+        throw new Error(
+          "no coverage command configured; add a package script named coverage:cobertura or pass --command",
+        );
+      }
+
+      const artifactPath = resolve(ctx.root, options.artifact);
+      const artifactRelative = relative_(ctx.root, artifactPath);
+      if (artifactRelative === ".." || artifactRelative.startsWith(`..${sep}`) || isAbsolute(artifactRelative)) {
+        throw new Error(`coverage artifact must stay inside the workspace: ${artifactPath}`);
+      }
+      const beforeArtifact = existsSync(artifactPath) ? statSync(artifactPath).mtimeMs : undefined;
+      const tree = readGitFacts(ctx.root);
+
+      const announce = `Running coverage: ${command}\nExpecting Cobertura XML at ${artifactRelative}\n`;
+      if (options.json) process.stderr.write(announce);
+      else process.stdout.write(announce);
+      const result = spawnSync(command, {
+        cwd: ctx.root,
+        shell: true,
+        windowsHide: true,
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+        stdio: options.json ? ["inherit", "pipe", "inherit"] : "inherit",
+      });
+      if (options.json && result.stdout) process.stderr.write(result.stdout);
+      if (result.error) throw result.error;
+      if (result.status !== 0) {
+        throw new Error(
+          `coverage command ${result.signal ? `ended on ${result.signal}` : `exited with ${result.status ?? "no status"}`}; artifact was not imported`,
+        );
+      }
+      if (!existsSync(artifactPath)) {
+        throw new Error(`coverage command succeeded but did not create ${artifactRelative}`);
+      }
+      const artifact = statSync(artifactPath);
+      if (beforeArtifact !== undefined && artifact.mtimeMs === beforeArtifact) {
+        throw new Error(`coverage command succeeded but did not refresh ${artifactRelative}`);
+      }
+
+      const rootMappings = (options.map ?? []).map(parseCoverageRootMapping);
+      const imported = importRuntimeCoverage(ctx.store, {
+        answerId,
+        artifactPath,
+        provenance: {
+          producer: options.producer ?? inferred?.producer ?? command,
+          command,
+          producedAt: new Date(artifact.mtimeMs).toISOString(),
+          commitSha: tree.commitSha ?? null,
+          dirty: tree.dirty,
+          completeness: options.completeness,
+          sourceRoots: options.sourceRoot ?? [],
+          rootMappings,
+        },
+      });
+      if (options.json) log(JSON.stringify(imported.run, null, 2));
+      else printRuntimeCoverage(imported.run, imported.source);
+      ctx.close();
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  });
 
 coverageCommand
   .command("import")
@@ -1892,6 +1977,35 @@ coverageCommand
       fail(error instanceof Error ? error.message : String(error));
     }
   });
+
+function defaultCoverageCommand(root: string): { command: string; producer: string } | undefined {
+  const manifest = join(root, "package.json");
+  if (!existsSync(manifest)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(manifest, "utf8")) as {
+      scripts?: Record<string, unknown>;
+      packageManager?: string;
+    };
+    if (typeof parsed.scripts?.["coverage:cobertura"] !== "string") return undefined;
+    const declared = parsed.packageManager?.split("@")[0];
+    const manager =
+      declared === "pnpm" || declared === "yarn" || declared === "npm" || declared === "bun"
+        ? declared
+        : existsSync(join(root, "pnpm-lock.yaml"))
+          ? "pnpm"
+          : existsSync(join(root, "yarn.lock"))
+            ? "yarn"
+            : existsSync(join(root, "bun.lock")) || existsSync(join(root, "bun.lockb"))
+              ? "bun"
+              : "npm";
+    return {
+      command: `${manager} run coverage:cobertura`,
+      producer: `coverage:cobertura via ${manager}`,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 function parseCoverageRootMapping(raw: string): RuntimeCoverageRootMapping {
   const at = raw.indexOf("=");
