@@ -53,6 +53,7 @@ import {
   kindOf,
   listEffectiveAnswerRows,
   buildPlanReview,
+  buildQuestionQueue,
   loadStoredAnswer,
   loadStoredPlan,
   loadRuntimeCoverageRun,
@@ -67,6 +68,7 @@ import {
   verifyStoredAnswer,
   type AnswerMetrics,
   type PlanAnalysis,
+  type QuestionQueueItem,
   type StoredAnswer,
   type Verification,
 } from "@veriflow/answers";
@@ -1029,10 +1031,59 @@ program
 
 /* ------------------------------------------------------------------ ask */
 
+function printQuestionSuggestion(item: QuestionQueueItem, position?: number): void {
+  log(`${position ? `${position}. ` : ""}${item.suggestedQuestion}`);
+  log(`   ${item.kind} · ${item.state}`);
+  log(`   why       ${item.reason}`);
+  log(`   evidence  ${item.evidence.source}: ${item.evidence.summary}`);
+  log(
+    `   rank      lane ${item.rank.lane} (${item.rank.laneReason}); ` +
+      `${item.rank.primary.label} ${item.rank.primary.value}; ` +
+      `${item.rank.secondary.label} ${item.rank.secondary.value}; ` +
+      `tie ${item.rank.tieBreak}`,
+  );
+  log(`   scope     ${item.scope.kind} ${item.scope.label} (${item.scope.id})`);
+}
+
+program
+  .command("questions")
+  .alias("queue")
+  .argument("[path]")
+  .option("--json", "print the shared queue contract as JSON")
+  .description("show evidence-backed suggested questions; starts no run and queues no message")
+  .action((pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg, { touchProject: false });
+    const queue = buildQuestionQueue(ctx.store, ctx.root, ctx.projectId);
+    if (!queue) {
+      ctx.close();
+      fail("nothing indexed yet - run: veriflow index");
+    }
+    if (options.json) {
+      log(JSON.stringify(queue, null, 2));
+    } else {
+      log(`Suggested architecture questions — ${queue.items.length}`);
+      log(`snapshot ${queue.snapshotId.slice(0, 8)} · fingerprint ${queue.fingerprint.slice(0, 12)}`);
+      log(`Suggestions only: no user or agent message is queued, and reading this list starts no run.\n`);
+      for (const [index, item] of queue.items.entries()) {
+        printQuestionSuggestion(item, index + 1);
+        log("");
+      }
+      if (queue.items.length === 0) log("No evidence-backed suggestion meets the published rules.\n");
+      log(
+        queue.designSignal.status === "insufficient-sample"
+          ? `designSignal: insufficient sample — ${queue.designSignal.note}`
+          : `designSignal: baseline ready — ${queue.designSignal.note}`,
+      );
+      log(`\nPreview the first suggestion explicitly with: veriflow ask --next`);
+    }
+    ctx.close();
+  });
+
 program
   .command("ask")
-  .argument("<question>")
+  .argument("[question]")
   .argument("[path]")
+  .option("--next", "preview the top evidence-backed suggestion, then explicitly confirm the run")
   .option("--client <id>", "agent client", "claude-code")
   .option("--client-command <path>", "path to the client executable, when it is behind a shim")
   .option("--timeout <ms>", "run timeout in milliseconds", "900000")
@@ -1041,9 +1092,10 @@ program
   .option("--supersedes <answerId>", "re-answer: keep the old answer, mark it superseded, link the new one")
   .description("run your agent over the indexed project, streaming as it works")
   .action(async (
-    question: string,
+    questionArg: string | undefined,
     pathArg: string | undefined,
     options: {
+      next?: boolean;
       client: string;
       clientCommand?: string;
       timeout: string;
@@ -1052,7 +1104,59 @@ program
       supersedes?: string;
     },
   ) => {
-    const ctx = open(pathArg);
+    let question = questionArg;
+    let targetPath = pathArg;
+    if (options.next && question && !targetPath && existsSync(resolve(question)) && statSync(resolve(question)).isDirectory()) {
+      targetPath = question;
+      question = undefined;
+    }
+    if (options.next && question) {
+      fail("--next chooses the top queue suggestion; do not also pass a question");
+    }
+    if (options.next && options.supersedes) {
+      fail("--next starts a new suggested question; use an explicit question with --supersedes to re-answer");
+    }
+    if (options.next && options.entry) {
+      fail("--next uses the suggested scope; ask the displayed question explicitly to override --entry");
+    }
+    if (!options.next && !question?.trim()) {
+      fail("a question is required, or use: veriflow ask --next");
+    }
+
+    const ctx = open(targetPath, { touchProject: !options.next });
+    let queueEntryPoint: string | undefined;
+    if (options.next) {
+      const queue = buildQuestionQueue(ctx.store, ctx.root, ctx.projectId);
+      const top = queue?.items[0];
+      if (!queue || !top) {
+        ctx.close();
+        fail("the question queue has no evidence-backed suggestion; inspect it with: veriflow questions");
+      }
+
+      log("Next suggested architecture question\n");
+      printQuestionSuggestion(top);
+      log("\nNothing has run, and no user or agent message has been queued.");
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const reply = (await rl.question("\nStart exactly this run? [y/N] ")).trim().toLowerCase();
+      rl.close();
+      if (reply !== "y" && reply !== "yes") {
+        log("Declined. The queue is unchanged; no run, question, or answer was created.");
+        ctx.close();
+        return;
+      }
+
+      // Another browser/process may have written an answer while the confirmation prompt was open.
+      // Do not silently spend the run on what is no longer the suggestion the person reviewed.
+      const refreshed = buildQuestionQueue(ctx.store, ctx.root, ctx.projectId);
+      if (!refreshed || refreshed.fingerprint !== queue.fingerprint || refreshed.items[0]?.id !== top.id) {
+        log("The question queue changed while it was being reviewed. No run was started.");
+        log("Refresh the preview with: veriflow ask --next");
+        ctx.close();
+        return;
+      }
+      question = top.suggestedQuestion;
+      queueEntryPoint = top.scope.entryPointId;
+    }
 
     // Resolved before the run so a typo costs nothing. Re-answering is an explicit action, never a
     // side effect of asking the same question twice.
@@ -1071,7 +1175,7 @@ program
     // different products that happen to share a database.
     let plan: AskPlan;
     try {
-      plan = planAsk(ctx.store, ctx.projectId, question, { entry: options.entry });
+      plan = planAsk(ctx.store, ctx.projectId, question!, { entry: options.entry ?? queueEntryPoint });
     } catch (error) {
       ctx.close();
       fail(error instanceof Error ? error.message : String(error));

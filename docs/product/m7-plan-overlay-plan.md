@@ -1,7 +1,7 @@
 ---
-status: ready
+status: shipped
 owner: TODO
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 ---
 
 # M7 — See the plan before the code
@@ -44,10 +44,13 @@ F025 draw the agent plan against current architecture   ← main feature and M7 
   [shipped]
   ↓
 F026 accept plan sources through replaceable adapters
+  [shipped]
   ↓
 F027 install the integration and open the overlay after plan approval
+  [shipped]
   ↓
 F028 suggest the next architecture question             ← cold-start elimination
+  [shipped]
 ```
 
 F026 can begin after F023. F028 reuses F023's unreached-module result but does not block the graphical
@@ -235,7 +238,7 @@ approved plan intact and prints a recoverable command.
 
 ## F028 — Evidence-backed question queue
 
-**Ships.** A deterministic project question queue in the browser and CLI, plus `veriflow ask --next`.
+**Shipped 2026-08-05.** A deterministic project question queue in the browser and CLI, plus `veriflow ask --next`.
 It fixes cold start by suggesting the next useful architecture question; it does not generate answers
 in the background.
 

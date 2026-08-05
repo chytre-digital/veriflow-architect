@@ -6,6 +6,7 @@ import { Store } from "@veriflow/store";
 import {
   CHANGE_IMPACT_METHOD,
   answerEnvelope,
+  buildQuestionQueue,
   changeImpact,
   decisionsOf,
   fileStates,
@@ -102,6 +103,8 @@ const INSTRUCTIONS = [
   "- declared architecture is human intent, not indexed evidence. get_architecture_comparison keeps",
   "  declared-only, observed-only, unknown and ambiguous states visible; only observed traffic over",
   "  a forbidden declared relationship is a violation.",
+  "- get_question_queue returns suggested questions in a published deterministic order. They are",
+  "  not queued messages, never start runs, and designSignal is not an answer-quality judgement.",
   "",
   "Everything here is read-only. There is no tool that writes a file, runs a command, or touches Git.",
 ].join("\n");
@@ -730,6 +733,30 @@ export function createReadServer(options: ReadServerOptions): McpServer {
   );
 
   /* ------------------------------------------------------------- the project */
+
+  server.registerTool(
+    "get_question_queue",
+    {
+      title: "Evidence-backed suggested architecture questions",
+      description:
+        "The same deterministic suggestion order as the browser and `veriflow questions`: saved-plan " +
+        "gaps, invariant near-matches, non-quality design signals, uncovered entry points and " +
+        "unreached modules. Items are suggestions, not queued user or agent messages. Reading or " +
+        "refreshing starts no run, writes no answer and performs no bulk generation. Rank components " +
+        "and evidence are explicit; there is no blended relevance, health or quality score. Large " +
+        "queues page without changing their order.",
+      inputSchema: { cursor: z.string().optional() },
+    },
+    async ({ cursor }) => {
+      const snapshotId = latestSnapshot();
+      if (!snapshotId) return refuse("nothing indexed yet — run `veriflow index` in the project first");
+      const queue = buildQuestionQueue(store, root);
+      if (!queue) return refuse("nothing indexed yet — run `veriflow index` in the project first");
+      const page = paginateWithin(queue.items, pageSize, cursor, Math.floor(budget / 2));
+      const data = page.truncated ? { ...queue, items: page.items } : queue;
+      return ok(projectEnvelope(store, root, snapshotId, data, page.truncated));
+    },
+  );
 
   server.registerTool(
     "get_architecture",

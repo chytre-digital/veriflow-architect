@@ -449,6 +449,12 @@ veriflow ask "…"
         └─ validate the submitted answer, then persist it
 ```
 
+`veriflow ask --next` adds a read-only step in front of this lifecycle: it shows the top item from
+the project question queue and asks for explicit confirmation. Declining writes no question, answer,
+or run. On confirmation the queue is refreshed; if another process changed the reviewed top item,
+the run is refused and the new suggestion must be reviewed. Only then does the ordinary lifecycle
+above begin.
+
 Requirements that shape the implementation:
 
 - **The bundle is a brief, not a cage.** The agent has its own read tools and runs in the working tree, so
@@ -590,7 +596,8 @@ contract nobody checks against the running server is a wish.
 | `POST /api/runs/:id/answer`, `/api/runs/:id/cancel` | served; the browser uses `POST /runs/:id/*` instead, because a form needs a redirect rather than a status code. Both go through one registry |
 | `GET /api/project/overview`, `/api/impact` | served, added by F011 and not in the design above |
 | `GET /api/plans`, `/api/plans/:id` | served, added by F025 and not in the design above: the saved plans, and the whole plan-review model the page and the exports are rendered from |
-| `GET /api/snapshots`, `POST /api/snapshots`, `GET`/`POST /api/questions` | not served. Indexing and asking happen through the CLI and through `POST /ask`, which the browser drives |
+| `GET /api/questions` | served by F028: the deterministic read-only suggestion contract, with evidence, scope and published rank components. It starts no run and contains no queued messages |
+| `GET /api/snapshots`, `POST /api/snapshots`, `POST /api/questions` | not served. Indexing and starting a named question happen through the CLI and through `POST /ask`, which the browser drives |
 | `GET /api/answers/:id/freshness`, `POST /api/answers/:id/verify`, `POST /api/answers/:id/export`, `GET /api/callgraph/:snapshotId`, `GET /api/metrics/:answerId` | not served as JSON. The data exists and is reachable — as HTML at `/answers/:id/freshness` and `/answers/:id/metrics`, over MCP, and through the CLI — but a JSON client has no route to it |
 
 `/api/project` is the project itself: id, name, root, latest snapshot, answer count. F011's aggregate
@@ -613,6 +620,7 @@ GET  /answers/:id/modules                     participants and contracts
 GET  /answers/:id/freshness                   citation by citation
 GET  /answers/:id/metrics   ?view             health | functions | structure | coverage
 GET  /project                                 the union of the answers
+GET  /questions                               evidence-backed suggestions; read-only, no queued messages
 GET  /architecture                            modules and traffic, needs no agent
 GET  /callgraph             ?fn&entry&mesh&cell&q
 GET  /source                ?path&line        read-only, inside the root, never a secret
@@ -649,6 +657,7 @@ get_external_systems(answerId)
 get_open_questions(answerId)
 get_freshness(answerId)
 search_answers(query, cursor?)
+get_question_queue()
 get_architecture()
 get_call_graph(entryPoint?, cursor?)
 get_callers(symbol, symbolId?) / get_callees(symbol, symbolId?)
@@ -687,6 +696,8 @@ veriflow init [path]
 veriflow doctor
 veriflow status
 veriflow index [path] [--rebuild]
+veriflow questions [path] [--json]
+veriflow ask --next [path]
 veriflow ask "how does X work?" [--client claude-code]
 veriflow answers [--json]
 veriflow verify [answerId]

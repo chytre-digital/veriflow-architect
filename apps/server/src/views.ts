@@ -29,6 +29,7 @@ import type {
   CitationRow,
   Freshness,
   InvariantIndex,
+  QuestionQueue,
   QuestionDecision,
   SnapshotFacts,
   StoredArchitectureConformance,
@@ -680,6 +681,7 @@ export type NavId =
   | "answers"
   | "ask"
   | "project"
+  | "questions"
   | "invariants"
   | "architecture"
   | "callgraph"
@@ -744,6 +746,7 @@ const ANSWER_VIEWS: Array<{ id: NavId; label: string; hint: string; path: (id: s
 const PROJECT_VIEWS: Array<{ id: NavId; label: string; hint: string; href: string }> = [
   { id: "answers", label: "All answers", hint: "what has been asked", href: "/" },
   { id: "project", label: "Project", hint: "what the answers add up to", href: "/project" },
+  { id: "questions", label: "Questions", hint: "evidence-backed suggestions", href: "/questions" },
   { id: "invariants", label: "Invariants", hint: "what outcomes say they protect", href: "/invariants" },
   { id: "architecture", label: "Architecture", hint: "modules and the traffic between them", href: "/architecture" },
   { id: "callgraph", label: "Call graph", hint: "every function the doors reach", href: "/callgraph" },
@@ -754,6 +757,7 @@ const NAV_LABEL: Record<NavId, string> = {
   answers: "All answers",
   ask: "Ask",
   project: "Project",
+  questions: "Questions",
   invariants: "Invariants",
   architecture: "Architecture",
   callgraph: "Call graph",
@@ -2745,6 +2749,75 @@ export function projectPage(input: ProjectPageInput): string {
 
        <h2 class="section">Open questions across every flow</h2>${questions}
      </section>`,
+  );
+}
+
+export interface QuestionQueuePageInput {
+  chrome: Chrome;
+  queue: QuestionQueue;
+}
+
+/**
+ * Suggested questions as a read-only project view. Starting remains a separate two-step `/ask`
+ * action: this page contains GET links only, so opening, refreshing or leaving it cannot start work.
+ */
+export function questionQueuePage(input: QuestionQueuePageInput): string {
+  const { queue } = input;
+  const cards = queue.items.length
+    ? `<div class="list">${queue.items
+        .map(
+          (item, index) => `<div class="card">
+            <div class="meta">#${index + 1} · <span class="pill">${esc(
+              item.kind === "design-signal" ? "designSignal" : item.kind,
+            )}</span> · suggestion, not a queued message</div>
+            <h2 style="margin-top:8px">${esc(item.suggestedQuestion)}</h2>
+            <p>${esc(item.reason)}</p>
+            <div class="manifest">
+              <div><b>scope</b> ${esc(item.scope.kind)} · ${esc(item.scope.label)} · <code>${esc(
+                item.scope.id,
+              )}</code></div>
+              <div><b>evidence</b> ${esc(item.evidence.source)} · ${esc(item.evidence.summary)}</div>
+              <div><b>rank lane</b> ${item.rank.lane} · ${esc(item.rank.laneReason)}</div>
+              <div><b>primary</b> ${esc(item.rank.primary.label)} · ${item.rank.primary.value}</div>
+              <div><b>secondary</b> ${esc(item.rank.secondary.label)} · ${item.rank.secondary.value}</div>
+              <div><b>tie-break</b> <code>${esc(item.rank.tieBreak)}</code></div>
+            </div>
+            <div class="row" style="margin-top:12px"><a class="ghost" href="/ask?q=${encodeURIComponent(
+              item.suggestedQuestion,
+            )}${item.scope.entryPointId ? `&entry=${encodeURIComponent(item.scope.entryPointId)}` : ""}">Preview this run</a>
+              <span class="meta">The ask preview still starts nothing; its explicit button starts the run.</span></div>
+          </div>`,
+        )
+        .join("")}</div>`
+    : `<p class="meta">No candidate currently meets the published evidence rules. This is not a claim
+       that the project is fully covered.</p>`;
+
+  return shell(
+    input.chrome,
+    "Questions",
+    `<section class="screen">
+      ${screenHead({
+        eyebrow: "Project",
+        title: "Suggested architecture questions",
+        lede: `${queue.counts.total} deterministic suggestion${queue.counts.total === 1 ? "" : "s"} from
+          snapshot ${esc(queue.snapshotId.slice(0, 8))}. This is a read model, not a queue of user or
+          agent messages; opening, refreshing or leaving it starts no run and writes no answer.`,
+        actions: `<a class="ghost" href="/questions">Refresh evidence</a>`,
+      })}
+      <div class="tally">
+        <div><b>${queue.counts["plan-unreached-module"]}</b><span>saved-plan gaps</span></div>
+        <div><b>${queue.counts["invariant-disagreement"]}</b><span>invariant near-matches</span></div>
+        <div><b>${queue.counts["design-signal"]}</b><span>designSignals</span></div>
+        <div><b>${queue.counts["uncovered-entry-point"] + queue.counts["unreached-module"]}</b><span>uncovered code scopes</span></div>
+      </div>
+      <div class="note"><b>Published ordering, no blended score.</b>
+        <div class="meta" style="margin-top:6px">${esc(queue.ordering.note)}</div>
+      </div>
+      <p class="meta" style="max-width:840px;margin:0 0 18px"><b>${esc(queue.designSignal.label)}</b>:
+        ${esc(queue.designSignal.status)} — ${esc(queue.designSignal.note)}</p>
+      ${cards}
+      <p class="meta" style="max-width:840px;margin-top:20px">${queue.caveats.map(esc).join(" ")}</p>
+    </section>`,
   );
 }
 

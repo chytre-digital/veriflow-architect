@@ -29,6 +29,8 @@ veriflow init
 veriflow doctor
 veriflow index
 veriflow install-agent --client claude-code
+veriflow questions
+veriflow ask --next
 veriflow ask "Jak funguje rezervace a zaplacení lekce?"
 veriflow open
 ```
@@ -38,6 +40,14 @@ then runs your agent in a live, streamed session that can ask you questions whil
 returns a traced flow with every alternative path and a call graph of what it actually reaches —
 stored locally, so reopening it costs nothing and VeriFlow can tell you how far the code has moved
 since.
+
+When you do not yet know what to ask, `veriflow questions` opens the deterministic project question
+queue and `veriflow ask --next` previews its first suggestion before asking for explicit
+confirmation. The queue ranks saved-plan gaps, invariant wording near-matches, statistically visible
+`designSignal` evidence, uncovered entry points, and high-traffic modules no live observed answer
+reaches. These are suggestions, not queued agent messages; reading or declining starts no run, and a
+`designSignal` is never an answer-quality grade. The complete ordering contract is documented in
+[the question queue guide](docs/question-queue.md).
 
 Then `veriflow mcp` serves all of it to any AI agent for design and review, `veriflow verify` says
 [how far the code has moved](docs/freshness.md) since an answer was made, `veriflow metrics` reports

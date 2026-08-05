@@ -11,6 +11,7 @@ export * from "./metrics.js";
 export * from "./plan.js";
 export * from "./plan-review.js";
 export * from "./project.js";
+export * from "./question-queue.js";
 export * from "./read.js";
 export * from "./runtime-coverage.js";
 export * from "./verification.js";

@@ -444,22 +444,35 @@ features:
     title: Agent installation and automatic plan handoff
     spec: ../docs/product/m7-plan-overlay-plan.md
     iteration: M7-plan-overlay
-    status: ready
+    status: shipped
     dependsOn: [F010, F025, F026]
     outcome: >-
       One idempotent install command registers VeriFlow and, where the client exposes a stable hook,
       opens the graphical plan review after plan approval; unsupported automation remains visibly
       manual.
+    notes: >-
+      `veriflow install-agent` previews and atomically writes project-local MCP, skill and digest
+      registration. Claude Code receives a narrowly scoped post-plan hook; Codex receives the same
+      registration plus an explicit manual handoff because it exposes no stable supported hook.
+      Doctor reports registered, missing, stale and partial states, and the handoff never approves
+      or implements a plan, queues a message or hides a recoverable failure.
   F028:
     title: Evidence-backed question queue
     spec: ../docs/product/m7-plan-overlay-plan.md
     iteration: M7-plan-overlay
-    status: ready
+    status: shipped
     dependsOn: [F011, F016, F023, F025]
     outcome: >-
       The project ranks evidence-backed architecture questions and `ask --next` lets a person start
       the top one explicitly, eliminating empty-project cold start without queuing messages or
       bulk-generating unreviewed answers.
+    notes: >-
+      Browser, CLI, JSON and read-only MCP use one deterministic queue over saved-plan gaps,
+      invariant wording near-matches, non-quality design signals, uncovered entry points and
+      high-traffic unreached modules. Every item exposes evidence, scope and published lexicographic
+      rank components. `ask --next` previews and confirms explicitly, then refuses a stale
+      confirmation if a concurrent refresh changed the queue; reading and declining write no run,
+      question or answer.
 
 blocking:
   - question: Q2

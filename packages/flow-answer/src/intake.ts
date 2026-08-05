@@ -88,6 +88,22 @@ export interface RankOptions {
   symbols?: SymbolRecord[];
 }
 
+/**
+ * The question-independent part of the entry-point ranking.
+ *
+ * Keeping it public lets project-level reads order uncovered doors by the exact same signal as the
+ * ask intake. It is deliberately small and named: this is a deterministic preference for routes and
+ * commands as front doors, not a relevance or architecture-quality score.
+ */
+export function entryPointKindSignal(entryPoint: Pick<EntryPoint, "kind">): {
+  weight: number;
+  reason: string;
+} {
+  if (entryPoint.kind === "http-route") return { weight: 0.5, reason: "http route" };
+  if (entryPoint.kind === "cli") return { weight: 0.5, reason: "command" };
+  return { weight: 0, reason: `${entryPoint.kind} has no question-independent boost` };
+}
+
 const STOP_WORDS = new Set([
   "jak", "funguje", "co", "se", "stane", "a", "the", "how", "does", "what", "happens", "is",
   "when", "kdyz", "když", "při", "pri", "do", "of", "in", "on", "to", "for",
@@ -115,13 +131,9 @@ export function rankEntryPoints(
 
     // A webhook or cron entry rarely answers a "how does X work" question on its own. A command is
     // the same kind of front door as a route — in a repository that ships one it is the only one.
-    if (entryPoint.kind === "http-route") {
-      score += 0.5;
-      reasons.push("http route");
-    } else if (entryPoint.kind === "cli") {
-      score += 0.5;
-      reasons.push("command");
-    }
+    const kindSignal = entryPointKindSignal(entryPoint);
+    score += kindSignal.weight;
+    if (kindSignal.weight > 0) reasons.push(kindSignal.reason);
 
     return { entryPoint, score, reasons };
   });

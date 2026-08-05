@@ -10,6 +10,7 @@ import {
   DecideConflictError,
   answerLineageContext,
   buildPlanReview,
+  buildQuestionQueue,
   correctAnswer,
   correctionTargets,
   decideQuestion,
@@ -52,6 +53,7 @@ import {
   impactPage,
   invariantsPage,
   projectPage,
+  questionQueuePage,
   flowPage,
   freshnessPage,
   metricsPage,
@@ -827,6 +829,19 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  app.get("/questions", (c) =>
+    withStore((store) => {
+      const queue = buildQuestionQueue(store, root, projectId);
+      if (!queue) {
+        return c.html(
+          notice(store, "questions", "Questions", "Nothing indexed yet. Run <code>veriflow index</code>."),
+          404,
+        );
+      }
+      return c.html(questionQueuePage({ chrome: chromeOf(store, "questions"), queue }));
+    }),
+  );
+
   app.get("/invariants", (c) =>
     withStore((store) =>
       c.html(
@@ -972,6 +987,14 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       const view = projectView(store);
       if (!view) return c.json({ error: "nothing indexed yet" }, 404);
       return c.json({ contractVersion: 1, ...view });
+    }),
+  );
+
+  app.get("/api/questions", (c) =>
+    withStore((store) => {
+      const queue = buildQuestionQueue(store, root, projectId);
+      if (!queue) return c.json({ error: "nothing indexed yet" }, 404);
+      return c.json(queue);
     }),
   );
 

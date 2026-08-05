@@ -1,6 +1,6 @@
 # Product roadmap
 
-Twenty-six shipped features through M7's source adapters, followed by two ready M7 features. The
+Twenty-eight shipped features through the completed M7 plan overlay. The
 first three iterations produce the original MVP: on a real repository, what the
 [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a verified flow answer out,
 stored locally, browsable and available to an agent. Iteration 4 assembles many answers into a project
@@ -81,9 +81,9 @@ Iteration 7 — see the plan before the code
     ↓
   F026 accept Markdown, spec-kit, Claude Code and branch plan sources              [shipped]
     ↓
-  F027 install the integration and hand approved plans to the review screen
+  F027 install the integration and hand approved plans to the review screen       [shipped]
     ↓
-  F028 rank the next evidence-backed architecture question
+  F028 rank the next evidence-backed architecture question                        [shipped]
 ```
 
 The order follows the two things the MVP exists to do: **generate an application's architecture**, then

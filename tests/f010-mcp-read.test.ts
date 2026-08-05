@@ -270,6 +270,7 @@ function callsFor(answerId: string): Record<string, Record<string, unknown>> {
     get_coverage_gaps: { answerId },
     get_runtime_coverage: { answerId, runId: RUNTIME_RUN },
     search_answers: { query: "refund" },
+    get_question_queue: {},
     get_architecture: {},
     get_architecture_comparison: {},
     get_call_graph: {},
