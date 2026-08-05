@@ -39,6 +39,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@veriflow/agent-integration':
+        specifier: workspace:*
+        version: link:../../packages/agent-integration
       '@veriflow/agent-session':
         specifier: workspace:*
         version: link:../../packages/agent-session
@@ -132,6 +135,15 @@ importers:
       hono:
         specifier: ^4.6.14
         version: 4.12.32
+
+  packages/agent-integration:
+    dependencies:
+      '@veriflow/export':
+        specifier: workspace:*
+        version: link:../export
+      '@veriflow/plan-source':
+        specifier: workspace:*
+        version: link:../plan-source
 
   packages/agent-session:
     dependencies:

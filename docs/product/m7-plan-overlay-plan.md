@@ -214,8 +214,9 @@ adapter until they expose a stable, testable plan source; the UI states that cap
 
 ## F027 — Agent installation and automatic plan handoff
 
-**Ships.** `veriflow install-agent [--client claude-code|codex] [project]` and an agent-integration
-line in `veriflow doctor`.
+**Shipped 2026-08-05.** `veriflow install-agent [--client claude-code|codex] [project]` previews and
+atomically writes project-local MCP, skill and digest integration, while `veriflow doctor` reports
+`registered`, `missing`, `stale`, or `partial` for both clients.
 
 Installation is idempotent and previews an exact diff before every write. Depending on client
 capability it installs:

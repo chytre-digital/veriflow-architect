@@ -19,9 +19,21 @@ import {
   applySupersede,
   createAskRun,
   planAsk,
+  veriflowCliEntry,
   type AskPlan,
   type RunAnswerSummary,
 } from "@veriflow/ask";
+import {
+  AgentIntegrationError,
+  applyAgentInstallPlan,
+  buildAgentInstallPlan,
+  diagnoseAgentIntegration,
+  handoffApprovedClaudePlan,
+  type AgentClient,
+  type AgentLauncher,
+  type ArchitectureDigest,
+  type ApprovedPlanSaved,
+} from "@veriflow/agent-integration";
 import { proposedModulesOf } from "@veriflow/flow-answer";
 import { serveRead, serveRun } from "@veriflow/mcp-server";
 import {
@@ -93,7 +105,7 @@ import {
 } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { InitError, ProjectLock, initWorkspace, readConfig, DEFAULT_DOCUMENTATION } from "@veriflow/workspace";
-import type { CallSite, EntryPoint, Snapshot, SymbolRecord } from "@veriflow/contracts";
+import type { CallSite, EntryPoint, Snapshot, SymbolRecord, TrafficCell } from "@veriflow/contracts";
 
 const program = new Command();
 program.name("veriflow").description("Generate an application's architecture and answer questions about it");
@@ -231,6 +243,88 @@ function probePython(): { available: boolean; version?: string } {
   return { available: false };
 }
 
+function integrationLauncher(): AgentLauncher {
+  return {
+    command: resolve(process.execPath),
+    args: [
+      "--no-warnings=ExperimentalWarning",
+      "--import",
+      fileURLToPath(import.meta.resolve("tsx")),
+      veriflowCliEntry(),
+    ],
+  };
+}
+
+/** Static, deliberately small orientation copied into the client's repository instructions. */
+function integrationDigest(root: string): ArchitectureDigest {
+  const database = join(root, ".veriflow", "veriflow.db");
+  if (!existsSync(database)) {
+    return {
+      moduleCount: 0,
+      topModules: [],
+      flows: [],
+      note: "No VeriFlow database exists yet; run `veriflow init`, then `veriflow index`.",
+    };
+  }
+  const store = new Store({ file: database });
+  try {
+    const snapshot = store.latestSnapshotAny();
+    if (!snapshot) {
+      return {
+        moduleCount: 0,
+        topModules: [],
+        flows: [],
+        note: "No indexed snapshot exists yet; run `veriflow index`, then reinstall to refresh this digest.",
+      };
+    }
+    const modules = store.readModules(snapshot.id).map((row) => ({
+      id: String(row["id"]),
+      label: String(row["label"]),
+    }));
+    const labels = new Map(modules.map((module) => [module.id, module.label]));
+    const calls = new Map<string, number>();
+    const graph = store.readCallGraph(snapshot.id);
+    for (const cell of (graph?.traffic ?? []) as TrafficCell[]) {
+      calls.set(cell.from, (calls.get(cell.from) ?? 0) + cell.calls);
+      if (cell.to !== cell.from) calls.set(cell.to, (calls.get(cell.to) ?? 0) + cell.calls);
+    }
+    const topModules = [...calls]
+      .map(([id, count]) => ({ label: labels.get(id) ?? id, calls: count }))
+      .sort((left, right) => right.calls - left.calls || left.label.localeCompare(right.label))
+      .slice(0, 5);
+    const flows = store.listAnswers()
+      .filter((row) => row["status"] !== "superseded" && kindOf(row) === "observed")
+      .map((row) => ({ id: String(row["id"]), title: String(row["title"]) }))
+      .sort((left, right) => left.title.localeCompare(right.title) || left.id.localeCompare(right.id));
+    return { moduleCount: modules.length, topModules, flows };
+  } finally {
+    store.close();
+  }
+}
+
+function saveApprovedHookPlan(root: string, source: Parameters<typeof inspectPlanSource>[2]): ApprovedPlanSaved {
+  const git = readGitFacts(root);
+  if (!git.isRepository) throw new Error(`${root} is not a Git working tree`);
+  const config = readConfig(root);
+  if (!config) throw new Error(`no VeriFlow workspace at ${root} - run: veriflow init`);
+  const lock = new ProjectLock(root);
+  lock.acquire();
+  const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+  try {
+    const analysis = inspectPlanSource(store, config.project.id, source);
+    const saved = savePlan(store, config.project.id, analysis, source.content);
+    return {
+      id: saved.plan.id,
+      flowIds: analysis.flows
+        .filter((flow) => flow.kind === "observed" && flow.status !== "superseded")
+        .map((flow) => flow.id),
+    };
+  } finally {
+    store.close();
+    lock.release();
+  }
+}
+
 /* ------------------------------------------------------------------ init */
 
 program
@@ -271,6 +365,153 @@ program
     log(`\nNext:\n  veriflow doctor`);
   });
 
+/* ---------------------------------------------------------- install-agent */
+
+program
+  .command("install-agent")
+  .argument("[path]")
+  .option("--client <client>", "agent client: claude-code or codex", "claude-code")
+  .option("--yes", "apply the preview without an interactive confirmation")
+  .description("register VeriFlow MCP and plan-review guidance in this project")
+  .action(async (pathArg: string | undefined, options: { client: string; yes?: boolean }) => {
+    const root = resolve(pathArg ?? process.cwd());
+    if (options.client !== "claude-code" && options.client !== "codex") {
+      fail(`unsupported agent client "${options.client}"; use claude-code or codex`);
+    }
+    const client = options.client as AgentClient;
+    let plan;
+    try {
+      plan = buildAgentInstallPlan({
+        root,
+        client,
+        launcher: integrationLauncher(),
+        digest: integrationDigest(root),
+      });
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    log(`VeriFlow agent integration — ${client}`);
+    log(
+      plan.capability === "automatic-approved-plan-handoff"
+        ? "  capability: approved plans are handed off automatically after ExitPlanMode succeeds"
+        : "  capability: plan handoff is manual; Codex exposes no installed stable post-plan hook",
+    );
+    if (plan.changes.length === 0) {
+      log("  already installed — every managed entry is byte-identical");
+      return;
+    }
+
+    log(`\nExact preview (${plan.changes.length} file${plan.changes.length === 1 ? "" : "s"}):`);
+    for (const change of plan.changes) {
+      log(`\n--- ${change.before === undefined ? "/dev/null" : `a/${change.path}`}`);
+      log(`+++ b/${change.path}`);
+      for (const line of change.diff) log(`${line.kind}${line.text}`);
+    }
+
+    if (!options.yes) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const reply = (await rl.question(`\nApply exactly this diff? [y/N] `)).trim().toLowerCase();
+      rl.close();
+      if (reply !== "y" && reply !== "yes") {
+        log("Not installed; no target file was changed.");
+        return;
+      }
+    }
+
+    try {
+      const result = applyAgentInstallPlan(plan);
+      log(`\nInstalled ${result.written.length} file${result.written.length === 1 ? "" : "s"}:`);
+      for (const path of result.written) log(`  ${path}`);
+      log("Run `veriflow doctor` to verify the registration.");
+    } catch (error) {
+      if (error instanceof AgentIntegrationError || error instanceof Error) fail(error.message);
+      fail(String(error));
+    }
+  });
+
+/* ----------------------------------------------------- agent-plan-handoff */
+
+program
+  .command("agent-plan-handoff")
+  .argument("[path]")
+  .option("--client <client>", "hook source client", "claude-code")
+  .description("consume one approved plan hook event without approving or implementing the plan")
+  .action(async (pathArg: string | undefined, options: { client: string }) => {
+    const root = resolve(pathArg ?? process.cwd());
+    const launcher = integrationLauncher();
+    if (options.client !== "claude-code") {
+      log("No automatic plan hook is installed for this client; use the manual command in the VeriFlow skill.");
+      return;
+    }
+    let event: unknown;
+    try {
+      const input = readFileSync(0, "utf8");
+      if (Buffer.byteLength(input, "utf8") > 1024 * 1024) throw new Error("hook event exceeds 1 MiB");
+      event = JSON.parse(input);
+    } catch (error) {
+      log(JSON.stringify({
+        systemMessage:
+          `VeriFlow plan handoff could not read the hook event: ${error instanceof Error ? error.message : String(error)}. ` +
+          "The approved plan in Claude Code was not modified. Save it as Markdown and run `veriflow plan <file> --from markdown --save`.",
+      }));
+      return;
+    }
+
+    const result = await handoffApprovedClaudePlan({
+      event,
+      root,
+      launcher,
+      save: (source) => saveApprovedHookPlan(root, source),
+      translate: (planId, flowId) => {
+        const child = spawnSync(
+          launcher.command,
+          [...launcher.args, "plan-propose", planId, flowId, root, "--client", "claude-code"],
+          // Hook stdout must contain one JSON object for Claude Code's `systemMessage`. The bounded
+          // translator has its own persisted transcript, so its console rendering is discarded.
+          { cwd: root, stdio: "ignore" },
+        );
+        if (child.error) throw child.error;
+        if (child.status !== 0) throw new Error(`plan translation exited with status ${child.status ?? "unknown"}`);
+        const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+        try {
+          if (store.planProposalsForPlan(planId).length === 0) {
+            throw new Error("plan translation finished without submitting a proposal");
+          }
+        } finally {
+          store.close();
+        }
+      },
+    });
+    if (result.status === "ignored") return;
+    if (result.status === "translated") {
+      log(JSON.stringify({
+        systemMessage:
+          `VeriFlow saved the approved source at ${result.sourcePath}. ` +
+          `Plan review: ${result.reviewUrl}. If the local reader is not running: veriflow open`,
+      }));
+      return;
+    }
+    if (result.status === "needs-flow") {
+      const why = result.flowIds.length === 0
+        ? "No observed stored flow unambiguously matches this plan; no translation was started."
+        : `The plan touches ${result.flowIds.length} observed flows; choosing one automatically would be a guess. ` +
+          `Candidates: ${result.flowIds.join(", ")}.`;
+      log(JSON.stringify({
+        systemMessage:
+          `VeriFlow saved the approved source at ${result.sourcePath}. Plan review: ${result.reviewUrl}. ` +
+          `${why} Manual recovery: ${result.recoveryCommand}`,
+      }));
+      return;
+    }
+    log(JSON.stringify({
+      systemMessage:
+        `VeriFlow saved no implementation and queued no message. ${result.message}. ` +
+        `${result.sourcePath ? `Approved source preserved at: ${result.sourcePath}. ` : ""}` +
+        `Recover with: ${result.recoveryCommand}`,
+    }));
+  });
+
 /* ------------------------------------------------------------------ doctor */
 
 program
@@ -295,11 +536,17 @@ program
       /** Config entries the file does not cover. They have never been applied; this says so. */
       unappliedConfigExcludes: unappliedExcludes(readConfig(root)?.analysis.exclude ?? [], ignoreFile.ignore),
     };
+    const launcher = integrationLauncher();
+    const digest = integrationDigest(root);
+    const agentIntegrations = {
+      claudeCode: diagnoseAgentIntegration({ root, client: "claude-code", launcher, digest }),
+      codex: diagnoseAgentIntegration({ root, client: "codex", launcher, digest }),
+    };
 
     if (options.json) {
       log(
         JSON.stringify(
-          { contractVersion: 1, root, workspace, git, python, ignore, provider: health, probe },
+          { contractVersion: 1, root, workspace, git, python, ignore, provider: health, probe, agentIntegrations },
           null,
           2,
         ),
@@ -339,6 +586,12 @@ program
     if (probe) {
       log(`  call-site lines    ${probe.callSiteLines ? "✓ available" : `✗ ${probe.reason ?? "unavailable"}`}`);
       log(`  graph schema       ${probe.schemaVersion ?? "unknown"}`);
+    }
+    log(`\nAgent integrations`);
+    log(`  Claude Code        ${agentIntegrations.claudeCode.state === "registered" ? "✓" : agentIntegrations.claudeCode.state === "missing" ? "✗" : "!"} ${agentIntegrations.claudeCode.state}`);
+    log(`  Codex              ${agentIntegrations.codex.state === "registered" ? "✓" : agentIntegrations.codex.state === "missing" ? "✗" : "!"} ${agentIntegrations.codex.state} (manual plan handoff)`);
+    if (agentIntegrations.claudeCode.state !== "registered" && agentIntegrations.codex.state !== "registered") {
+      log("                     install: veriflow install-agent --client <claude-code|codex>");
     }
     log(`\nProject              ${root}`);
     if (git.isRepository) {

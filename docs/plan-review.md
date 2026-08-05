@@ -14,6 +14,33 @@ veriflow export --plan <planId> --out review.html   # one file, opens anywhere
 
 `veriflow plans` lists what has been saved.
 
+## Agent installation and approved-plan handoff
+
+```powershell
+veriflow install-agent --client claude-code   # MCP + skill + digest + approved-plan hook
+veriflow install-agent --client codex         # MCP + skill + digest + manual handoff
+veriflow doctor                               # registered / missing / stale / partial
+```
+
+The installer is project-local. It previews the exact diff, requires confirmation, preserves
+unrelated JSON/TOML and instruction content, writes the whole file set atomically, and becomes a
+no-op when repeated with the same launcher and architecture digest. MCP registration uses the
+absolute Node executable, absolute TypeScript loader and CLI entry. Claude receives the selected
+project as an explicit server argument instead of relying on its launch directory; Codex also records
+that project as the server `cwd`.
+
+Claude Code's project `PostToolUse` hook matches only a successful `ExitPlanMode`. It first preserves
+the exact approved Markdown under `.veriflow/approved-plans`, then runs the deterministic inspection.
+When exactly one observed flow is implicated it starts the bounded F024 translator and prints the
+stable `/plans/<id>` review URL. With no flow, several possible flows, or a translator failure, it
+does not guess: the source stays preserved and the hook prints an exact recovery command. It never
+approves the plan, starts its implementation, or queues another message.
+
+Codex loads the repository skill from `.agents/skills/veriflow/SKILL.md` and the project MCP entry
+from `.codex/config.toml`. Because this integration has no stable post-plan lifecycle hook, its skill
+calls the Markdown command manual and prints the exact invocation; the product never describes that
+path as automatic.
+
 ## Plan sources
 
 Named Markdown remains the default and the portable fallback for every coding client:
@@ -36,7 +63,7 @@ or the exact local project scope selected by `current`; it accepts the latest su
 `ExitPlanMode` input and never treats intermediate reasoning as an approved plan. A changed private
 format or absent approval returns a named `unsupported` or `no-plan` state with the searched scope.
 It never scans the whole home directory. Codex and clients without a stable approved-plan source use
-the Markdown command and are not described as automatic.
+the installed manual Markdown command and are not described as automatic.
 
 `git-branch` reads the working-tree diff against the named base without changing Git and labels the
 saved artifact `post-code — code already exists`. The other adapters are pre-code sources.

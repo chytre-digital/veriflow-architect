@@ -28,6 +28,7 @@ From a repository root:
 veriflow init
 veriflow doctor
 veriflow index
+veriflow install-agent --client claude-code
 veriflow ask "Jak funguje rezervace a zaplacení lekce?"
 veriflow open
 ```
@@ -54,6 +55,12 @@ an approved plan from one explicitly scoped Claude Code transcript, or a Git bra
 [plan review](docs/plan-review.md) at `/plans/<id>` draws the current flow, the planned one, the
 modules it touches and every claim it makes as one shareable page — exportable as a single
 self-contained HTML file for a reviewer who has no VeriFlow installed.
+
+`veriflow install-agent` makes the read-only MCP and review ritual visible to Claude Code or Codex.
+It shows the exact project-local diff before writing and asks for confirmation. Claude Code also gets
+an approved-plan hook; Codex gets the same registration and a clearly labelled manual Markdown
+handoff because it has no installed stable post-plan hook. `veriflow doctor` reports each integration
+as `registered`, `missing`, `stale`, or `partial`.
 
 The MVP is deliberately partial: its job is to generate an architecture and support review. What is
 full, what is partial, and what is only reserved is written down — partial is fine, silently partial
