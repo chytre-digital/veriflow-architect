@@ -7,6 +7,7 @@ import {
   declaredEntries,
   deriveModules,
   detectEntryPoints,
+  enrichMinimalApis,
   labelFromPath,
   layerRank,
   moduleForPath,
@@ -51,6 +52,15 @@ const call = (from: string, to: string | undefined, path: string, line = 10): Ca
   confidence: 1,
 });
 
+const unresolved = (from: string, toName: string, path: string, line: number): CallSite => ({
+  fromSymbolId: from,
+  toName,
+  path,
+  line,
+  resolution: "unresolved",
+  confidence: 1,
+});
+
 describe("module registry", () => {
   it("derives a stable id from the path, never from the label", () => {
     expect(moduleIdFromPath("src/modules/payments")).toBe("src-modules-payments");
@@ -79,6 +89,27 @@ describe("module registry", () => {
     expect(modules).toHaveLength(1);
     expect(modules[0]!.id).toBe("src-app");
     expect(modules[0]!.source).toBe("app-route-tree");
+  });
+
+  it("treats each .NET Features/<Feature> vertical slice as a module", () => {
+    const modules = deriveModules([
+      fn(
+        "EventApi.Api/Features/SourceRegistry/SourceEndpoints.cs::CreateSource",
+        "EventApi.Api/Features/SourceRegistry/SourceEndpoints.cs",
+        "CreateSource",
+      ),
+      fn(
+        "EventApi.Api/Features/Images/Blurhash/Backfill.cs::Run",
+        "EventApi.Api/Features/Images/Blurhash/Backfill.cs",
+        "Run",
+      ),
+      fn("EventApi.Api/Program.cs::Main", "EventApi.Api/Program.cs", "Main"),
+    ]);
+    expect(modules.map((module) => [module.id, module.source])).toEqual([
+      ["eventapi-api", "top-level-directory"],
+      ["eventapi-api-features-images", "feature-root"],
+      ["eventapi-api-features-sourceregistry", "feature-root"],
+    ]);
   });
 
   it("matches the longest module root, so a nested module wins over its parent", () => {
@@ -135,6 +166,122 @@ describe("entry point detection", () => {
       fn("src/app/api/x/route.ts::helper", "src/app/api/x/route.ts", "helper"),
     ]);
     expect(entries).toEqual([]);
+  });
+});
+
+describe("ASP.NET Minimal API enrichment", () => {
+  it("resolves MapGroup constants and points a named route at its real handler", () => {
+    const path = "EventApi.Api/Features/Trips/TripEndpoints.cs";
+    const mapper = fn(`${path}::MapTripEndpoints`, path, "MapTripEndpoints", 7);
+    // The real C# provider can misname a synchronous handler after its return type. Source spans let
+    // the enricher repair that symbol while preserving its provider-stable id and call sites.
+    const handler = fn(`${path}::IResult`, path, "IResult", 8);
+    const service = fn("EventApi.Api/Features/Trips/TripService.cs::GetBySlugAsync", "EventApi.Api/Features/Trips/TripService.cs", "GetBySlugAsync", 10);
+    const source = [
+      "public static class TripEndpoints",
+      "{",
+      '  private const string PublicPrefix = "/api/v1/trips";',
+      "  public static void MapTripEndpoints(IEndpointRouteBuilder app)",
+      "  {",
+      '    app.MapGet($"{PublicPrefix}/{{slug}}", GetTripBySlug);',
+      "  }",
+      "  private static Task GetTripBySlug() => Task.CompletedTask;",
+      "}",
+    ].join("\n");
+    const enriched = enrichMinimalApis(
+      [mapper, handler, service],
+      [
+        unresolved(mapper.id, "MapGet", path, 6),
+        call(handler.id, service.id, path, 8),
+      ],
+      { source: reader({ [path]: source }) },
+    );
+
+    expect(enriched.diagnostics).toEqual([]);
+    expect(enriched.entryPoints).toHaveLength(1);
+    expect(enriched.entryPoints[0]).toMatchObject({
+      label: "GET /api/v1/trips/{slug}",
+      symbolId: handler.id,
+      line: 6,
+    });
+    expect(enriched.symbols).toHaveLength(3);
+    expect(enriched.symbols.find((symbol) => symbol.id === handler.id)!.name).toBe("GetTripBySlug");
+    expect(enriched.callSites.some((site) => site.toName === "MapGet")).toBe(false);
+
+    const graph = buildCallGraph(enriched.symbols, enriched.callSites, {
+      snapshotId: "minimal-named",
+      entryPoints: enriched.entryPoints,
+      callSiteLinesExact: true,
+    });
+    expect(graph.nodes.some((node) => node.id === service.id)).toBe(true);
+  });
+
+  it("gives each inline lambda its own symbol and downstream calls", () => {
+    const path = "EventApi.Api/Features/Review/ReviewEndpoints.cs";
+    const mapper = fn(`${path}::MapReviewEndpoints`, path, "MapReviewEndpoints", 1);
+    const one = fn("EventApi.Api/Features/Review/ReviewService.cs::OneAsync", "EventApi.Api/Features/Review/ReviewService.cs", "OneAsync");
+    const two = fn("EventApi.Api/Features/Review/ReviewService.cs::TwoAsync", "EventApi.Api/Features/Review/ReviewService.cs", "TwoAsync");
+    const source = [
+      "public static void MapReviewEndpoints(IEndpointRouteBuilder app)",
+      "{",
+      '  var group = app.MapGroup("/api/v1/review");',
+      '  group.MapGet("/one", async (ReviewService svc) =>',
+      "  {",
+      "    await svc.OneAsync();",
+      "  });",
+      '  group.MapGet("/two", async (ReviewService svc) =>',
+      "  {",
+      "    await svc.TwoAsync();",
+      "  });",
+      "}",
+    ].join("\n");
+    const enriched = enrichMinimalApis(
+      [mapper, one, two],
+      [
+        unresolved(mapper.id, "MapGroup", path, 3),
+        unresolved(mapper.id, "MapGet", path, 4),
+        call(mapper.id, one.id, path, 6),
+        unresolved(mapper.id, "MapGet", path, 8),
+        call(mapper.id, two.id, path, 10),
+      ],
+      { source: reader({ [path]: source }) },
+    );
+
+    expect(enriched.diagnostics).toEqual([]);
+    expect(enriched.entryPoints.map((entry) => entry.label)).toEqual([
+      "GET /api/v1/review/one",
+      "GET /api/v1/review/two",
+    ]);
+    const routeOne = enriched.entryPoints.find((entry) => entry.label.endsWith("/one"))!;
+    const routeTwo = enriched.entryPoints.find((entry) => entry.label.endsWith("/two"))!;
+    expect(routeOne.symbolId).not.toBe(routeTwo.symbolId);
+    expect(enriched.callSites.find((site) => site.toSymbolId === one.id)!.fromSymbolId).toBe(routeOne.symbolId);
+    expect(enriched.callSites.find((site) => site.toSymbolId === two.id)!.fromSymbolId).toBe(routeTwo.symbolId);
+
+    const graph = buildCallGraph(enriched.symbols, enriched.callSites, {
+      snapshotId: "minimal-lambda",
+      entryPoints: [routeOne],
+      callSiteLinesExact: true,
+    });
+    expect(graph.nodes.some((node) => node.id === one.id)).toBe(true);
+    expect(graph.nodes.some((node) => node.id === two.id)).toBe(false);
+  });
+
+  it("reports a dynamic route instead of inventing a path", () => {
+    const path = "EventApi.Api/DynamicEndpoints.cs";
+    const mapper = fn(`${path}::MapEndpoints`, path, "MapEndpoints");
+    const handler = fn(`${path}::Handle`, path, "Handle", 10);
+    const enriched = enrichMinimalApis(
+      [mapper, handler],
+      [unresolved(mapper.id, "MapGet", path, 3)],
+      {
+        source: reader({
+          [path]: "void MapEndpoints(IEndpointRouteBuilder app)\n{\n  app.MapGet(GetRoute(), Handle);\n}",
+        }),
+      },
+    );
+    expect(enriched.entryPoints).toEqual([]);
+    expect(enriched.diagnostics[0]!.reason).toMatch(/route expression is dynamic/);
   });
 });
 

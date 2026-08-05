@@ -2,7 +2,7 @@ import type { Freshness, QuestionDecision, SnapshotFacts, StoredCitation } from 
 import type { AnswerKind, FlowAnswer } from "@veriflow/flow-answer";
 import { proposedModulesOf } from "@veriflow/flow-answer";
 import { buildFlowOverlay, type OverlayMatching } from "@veriflow/diagram";
-import { renderMermaid } from "./mermaid.js";
+import { OVERLAY_MARKER_NOTE, renderMermaid } from "./mermaid.js";
 
 /**
  * The document a team reads in review, on a machine where VeriFlow is not installed. Everything in
@@ -125,20 +125,7 @@ export function renderDocument(input: DocumentInput): Document {
 
   out.push("## The flow", "");
   out.push("```mermaid", diagram.text, "```", "");
-  if (diagram.overlay) {
-    out.push(
-      "> Mermaid cannot carry VeriFlow's overlay colours. Text markers preserve the change meaning:",
-      "> `+` added, `-` removed, `~` moved; unchanged labels have no prefix. `[not built]` marks a proposal-only participant.",
-      "",
-      "| marker | change |",
-      "|---|---|",
-      "| `+` | added by the proposal |",
-      "| `-` | removed by the proposal |",
-      "| `~` | paired by the matcher, but changed |",
-      "| *(none)* | unchanged |",
-      "",
-    );
-  }
+  if (diagram.overlay) out.push(...OVERLAY_MARKER_NOTE);
   if (diagram.legend.length > 0) {
     out.push("| arrow | meaning |", "|---|---|");
     for (const item of diagram.legend) out.push(`| \`${item.arrow}\` | ${item.legend} |`);
@@ -163,12 +150,12 @@ export function renderDocument(input: DocumentInput): Document {
     out.push("| # | From → To | What happens | Evidence |", "|---|---|---|---|");
     steps.forEach((step, i) => {
       out.push(
-        `| ${i + 1} | ${cell(name(step.from))} → ${cell(name(step.to))} | ${cell(step.label)} | ${refs(step.citations)} |`,
+        `| ${i + 1} | ${tableCell(name(step.from))} → ${tableCell(name(step.to))} | ${tableCell(step.label)} | ${refs(step.citations)} |`,
       );
     });
     out.push("");
     for (const step of steps) {
-      if (step.reasoning) out.push(`- **${cell(step.label)}** — ${cell(step.reasoning)}`);
+      if (step.reasoning) out.push(`- **${tableCell(step.label)}** — ${tableCell(step.reasoning)}`);
     }
     if (steps.some((s) => s.reasoning)) out.push("");
   }
@@ -187,16 +174,16 @@ export function renderDocument(input: DocumentInput): Document {
     const stepLabel = new Map(answer.steps.map((s) => [s.id, s.label]));
     for (const branch of answer.branches) {
       out.push(`### ${branch.title}`, "");
-      out.push(`**Protects** — ${cell(branch.invariant)}  `);
+      out.push(`**Protects** — ${tableCell(branch.invariant)}  `);
       out.push(
-        `**Leaves from** — ${cell(stepLabel.get(branch.forkStepId) ?? branch.forkStepId)} · **tone** \`${branch.tone}\``,
+        `**Leaves from** — ${tableCell(stepLabel.get(branch.forkStepId) ?? branch.forkStepId)} · **tone** \`${branch.tone}\``,
         "",
       );
       if (branch.steps.length > 0) {
         out.push("| # | From → To | What happens | Evidence |", "|---|---|---|---|");
         branch.steps.forEach((step, i) => {
           out.push(
-            `| ${i + 1} | ${cell(name(step.from))} → ${cell(name(step.to))} | ${cell(step.label)} | ${refs(step.citations)} |`,
+            `| ${i + 1} | ${tableCell(name(step.from))} → ${tableCell(name(step.to))} | ${tableCell(step.label)} | ${refs(step.citations)} |`,
           );
         });
         out.push("");
@@ -213,8 +200,8 @@ export function renderDocument(input: DocumentInput): Document {
     out.push("| From | To | What crosses it | Kind | Derived how |", "|---|---|---|---|---|");
     for (const edge of answer.moduleEdges) {
       out.push(
-        `| \`${edge.from}\` | \`${edge.to}\` | ${cell(edge.contract)} | ${edge.kind} | ` +
-          `${edge.inferred ? `inferred — ${cell(edge.rule ?? "rule not recorded")}` : "observed at a call site"} |`,
+        `| \`${edge.from}\` | \`${edge.to}\` | ${tableCell(edge.contract)} | ${edge.kind} | ` +
+          `${edge.inferred ? `inferred — ${tableCell(edge.rule ?? "rule not recorded")}` : "observed at a call site"} |`,
       );
     }
     out.push("");
@@ -228,7 +215,7 @@ export function renderDocument(input: DocumentInput): Document {
   } else {
     out.push("| System | Boundary enforced at | When it fails |", "|---|---|---|");
     for (const system of answer.externalSystems) {
-      out.push(`| ${cell(system.name)} | \`${system.boundaryPath}\` | ${cell(system.failureBehavior)} |`);
+      out.push(`| ${tableCell(system.name)} | \`${system.boundaryPath}\` | ${tableCell(system.failureBehavior)} |`);
     }
     out.push("");
   }
@@ -248,7 +235,7 @@ export function renderDocument(input: DocumentInput): Document {
       );
     }
     for (const question of answer.openQuestions) {
-      out.push(`- ${question.blocking ? "**(blocking)** " : ""}${cell(question.question)}`);
+      out.push(`- ${question.blocking ? "**(blocking)** " : ""}${tableCell(question.question)}`);
       if (question.attemptedEvidence.length > 0) {
         out.push(`  - examined: ${question.attemptedEvidence.map((e) => `\`${e}\``).join(", ")}`);
       }
@@ -256,9 +243,9 @@ export function renderDocument(input: DocumentInput): Document {
       // out needs to know what was uncertain, not only how it was settled.
       if (question.decision) {
         const decided = input.decisions?.get(question.id);
-        const by = decided ? ` — ${cell(decided.author)}, ${decided.decidedAt.slice(0, 10)}` : "";
-        out.push(`  - **decided:** ${cell(question.decision)}${by}`);
-        if (decided?.rationale) out.push(`  - because: ${cell(decided.rationale)}`);
+        const by = decided ? ` — ${tableCell(decided.author)}, ${decided.decidedAt.slice(0, 10)}` : "";
+        out.push(`  - **decided:** ${tableCell(question.decision)}${by}`);
+        if (decided?.rationale) out.push(`  - because: ${tableCell(decided.rationale)}`);
       }
     }
     out.push("");
@@ -321,7 +308,7 @@ export function renderDocument(input: DocumentInput): Document {
 }
 
 /** A markdown table cell: a pipe or a newline in free text would end the row early. */
-function cell(text: string): string {
+export function tableCell(text: string): string {
   return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
 }
 

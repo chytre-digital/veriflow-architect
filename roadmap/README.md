@@ -1,12 +1,15 @@
 # Product roadmap
 
-Twenty-two shipped features in six iterations. The first three iterations produce the original MVP: on a
-real repository, what the [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a
-verified flow answer out, stored locally, browsable and available to an agent. Iteration 4 assembles
-many answers into a project view. Iteration 5 closes the design loop from written claim and observed
-flow through proposal, review and a diagram of the change. Iteration 6 compares declared intent with
-indexed structure, adds evidence from a real test run beside the retained coverage proxy, and finishes the
-in-answer review path.
+Twenty-five shipped features through M7's primary feature, followed by three ready M7 features. The
+first three iterations produce the original MVP: on a real repository, what the
+[frozen mockup](../artifacts/mockups/README.md) shows — a question in, a verified flow answer out,
+stored locally, browsable and available to an agent. Iteration 4 assembles many answers into a project
+view. Iteration 5 closes the design loop from written claim and observed flow through proposal, review
+and a diagram of the change. Iteration 6 compares declared intent with indexed structure, adds evidence
+from a real test run beside the retained coverage proxy, and finishes the in-answer review path.
+Iteration 7 makes the plan overlay the primary product surface: an agent's
+approved plan is drawn against current architecture for a person before implementation starts, then
+the project suggests the next useful question without auto-generating an answer.
 
 Each feature is intended to fit one implementation task and carries its own acceptance and manual
 verification contract.
@@ -68,6 +71,19 @@ Iteration 6 — compare intent with execution
   F020 review one flow through its scoped call graph
   F021 correct supported prose and decide open questions in the browser
   F022 navigate follow-ups, replacements and proposals as answer lineage
+
+Iteration 7 — see the plan before the code
+  F023 inspect and optionally save an agent plan deterministically             [shipped]
+    ↓
+  F024 translate the plan into a bounded proposal                              [shipped]
+    ↓
+  F025 draw flow, modules and claims in one shareable plan review   ← primary feature [shipped]
+    ↓
+  F026 accept Markdown, spec-kit, Claude Code and branch plan sources
+    ↓
+  F027 install the integration and hand approved plans to the review screen
+    ↓
+  F028 rank the next evidence-backed architecture question
 ```
 
 The order follows the two things the MVP exists to do: **generate an application's architecture**, then
@@ -103,6 +119,12 @@ F008 and F009 depend on F005/F006 only, and can be reordered freely.
 | [F020](../docs/product/m6-plan.md) | Flow call graph | One answer gets a call graph scoped honestly to the files it cites. |
 | [F021](../docs/product/m6-plan.md) | Corrections UI | Supported corrections and open-question decisions become browser review actions. |
 | [F022](../docs/product/m6-plan.md) | Threaded answers | Follow-ups, replacements and proposals become labelled, navigable answer lineage. |
+| [F023](../docs/product/m7-plan-overlay-plan.md) | Deterministic plan intake | A plan's claims and paths are checked and mapped onto modules and stored flows without a model. |
+| [F024](../docs/product/m7-plan-overlay-plan.md) | Plan-to-proposal translation | A bounded run translates a saved plan into the existing proposal contract without exploring code. |
+| [F025](../docs/product/m7-plan-overlay-plan.md) | Graphical agent-plan review | The current and planned flows, modules and supporting claims appear in one shareable pre-code artifact. |
+| [F026](../docs/product/m7-plan-overlay-plan.md) | Plan-source adapters | Markdown, spec-kit, Claude Code and branch sources enter through one replaceable contract. |
+| [F027](../docs/product/m7-plan-overlay-plan.md) | Agent installation and handoff | Registration and supported hooks deliver an approved plan to the graphical review surface. |
+| [F028](../docs/product/m7-plan-overlay-plan.md) | Question queue | VeriFlow suggests the next evidence-backed question while a person remains the boundary that starts a run. |
 
 ## Exit gate per iteration
 
@@ -134,6 +156,12 @@ one answer without being blended with the existing proxy; and the answer screen 
 flow-scoped call graph and the attributed correction/decision workflow, while answer lists make
 follow-up, supersession and proposal lineage navigable.
 
+**Iteration 7** is complete when a plan approved in a supported agent workflow opens before
+implementation as one stable, shareable URL: the observed and planned flow are graphically overlaid,
+existing and proposed modules are visually distinct, every source-plan claim remains inspectable with
+its evidence state, and the same plan's uncovered area enters a deterministic question queue from
+which a person — never a background process — may start the next run.
+
 Automated tests run without a model, an account, or a network. Windows is the primary platform;
 F001–F003 and F005 portable tests also run on one Unix-like runner.
 
@@ -160,11 +188,13 @@ lives on where. Much of
 [`docs/veriflow-architecture-spec.md`](../docs/veriflow-architecture-spec.md), previously marked
 long-term exploration, is now in scope.
 
-## Candidates beyond M6, not yet implementation-ready
+## Candidates beyond M7, not yet implementation-ready
 
-1. a first-party indexer behind the F002 protocol, removing the external dependency;
-2. editor deep links from evidence, if the current read-only source view proves insufficient;
-3. corrections that add or structurally change flow steps, after Q5 settles their allowed reach.
+1. a first-party/LSP indexer behind the F002 protocol, removing the external dependency;
+2. a context pack, text MCP format and measured `citedSource` cost receipt;
+3. an options matrix comparing up to three proposals without selecting or scoring a winner;
+4. project decisions with evidence freshness and per-module exposure kept as separate counts;
+5. editor deep links and structural flow corrections, after their review boundary is settled.
 
 Open decisions that can still alter existing features are in [open-questions.md](open-questions.md).
 Q3, Q4, Q6 and Q8 retain working defaults; Q5 is explicitly deferred until correction editing grows

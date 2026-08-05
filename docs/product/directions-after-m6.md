@@ -2,13 +2,17 @@
 status: proposal
 owner: TODO
 last-reviewed: 2026-08-04
+promoted: M7-plan-overlay
 ---
 
 # Where VeriFlow goes after M6
 
-> **A proposal, not a roadmap commitment.** Nothing here is in `roadmap.yaml`. It is written against
-> the code as it stands after M6 on 2026-08-04 (F001–F022 shipped)
-> and against what the rest of the market shipped while M1–M6 were being built.
+> **Exploration with a promoted core.** F023–F024 are shipped; the graphical overlay, source
+> adapters, agent handoff and question queue remain implementation-ready F025–F028 in `roadmap.yaml`.
+> Their detailed contract is
+> [m7-plan-overlay-plan.md](m7-plan-overlay-plan.md). Token economics and decision tooling remain
+> candidates. This document records the wider reasoning against the code as it stands after M6 on
+> 2026-08-04 (F001–F022 shipped).
 
 ## 0 · The five bets, in one page
 
@@ -144,7 +148,7 @@ VeriFlow is roughly 80% of the way there and does not know it. What exists:
 | hunk → cited line | `packages/answers/src/diff-impact.ts` | which stored flows a change lands in, by exact line |
 | answer diff | `packages/answers/src/answer-diff.ts` | proposal vs. observed vs. built |
 
-What is missing is one adapter and one screen. Today the only way to get a proposal is
+What is missing is a stored plan artifact, one bounded translation adapter and one screen. Today the only way to get a proposal is
 `veriflow propose <answerId> "<change>"` (`apps/cli/src/main.ts:908`), which **runs a full agent
 session**. That is the wrong entry point for this use case, because the plan already exists — the
 agent already did the thinking, in a different window, and threw the result away.
@@ -184,7 +188,8 @@ $ veriflow plan specs/023-invoicing-module/plan.md
 ```
 
 That output costs nothing, needs no model, and would have caught the single defect the 023 review
-found by hand. **Level 1 is the product.** Ship it alone if nothing else ships.
+found by hand. **Level 1 is the deterministic foundation, not the M7 product outcome.** It may ship
+and pay off first, but the milestone is not complete until a person can review the drawing.
 
 **Level 2 — the drawing.** With a parent answer named, hand the plan to one short agent run whose
 only job is to translate it into the `FlowAnswer` contract with `intent` citations — no exploration,
@@ -424,19 +429,19 @@ also the cheapest path to the languages VeriFlow currently cannot see.
 
 ---
 
-## 9 · Sequenced candidates
+## 9 · Promotion and remaining sequence
 
 | Order | Candidate | Why here | Cost | Value |
 |---|---|---|---|---|
-| 1 | **F023 · `install-agent` + doctor line** | Nothing else is reachable without it. Zero new concepts. | hours | unlocks everything |
-| 2 | **F024 · `veriflow plan <doc>` — level 1** | The user's idea, deterministic half. Reuses `claims.ts` + `diff-impact.ts`. Pays on every existing spec, issue and ADR immediately. | small | **highest** |
-| 3 | **F025 · plan screen + `export --plan`** | Turns F024 into the artifact people share. `buildFlowOverlay` exists; this is a route and a renderer. | small–medium | high |
-| 4 | **F026 · context pack + `cost` receipt** | Makes the token claim measurable and the surface cheaper in the same change. | small | high |
-| 5 | **F027 · the question queue** | Fixes the cold start; converts F024's "modules no answer reaches" into an action. | small | high |
-| 6 | **F028 · plan → proposal (level 2)** | The drawing. Needs the short-run prompt designed carefully so it does not become a second `ask`. | medium | high |
-| 7 | **F029 · options matrix** | The decision tool. Depends on F028 for proposals-from-documents to be cheap enough to run twice. | medium | **highest, later** |
-| 8 | **F030 · plan-adapter protocol** (`claude-code`, `speckit`) | Generalises F024's input. Do it once there is one adapter working, not before. | small | medium |
-| 9 | **F031 · decisions with freshness / exposure** | Valuable, and the most likely to drift toward the banned score. Do it last and read-only. | medium | medium |
+| 1 | **F023 · `veriflow plan <doc>` — deterministic intake** | Establishes the plan artifact and maps its claims onto current modules and flows without AI. | small | **highest** |
+| 2 | **F024 · plan → proposal translation** | Supplies the structured lanes and steps the existing overlay renderer needs, through a deliberately bounded run. | medium | high |
+| 3 | **F025 · graphical plan screen + `export --plan`** | The primary future feature: the artifact a person sees and shares before code is written. | medium | **highest** |
+| 4 | **F026 · plan-source adapter protocol** (`markdown`, `claude-code`, `speckit`, `git-branch`) | Generalises input only after one Markdown path works end to end. | small | high |
+| 5 | **F027 · `install-agent` + approved-plan handoff** | Makes the F025 outcome automatic where the client exposes a stable hook and visibly manual elsewhere. | small | unlocks adoption |
+| 6 | **F028 · the question queue** | Fixes cold start after the graphical plan path exists; converts uncovered plan areas into explicit next questions. | small | high |
+| 7 | **candidate · context pack + `cost` receipt** | Makes the token claim measurable and the surface cheaper without delaying the plan overlay. | small | high |
+| 8 | **candidate · options matrix** | The decision tool. It depends on cheap proposals-from-documents and should follow real use of the plan screen. | medium | high, later |
+| 9 | **candidate · decisions with freshness / exposure** | Valuable and the most likely to drift toward the banned score; keep it last and read-only. | medium | medium |
 
 F022 has shipped independently; none of the above depends on it. F021's correction UI gives ordinary
 review work the path that writes attributed rows to `answer_corrections`, while F022 makes follow-ups,
@@ -444,19 +449,21 @@ replacements and proposals explicit and navigable without changing their immutab
 
 ---
 
-## 10 · Decisions this proposal needs
+## 10 · Promoted decisions and remaining guardrails
 
 1. **Does `veriflow plan` write to the database?** A plan check is a measurement like `check-claims`,
-   which writes nothing. But a plan you can re-check next week is worth more than one you cannot.
-   *Recommendation:* store it in `SPEC_CHECKS`/`SPEC_CLAIMS`, which F012 already created for exactly
-   this shape, and keep the CLI's default output read-only.
+   which writes nothing. But a plan screen needs a stable artifact that can be reopened. F012 did not
+   create `SPEC_CHECKS`/`SPEC_CLAIMS`; persisting into them is not available.
+   *Promoted decision:* the default stays read-only and `--save` explicitly creates an idempotent,
+   fingerprinted plan artifact in the F023 store contract.
 2. **Is reading `~/.claude/projects/*.jsonl` acceptable?** It is a local file the user owns, no
    network, no API. But it is another program's private state and its format can change.
-   *Recommendation:* yes, behind an adapter that degrades to "no plan found" rather than crashing,
+   *Promoted decision:* yes, behind an adapter that degrades to "no plan found" rather than crashing,
    and never as the default source — the default is a path the user names.
 3. **Does level 2 justify an agent run at all,** or should the plan-to-proposal translation be
-   deterministic-but-shallow (paths and modules only, no lanes or steps)? *Recommendation:* ship
-   level 1 and measure how often anyone asks for the drawing before spending the run design on it.
+   deterministic-but-shallow (paths and modules only, no lanes or steps)? *Promoted decision:* yes,
+   because the graphical plan is the M7 outcome. F024 is a bounded translator over the saved plan,
+   observed parent and module registry — not a repository-exploring second `ask`.
 4. **Where does the options matrix stop?** Two options is a comparison; five is a leaderboard, which
    is the banned score wearing a table's clothes. *Recommendation:* cap at three, and print the
    consequences with no ordering.
@@ -472,8 +479,9 @@ VeriFlow has spent six milestones making a codebase's behaviour observable, cite
 and it is good at it. The market has meanwhile filled up with tools that generate *plans* —
 spec-kit, Kiro, Tessl, every agent's plan mode — and not one of them can check a plan against the
 code it claims to change. VeriFlow already has the extractor, the intent citation, the proposed
-module, the hunk-to-line mapper and the overlay renderer. The remaining work is one adapter, one
-screen, and a `.mcp.json` entry that should have been written in July.
+module, the hunk-to-line mapper and the overlay renderer. The promoted work is a stable plan
+artifact, a bounded translation, the graphical review screen and an installation path that delivers
+an approved agent plan to it.
 
 **Sources:** [Serena](https://github.com/oraios/serena) ·
 [spec-kit](https://github.com/github/spec-kit/blob/main/spec-driven.md) ·

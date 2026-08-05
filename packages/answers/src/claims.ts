@@ -180,6 +180,10 @@ export function extractClaims(markdown: string): Extraction {
       skipped.push({ docLine, raw, reason: "absolute path — citations are repository-relative" });
       continue;
     }
+    if (path.split("/").includes("..")) {
+      skipped.push({ docLine, raw, reason: "path escapes the project — citations must stay repository-relative" });
+      continue;
+    }
     const extension = path.includes(".") ? path.split(".").pop()!.toLowerCase() : "";
     if (!path.includes("/") && !SOURCE_EXTENSIONS.has(extension)) {
       skipped.push({ docLine, raw, reason: "no directory separator and not a known source extension" });

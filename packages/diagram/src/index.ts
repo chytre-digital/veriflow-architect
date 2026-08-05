@@ -538,6 +538,12 @@ function escapeXml(value: string): string {
 export interface RenderFlowOptions {
   /** Proposal answer id retained while a reader selects an arrow in an overlay. */
   overlayId?: string;
+  /**
+   * Where clicking an arrow goes. Returning undefined draws the step as a plain group instead of a
+   * link — what a screen that filters in place, and an exported artifact that has no server behind
+   * it, both need. Either way the step carries its id as `data-step`.
+   */
+  hrefOf?: (stepId: string) => string | undefined;
 }
 
 /** Renders the computed layout. Nothing is decided here — the geometry already exists. */
@@ -616,10 +622,12 @@ export function renderFlowSvg(
     const branch = arrow.branch ? " is-branch" : "";
     const dimmed = arrow.dimmed ? " is-dim" : "";
     const change = arrow.change ? ` change-${arrow.change}` : "";
-    const href = keepQuery(arrow.toStepId ?? arrow.fromStepId ?? arrow.stepId);
+    const stepId = arrow.toStepId ?? arrow.fromStepId ?? arrow.stepId;
+    const href = options.hrefOf ? options.hrefOf(stepId) : keepQuery(stepId);
     const head = arrow.change ? `head-${arrow.change}` : "head";
 
-    parts.push(`<a href="${href}" class="step${selected}${unverified}${bare}${branch}${dimmed}${change}">`);
+    const attributes = `class="step${selected}${unverified}${bare}${branch}${dimmed}${change}" data-step="${escapeXml(stepId)}"`;
+    parts.push(href ? `<a href="${href}" ${attributes}>` : `<g ${attributes}>`);
     // A label wrapped to three lines is still not the whole sentence when the sentence is long, so
     // the full text stays one hover away rather than being lost to the ellipsis.
     parts.push(`<title>${escapeXml(arrow.label)}</title>`);
@@ -635,7 +643,7 @@ export function renderFlowSvg(
     }
     parts.push(label(arrow));
     parts.push(marker(arrow.fromX, arrow.y, arrow.ordinal));
-    parts.push(`</a>`);
+    parts.push(href ? `</a>` : `</g>`);
   }
 
   parts.push(`</svg>`);

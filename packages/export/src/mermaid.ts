@@ -27,6 +27,27 @@ export const ARROWS: Record<Step["kind"], { arrow: string; legend: string }> = {
 /** Kinds whose label needs a word, because they share an arrow with another kind. */
 const PREFIX: Partial<Record<Step["kind"], string>> = { redirect: "redirect: " };
 
+/**
+ * What Mermaid cannot say, said in text instead.
+ *
+ * A colour and a strikethrough are the whole overlay vocabulary on screen, and Mermaid has neither.
+ * Dropping the change state would leave a diagram that reads like a description of the code, so the
+ * markers go into the labels and this table explains them — in every document that draws an overlay,
+ * in the same words.
+ */
+export const OVERLAY_MARKER_NOTE: readonly string[] = [
+  "> Mermaid cannot carry VeriFlow's overlay colours. Text markers preserve the change meaning:",
+  "> `+` added, `-` removed, `~` moved; unchanged labels have no prefix. `[not built]` marks a proposal-only participant.",
+  "",
+  "| marker | change |",
+  "|---|---|",
+  "| `+` | added by the proposal |",
+  "| `-` | removed by the proposal |",
+  "| `~` | paired by the matcher, but changed |",
+  "| *(none)* | unchanged |",
+  "",
+];
+
 export interface MermaidResult {
   text: string;
   participants: number;

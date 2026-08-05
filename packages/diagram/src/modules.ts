@@ -849,7 +849,9 @@ export function renderModulesSvg(layout: ModulesLayout): string {
   for (const node of layout.nodes) {
     const x = node.x + 12;
     parts.push(
-      `<g class="mm-node kind-${esc(node.kind)}${node.change ? ` change-${node.change}` : ""}">`,
+      // The id is on the box so a surface that filters in place — the plan review, in the browser
+      // and in its offline export — can find the node it was asked about without a second index.
+      `<g class="mm-node kind-${esc(node.kind)}${node.change ? ` change-${node.change}` : ""}" data-node="${esc(node.id)}">`,
       `<rect class="mm-box" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="8"/>`,
       `<text class="mm-kind" x="${x}" y="${node.y + NODE_KIND_BASE}">${esc(
         fitText(`${node.kind.toUpperCase()}${node.notBuilt ? " · NOT BUILT" : ""}`, NODE_KIND_SIZE, NODE_TEXT_W),

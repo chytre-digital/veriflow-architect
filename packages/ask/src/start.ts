@@ -6,7 +6,7 @@ import { kindOf, undecidedInRow } from "@veriflow/answers";
 import type { AnswerKind } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
 import type { AskPlan } from "./plan.js";
-import { buildFlowPrompt, buildProposalPrompt } from "./prompt.js";
+import { buildFlowPrompt, buildPlanProposalPrompt, buildProposalPrompt } from "./prompt.js";
 
 /**
  * Where VeriFlow itself lives — not where the analysed project lives.
@@ -39,7 +39,14 @@ export interface AskRunOptions {
    * else — it is what turns an ordinary run into a design run, on both sides: the prompt starts from
    * the parent flow, and the run's MCP server will accept `kind: "proposed"` because of it.
    */
-  proposal?: { parentAnswerId: string; parentTitle: string; change: string };
+  proposal?: {
+    parentAnswerId: string;
+    parentTitle: string;
+    change: string;
+    /** F024: restrict the run server to the saved plan, parent and module registry. */
+    planId?: string;
+    planSourceRef?: string;
+  };
 }
 
 export interface AskRun {
@@ -64,7 +71,9 @@ export function createAskRun(options: AskRunOptions): AskRun {
     client: options.client,
     cwd: options.root,
     prompt: proposal
-      ? buildProposalPrompt(proposal.parentTitle, proposal.change)
+      ? proposal.planId
+        ? buildPlanProposalPrompt(proposal.parentTitle, proposal.planId, proposal.planSourceRef ?? proposal.planId)
+        : buildProposalPrompt(proposal.parentTitle, proposal.change)
       : buildFlowPrompt(plan.question, plan.chosen?.label),
     questionId,
     snapshotId: plan.snapshot.id,
@@ -88,6 +97,7 @@ export function createAskRun(options: AskRunOptions): AskRun {
           "--snapshot",
           plan.snapshot.id,
           ...(proposal ? ["--parent", proposal.parentAnswerId] : []),
+          ...(proposal?.planId ? ["--plan", proposal.planId] : []),
         ],
       },
     },

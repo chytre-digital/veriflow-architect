@@ -589,6 +589,7 @@ contract nobody checks against the running server is a wish.
 | `GET /api/project`, `/api/runs/:id`, `/api/runs/:id/events`, `/api/answers`, `/api/answers/:id` | served |
 | `POST /api/runs/:id/answer`, `/api/runs/:id/cancel` | served; the browser uses `POST /runs/:id/*` instead, because a form needs a redirect rather than a status code. Both go through one registry |
 | `GET /api/project/overview`, `/api/impact` | served, added by F011 and not in the design above |
+| `GET /api/plans`, `/api/plans/:id` | served, added by F025 and not in the design above: the saved plans, and the whole plan-review model the page and the exports are rendered from |
 | `GET /api/snapshots`, `POST /api/snapshots`, `GET`/`POST /api/questions` | not served. Indexing and asking happen through the CLI and through `POST /ask`, which the browser drives |
 | `GET /api/answers/:id/freshness`, `POST /api/answers/:id/verify`, `POST /api/answers/:id/export`, `GET /api/callgraph/:snapshotId`, `GET /api/metrics/:answerId` | not served as JSON. The data exists and is reachable — as HTML at `/answers/:id/freshness` and `/answers/:id/metrics`, over MCP, and through the CLI — but a JSON client has no route to it |
 
@@ -616,6 +617,9 @@ GET  /architecture                            modules and traffic, needs no agen
 GET  /callgraph             ?fn&entry&mesh&cell&q
 GET  /source                ?path&line        read-only, inside the root, never a secret
 GET  /impact                ?path             which answers a change here lands in
+GET  /plans                                   saved agent plans, newest first
+GET  /plans/:id             ?proposal         flow, modules and claims for one plan
+GET  /plans/:id/export.html                   the same artifact as one self-contained file
 ```
 
 The call graph's whole interactive surface is those five query parameters, and every control on the

@@ -66,6 +66,14 @@ iterations:
       a real test run with its provenance and limits visible; and review can stay in one answer view
       through a flow-scoped call graph, attributed corrections made in the browser, and visible
       lineage between follow-ups, replacements and proposals.
+  - id: M7-plan-overlay
+    name: See the plan before the code
+    features: [F023, F024, F025, F026, F027, F028]
+    done: >-
+      A plan approved in a supported agent workflow opens as one shareable graphical artifact before
+      implementation: current and planned flow steps are overlaid, touched and proposed modules are
+      distinct, every plan claim keeps its evidence state, and the same project offers an
+      evidence-backed next question without starting an agent run by itself.
 
 features:
   F001:
@@ -371,6 +379,80 @@ features:
       into one deterministic root-first hierarchy, shows direct parent, children and siblings on
       answer detail, keeps superseded history reachable, and promotes missing parents, self-links and
       cycle members to visible diagnostic roots without writing or recomputing answers.
+  F023:
+    title: Deterministic plan intake and impact
+    spec: ../docs/product/m7-plan-overlay-plan.md
+    iteration: M7-plan-overlay
+    status: shipped
+    dependsOn: [F001, F003, F011, F012, F013]
+    outcome: >-
+      `veriflow plan <document>` checks line claims and bare paths, maps them onto current modules and
+      stored flows, and explicitly saves a fingerprinted plan artifact only when requested.
+    notes: >-
+      Schema 6 stores immutable plans separately from answers. `veriflow plan` deterministically
+      classifies line claims and bare paths, maps them onto module ownership and exact stored-flow
+      citations, writes nothing by default, and saves idempotently only with `--save`; plan rows and
+      captured content survive portable dump/restore.
+  F024:
+    title: Bounded plan-to-proposal translation
+    spec: ../docs/product/m7-plan-overlay-plan.md
+    iteration: M7-plan-overlay
+    status: shipped
+    dependsOn: [F004, F005, F015, F023]
+    outcome: >-
+      A saved plan and an explicitly chosen observed answer produce a proposed FlowAnswer with intent
+      citations and provenance through a short translation run that cannot explore or change code.
+    notes: >-
+      `veriflow plan-propose` binds the saved plan, its indexed snapshot and one observed parent to a
+      run exposing only plan, parent, module-registry and proposal-submission tools. Submission is
+      proposed-only and atomically stores the child relationship plus deterministic per-step plan
+      reference links, including explicit unanchored steps.
+  F025:
+    title: Graphical agent-plan review
+    spec: ../docs/product/m7-plan-overlay-plan.md
+    iteration: M7-plan-overlay
+    status: shipped
+    dependsOn: [F006, F009, F017, F023, F024]
+    outcome: >-
+      One shareable plan page and export draw the agent's planned flow and modules against indexed
+      architecture, with the deterministic claim ledger beneath the drawing and planned code always
+      distinct from code that exists.
+    notes: >-
+      `/plans/:id` and `veriflow export --plan` render one model built from stored rows alone, so the
+      browser and the offline artifact cannot disagree. Selection filters in place rather than
+      navigating, keeping the plan URL the whole artifact. An untranslated plan draws the observed
+      flow with every change state `unknown` instead of a flow nobody proposed; unmatched, unanchored
+      and refused statements stay visible and the artifact lists its own exclusions. Markdown states
+      what Mermaid cannot carry. Payloads are byte-stable for one plan and snapshot.
+  F026:
+    title: Replaceable agent-plan source adapters
+    spec: ../docs/product/m7-plan-overlay-plan.md
+    iteration: M7-plan-overlay
+    status: ready
+    dependsOn: [F023]
+    outcome: >-
+      Markdown, spec-kit, Claude Code plan-mode transcripts and branch diffs enter through one plan
+      source contract and receive the same deterministic inspection semantics.
+  F027:
+    title: Agent installation and automatic plan handoff
+    spec: ../docs/product/m7-plan-overlay-plan.md
+    iteration: M7-plan-overlay
+    status: ready
+    dependsOn: [F010, F025, F026]
+    outcome: >-
+      One idempotent install command registers VeriFlow and, where the client exposes a stable hook,
+      opens the graphical plan review after plan approval; unsupported automation remains visibly
+      manual.
+  F028:
+    title: Evidence-backed question queue
+    spec: ../docs/product/m7-plan-overlay-plan.md
+    iteration: M7-plan-overlay
+    status: ready
+    dependsOn: [F011, F016, F023, F025]
+    outcome: >-
+      The project ranks evidence-backed architecture questions and `ask --next` lets a person start
+      the top one explicitly, eliminating empty-project cold start without queuing messages or
+      bulk-generating unreviewed answers.
 
 blocking:
   - question: Q2

@@ -8,7 +8,9 @@ import { Store } from "@veriflow/store";
 import {
   compareDeclaredArchitecture,
   fitWholeAnswer,
+  linkPlanSteps,
   loadDeclaredArchitecture,
+  loadStoredPlan,
   loadStoredAnswer,
 } from "@veriflow/answers";
 import { isSecretPath } from "@veriflow/snapshot";
@@ -52,6 +54,8 @@ export interface RunServerOptions {
    * the wrong label.
    */
   parentAnswerId?: string;
+  /** F024: when present, expose only the saved plan, parent, module registry and submit tool. */
+  planId?: string;
   /** How long an ask_user call waits for a person before giving up. */
   answerTimeoutMs?: number;
   pollMs?: number;
@@ -79,6 +83,8 @@ export function createRunServer(options: RunServerOptions): McpServer {
   };
 
   const snapshotId = options.snapshotId;
+  const planMode = Boolean(options.planId);
+  const sourcePlan = options.planId ? loadStoredPlan(store, options.planId) : undefined;
   const ok = (data: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
   });
@@ -89,7 +95,8 @@ export function createRunServer(options: RunServerOptions): McpServer {
       title: "Project architecture",
       description:
         "The application's modules, derived deterministically from paths. Module ids are stable; " +
-        "labels are not. Reference ids, never names.",
+        "labels are not. Reference ids, never names." +
+        (planMode ? " This bounded plan run receives the module registry only." : ""),
       inputSchema: {},
     },
     async () => {
@@ -100,6 +107,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
         files: Number(module["files"]),
         symbols: Number(module["symbols"]),
       }));
+      if (planMode) return ok({ snapshotId, modules });
       const snapshot = store.readSnapshot(snapshotId);
       const projectId = snapshot?.["project_id"] ? String(snapshot["project_id"]) : undefined;
       const declared = projectId ? loadDeclaredArchitecture(store, projectId) : undefined;
@@ -121,7 +129,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     },
   );
 
-  server.registerTool(
+  if (!planMode) server.registerTool(
     "get_entry_points",
     {
       title: "Entry points",
@@ -131,7 +139,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     async () => ok({ snapshotId, entryPoints: store.readEntryPoints(snapshotId) }),
   );
 
-  server.registerTool(
+  if (!planMode) server.registerTool(
     "search_symbols",
     {
       title: "Search symbols",
@@ -141,7 +149,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     async ({ query, limit }) => ok({ snapshotId, symbols: store.searchSymbols(snapshotId, query, limit ?? 50) }),
   );
 
-  server.registerTool(
+  if (!planMode) server.registerTool(
     "get_callers",
     {
       title: "Callers of a symbol",
@@ -151,7 +159,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     async ({ symbolId }) => ok({ snapshotId, callers: store.readCallers(snapshotId, symbolId) }),
   );
 
-  server.registerTool(
+  if (!planMode) server.registerTool(
     "get_callees",
     {
       title: "Callees of a symbol",
@@ -161,7 +169,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     async ({ symbolId }) => ok({ snapshotId, callees: store.readCallees(snapshotId, symbolId) }),
   );
 
-  server.registerTool(
+  if (!planMode) server.registerTool(
     "read_evidence",
     {
       title: "Read a source excerpt",
@@ -234,7 +242,31 @@ export function createRunServer(options: RunServerOptions): McpServer {
     );
   }
 
-  server.registerTool(
+  if (options.planId) {
+    server.registerTool(
+      "get_plan",
+      {
+        title: "The approved plan being translated",
+        description:
+          "The exact saved plan text plus its deterministic path/claim analysis. This is the design " +
+          "to translate; do not expand it through repository exploration.",
+        inputSchema: {},
+      },
+      async () =>
+        sourcePlan
+          ? ok({
+              id: sourcePlan.id,
+              source: { kind: sourcePlan.sourceKind, ref: sourcePlan.sourceRef },
+              snapshotId: sourcePlan.snapshotId,
+              contentSha256: sourcePlan.contentSha256,
+              content: sourcePlan.contentText,
+              analysis: sourcePlan.analysis,
+            })
+          : ok({ error: `plan ${options.planId} is no longer stored` }),
+    );
+  }
+
+  if (!planMode) server.registerTool(
     "ask_user",
     {
       title: "Ask the person running VeriFlow",
@@ -258,7 +290,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     },
   );
 
-  server.registerTool(
+  if (!planMode) server.registerTool(
     "record_open_question",
     {
       title: "Record what nothing can answer",
@@ -339,6 +371,38 @@ export function createRunServer(options: RunServerOptions): McpServer {
           ],
         });
       }
+      if (planMode && kind !== "proposed") {
+        return ok({
+          accepted: false,
+          diagnostics: [
+            {
+              code: "answer.malformed",
+              message: "a bounded plan translation can submit only kind='proposed'",
+            },
+          ],
+        });
+      }
+      if (planMode) {
+        const submittedAnswerId = store.answerIdForRun(options.runId);
+        const parent = options.parentAnswerId ? store.readAnswer(options.parentAnswerId) : undefined;
+        const problem = submittedAnswerId
+          ? `bounded plan translation already submitted answer ${submittedAnswerId}`
+          : !sourcePlan
+          ? `saved plan ${options.planId} is missing`
+          : sourcePlan.snapshotId !== snapshotId
+            ? `plan ${sourcePlan.id} belongs to snapshot ${sourcePlan.snapshotId}, not ${snapshotId}`
+            : !parent
+              ? `parent answer ${options.parentAnswerId} is missing`
+              : String(parent["kind"] ?? "observed") !== "observed"
+                ? `parent answer ${options.parentAnswerId} is itself a proposal`
+                : undefined;
+        if (problem) {
+          return ok({
+            accepted: false,
+            diagnostics: [{ code: "answer.malformed", message: problem }],
+          });
+        }
+      }
 
       const withIds = {
         branches: [],
@@ -387,6 +451,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
       );
 
       const answerId = randomUUID();
+      const planLinks = sourcePlan ? linkPlanSteps(parsed, sourcePlan.analysis) : undefined;
       store.insertAnswer({
         id: answerId,
         questionId: options.questionId,
@@ -400,6 +465,15 @@ export function createRunServer(options: RunServerOptions): McpServer {
         intent: summary.intent,
         openQuestions: parsed.openQuestions.length,
         body: parsed,
+        ...(sourcePlan && options.parentAnswerId && planLinks
+          ? {
+              planProvenance: {
+                planId: sourcePlan.id,
+                parentAnswerId: options.parentAnswerId,
+                links: planLinks,
+              },
+            }
+          : {}),
         citations: summary.citations.map((c) => ({
           subjectKind: c.subject.kind,
           subjectId: c.subject.id,
@@ -423,6 +497,17 @@ export function createRunServer(options: RunServerOptions): McpServer {
         verified: summary.verified,
         unverified: summary.unverified,
         intent: summary.intent,
+        ...(sourcePlan && planLinks
+          ? {
+              sourcePlan: {
+                id: sourcePlan.id,
+                snapshotId: sourcePlan.snapshotId,
+                contentSha256: sourcePlan.contentSha256,
+                linkedSteps: planLinks.steps.filter((step) => step.planReferenceIds.length > 0).length,
+                unanchoredSteps: planLinks.steps.filter((step) => step.planReferenceIds.length === 0).length,
+              },
+            }
+          : {}),
         // The denominator excludes intent citations, and the payload says so — otherwise a proposal
         // that is nine tenths plan reads as an answer that is nine tenths wrong.
         ratio: Number(summary.ratio.toFixed(3)),

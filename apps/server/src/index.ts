@@ -9,6 +9,7 @@ import {
   DECISION_FIELD,
   DecideConflictError,
   answerLineageContext,
+  buildPlanReview,
   correctAnswer,
   correctionTargets,
   decideQuestion,
@@ -72,7 +73,14 @@ import {
 } from "./views.js";
 import { callGraphPage, type CallGraphEdge, type CallGraphNode } from "./callgraph-page.js";
 import { correctionPreviewPage, correctionReviewPage } from "./correction-page.js";
+import { planPage, plansPage, planArtifactHtml, type PlanListRow } from "./plan-page.js";
 import type { TrafficCell } from "@veriflow/contracts";
+
+/**
+ * The plan artifact is the browser's own drawing, so `veriflow export --plan` renders it with this
+ * function rather than with a second implementation that could disagree with the screen.
+ */
+export { planArtifactHtml } from "./plan-page.js";
 
 /** How often the live console looks for what the run has written since it last looked. */
 const POLL_MS = 250;
@@ -843,6 +851,88 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
           impact: impactOf(store, root, path),
         }),
       );
+    }),
+  );
+
+  /* --------------------------------------------- the plan, before the code (F025) */
+
+  /**
+   * `/plans/:id` is the shareable artifact, and the reason selection on it is a filter rather than a
+   * link: whatever a reviewer was looking at, the URL they paste opens the whole plan. The page reads
+   * the immutable F023 artifact, the F024 translation and the registry of the snapshot the plan was
+   * measured against — no index, no verification, no model, and nothing written.
+   */
+  app.get("/plans", (c) =>
+    withStore((store) => {
+      const rows: PlanListRow[] = store.listPlans(projectId).map((row) => ({
+        id: String(row["id"]),
+        sourceKind: String(row["source_kind"]),
+        sourceRef: String(row["source_ref"]),
+        contentSha256: String(row["content_sha256"]),
+        createdAt: String(row["created_at"]),
+        snapshotId: String(row["snapshot_id"]),
+        proposals: store.planProposalsForPlan(String(row["id"])).length,
+      }));
+      return c.html(plansPage(chromeOf(store, "plans"), rows));
+    }),
+  );
+
+  app.get("/plans/:id", (c) =>
+    withStore((store) => {
+      const review = buildPlanReview(store, root, c.req.param("id"), {
+        ...(c.req.query("proposal") ? { proposalId: c.req.query("proposal")! } : {}),
+      });
+      if (!review) {
+        return c.html(
+          notice(
+            store,
+            "plans",
+            "No such plan",
+            "No saved plan has that id. Save one with <code>veriflow plan &lt;doc.md&gt; --save</code>.",
+          ),
+          404,
+        );
+      }
+      return c.html(planPage({ chrome: chromeOf(store, "plan"), review }));
+    }),
+  );
+
+  /** The same artifact as one file, served so a reviewer can send it to somebody without the CLI. */
+  app.get("/plans/:id/export.html", (c) =>
+    withStore((store) => {
+      const review = buildPlanReview(store, root, c.req.param("id"));
+      if (!review) return c.text("no such plan", 404);
+      return c.body(planArtifactHtml(review), 200, {
+        "content-type": "text/html; charset=utf-8",
+        "content-disposition": `attachment; filename="veriflow-plan-${review.plan.id.slice(0, 16)}.html"`,
+      });
+    }),
+  );
+
+  app.get("/api/plans", (c) =>
+    withStore((store) =>
+      c.json({
+        contractVersion: 1,
+        plans: store.listPlans(projectId).map((row) => ({
+          id: String(row["id"]),
+          sourceKind: String(row["source_kind"]),
+          sourceRef: String(row["source_ref"]),
+          contentSha256: String(row["content_sha256"]),
+          snapshotId: String(row["snapshot_id"]),
+          createdAt: String(row["created_at"]),
+          proposals: store.planProposalsForPlan(String(row["id"])).map((p) => String(p["answer_id"])),
+        })),
+      }),
+    ),
+  );
+
+  app.get("/api/plans/:id", (c) =>
+    withStore((store) => {
+      const review = buildPlanReview(store, root, c.req.param("id"), {
+        ...(c.req.query("proposal") ? { proposalId: c.req.query("proposal")! } : {}),
+      });
+      if (!review) return c.json({ error: "not found" }, 404);
+      return c.json(review);
     }),
   );
 

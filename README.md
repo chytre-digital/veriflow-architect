@@ -47,6 +47,12 @@ through — each number naming the tool it mirrors, and disagreements shown rath
 `veriflow export` turns an answer into [committable markdown with a mermaid diagram](docs/export.md)
 that renders anywhere, written without a single Git command.
 
+Before any of that code exists, `veriflow plan <doc.md> --save` checks an agent's plan against the
+indexed architecture without starting a model, and the
+[plan review](docs/plan-review.md) at `/plans/<id>` draws the current flow, the planned one, the
+modules it touches and every claim it makes as one shareable page — exportable as a single
+self-contained HTML file for a reviewer who has no VeriFlow installed.
+
 The MVP is deliberately partial: its job is to generate an architecture and support review. What is
 full, what is partial, and what is only reserved is written down — partial is fine, silently partial
 is not.

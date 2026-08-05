@@ -560,3 +560,93 @@ features:
       - "missing parent, self-parent, and cycle-safe rendering;"
       - "superseded and proposed state labels plus stable detail links;"
       - "read-only browser rendering with no answer or repository mutation."
+  F023:
+    title: "Deterministic plan intake and impact"
+    spec: "../docs/product/m7-plan-overlay-plan.md"
+    acceptance:
+      - "`veriflow plan <document>` extracts line claims and bare repository paths, preserving each source-document location."
+      - "References are classified as located, drifted, missing, unanchored, or planned; bare paths are never promoted to verified line evidence."
+      - "Existing references map to current modules and exact cited lines in stored flows, while new paths map to visibly planned modules through the existing ownership rule."
+      - "The default command starts no agent and writes nothing; `--save` explicitly stores a portable, fingerprinted plan tied to the indexed snapshot and is idempotent for the same inputs."
+      - "An empty impact says that no stored answer maps to the referenced code, not that the plan affects no behaviour."
+    tests:
+      - "Markdown line claims, bare existing paths, new paths, moved lines, missing paths, and source locations;"
+      - "module ownership, planned-module derivation, exact flow impact, and unreached touched modules;"
+      - "deterministic text/JSON output and repeated-save idempotency;"
+      - "read-only default, no-agent assertion, portable dump, and source/Git immutability;"
+      - "honest empty and ambiguous results."
+  F024:
+    title: "Bounded plan-to-proposal translation"
+    spec: "../docs/product/m7-plan-overlay-plan.md"
+    acceptance:
+      - "Translation requires a saved plan and an explicitly selected observed parent; it never chooses a parent by fuzzy title matching."
+      - "The run can read only the saved plan, parent answer, and indexed module registry before submitting one existing-contract proposed FlowAnswer."
+      - "Planned code uses intent citations, every translated step retains plan-reference provenance or an explicit unanchored state, and the result records the plan and snapshot fingerprints."
+      - "The proposal is stored as a `proposes_change_to` child and never increases observed-code coverage."
+      - "Translation performs no repository exploration, provider update, implementation, source edit, or Git mutation."
+    tests:
+      - "saved-plan and explicit-parent validation;"
+      - "tool-list restriction and rejection of repository exploration;"
+      - "intent citations, plan-reference provenance, unknown gaps, and proposal lineage;"
+      - "snapshot/document fingerprint propagation and deterministic validation;"
+      - "provider, source, repository, and Git immutability assertions."
+  F025:
+    title: "Graphical agent-plan review"
+    spec: "../docs/product/m7-plan-overlay-plan.md"
+    acceptance:
+      - "One stable `/plans/:id` page shows the flow overlay, module map, and full claim ledger for the same saved plan."
+      - "Added, removed, moved, unchanged, unmatched, and unknown flow elements remain distinct; planned modules and edges are labelled as not present in indexed code."
+      - "Selecting a step or module links it to supporting plan claims without hiding unsupported or unmatched statements."
+      - "The page and exports name the plan fingerprint, indexed snapshot, observed answer, proposal, match confidence, and all visible exclusions."
+      - "Self-contained HTML preserves the visual artifact without network access; Markdown states and compensates for Mermaid styling limitations."
+    tests:
+      - "all flow and module change states, including proposal-only and unmatched elements;"
+      - "claim-to-step/module linking, moved-line display, filters, and stable shareable URLs;"
+      - "byte-stable layout and payloads for identical plan/snapshot inputs;"
+      - "self-contained offline HTML and honest Markdown/Mermaid fallback;"
+      - "read-only browser/export paths with no agent, provider, source, store, or Git mutation."
+  F026:
+    title: "Replaceable agent-plan source adapters"
+    spec: "../docs/product/m7-plan-overlay-plan.md"
+    acceptance:
+      - "One versioned adapter contract returns source kind/reference, project root, content, fingerprint, source locations, and optional structured hints without architecture interpretation."
+      - "Markdown, spec-kit, Claude Code transcript, and git-branch adapters feed the same F023 inspection and preserve source-specific provenance."
+      - "The Claude Code adapter reads only the explicitly named/current project's local transcript scope and identifies an approved plan rather than intermediate reasoning."
+      - "Changed private formats and missing plans return named unsupported/no-plan states instead of crashing, guessing, or scanning the whole home directory."
+      - "Clients without a stable plan source remain explicitly supported through named Markdown input rather than being advertised as automatic."
+    tests:
+      - "adapter conformance fixtures and identical normalized F023 output across equivalent sources;"
+      - "spec-kit multi-file locations and parallel task markers;"
+      - "Claude Code project scoping, latest approved plan selection, missing/corrupt transcript handling;"
+      - "git-branch post-code labelling versus pre-code sources;"
+      - "bounded filesystem reads, no network, and unsupported-client wording."
+  F027:
+    title: "Agent installation and automatic plan handoff"
+    spec: "../docs/product/m7-plan-overlay-plan.md"
+    acceptance:
+      - "`veriflow install-agent` previews exact configuration changes, requires confirmation, writes atomically, and is idempotent for Claude Code and Codex registrations."
+      - "Installed MCP commands use the correct absolute executable and project working directory; `doctor` detects registered, missing, stale, and partially supported integrations."
+      - "Where a stable post-plan hook exists, approving a plan saves and translates it then prints or opens the F025 URL without an extra user prompt to VeriFlow."
+      - "Clients without a stable hook receive a tested manual command and are never labelled automatic."
+      - "Hook failure leaves the approved source plan intact, starts no implementation, queues no agent message, and reports a recoverable command."
+    tests:
+      - "fresh install, preview rejection, repeat install, partial config, and atomic write failure;"
+      - "wrong-cwd prevention and doctor states for Claude Code and Codex;"
+      - "approved-plan hook to stable plan URL and intermediate-plan non-trigger;"
+      - "manual fallback for a client without a hook;"
+      - "failure recovery, no implementation process, no queued message, and unrelated-config preservation."
+  F028:
+    title: "Evidence-backed question queue"
+    spec: "../docs/product/m7-plan-overlay-plan.md"
+    acceptance:
+      - "The queue deterministically ranks unreached high-traffic modules, uncovered entry points, unverified design signals, plan-touched unreached modules, and unresolved invariant disagreements."
+      - "Every item exposes its evidence, rank components, suggested question, and scope; no combined health or quality score is produced."
+      - "`veriflow ask --next` previews the top item and requires the ordinary explicit run confirmation."
+      - "Reading, refreshing, or declining the queue starts no run and writes no answer; no background or bulk generation path exists."
+      - "The browser, CLI, and read-only MCP surface return the same ordering and state that the queue contains suggested questions, not queued messages."
+    tests:
+      - "each candidate source and deterministic mixed-source ranking;"
+      - "design-signal baseline, insufficient-sample, and non-quality wording;"
+      - "plan-touched unreached module provenance and invariant near-miss disagreement;"
+      - "ask-next preview, confirm, decline, and concurrent refresh;"
+      - "browser/CLI/MCP parity plus no-run, no-bulk-generation, and read-only assertions."

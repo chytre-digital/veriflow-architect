@@ -66,3 +66,31 @@ export function buildProposalPrompt(parentTitle: string, change: string): string
     `enforces the proposal against the code afterwards - it is a description, not a rule.`,
   ].join("\n");
 }
+
+/**
+ * F024's translator is deliberately smaller than `buildProposalPrompt`: the plan already contains
+ * the design, so repository exploration would pay for the same thinking twice and blur provenance.
+ */
+export function buildPlanProposalPrompt(parentTitle: string, planId: string, sourceRef: string): string {
+  return [
+    `You are translating an approved agent plan into VeriFlow's proposed FlowAnswer contract.`,
+    `You are not exploring the repository and you are not redesigning the plan.`,
+    ``,
+    `Saved plan: ${planId}`,
+    `Plan source: ${sourceRef}`,
+    `Observed flow it changes: ${parentTitle}`,
+    ``,
+    `Call get_plan, get_parent_flow and get_architecture. These are the only read tools available:`,
+    `the exact saved plan, the complete observed parent, and the module registry for stable ids.`,
+    ``,
+    `Submit one answer with submit_flow_answer and kind="proposed". It describes the complete flow`,
+    `AS THE PLAN SAYS IT WOULD BE, including unchanged parent steps needed to keep it coherent. Keep`,
+    `unchanged step ids. Planned code uses the path the plan names and NO line; existing code may`,
+    `retain an observed parent citation only when the plan leaves that step unchanged.`,
+    ``,
+    `Do not invent a lane, step, branch or invariant that the plan and parent do not support. When`,
+    `the plan is too shallow, preserve the parent and put the uncertainty in openQuestions. The`,
+    `submitted proposal will be linked deterministically back to source-plan references by path; a`,
+    `step with no matching reference remains explicitly unanchored.`,
+  ].join("\n");
+}

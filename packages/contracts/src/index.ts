@@ -148,6 +148,7 @@ export interface CommunityRecord {
 export type ModuleSource =
   | "workspace-package"
   | "explicit-module-root"
+  | "feature-root"
   | "layer-root"
   | "app-route-tree"
   | "top-level-directory";

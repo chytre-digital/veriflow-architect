@@ -404,6 +404,33 @@ svg.modmap { display:block; }
 .mm-edge.change-removed { opacity:.72; }
 .mm-edge.change-unchanged { opacity:.62; }
 
+/* ------------------------------------------------------------ plan review */
+/* Selection on the plan screen is a filter, not a navigation: the URL of a plan stays the URL of the
+   whole plan, so a link pasted into a review thread opens the whole artifact. Dimming rather than
+   hiding is the other half of that rule — a claim nothing selected still has to be countable. */
+.plan-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 10px; padding:8px 12px;
+  border:1px solid var(--accent); border-radius:var(--radius); background:var(--accent-soft); font-size:12.5px; }
+.plan-bar[hidden] { display:none; }
+.plan-bar button { padding:3px 10px; border:1px solid var(--line-strong); border-radius:999px;
+  background:var(--bg); font-size:11.5px; }
+.plan-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px 20px;
+  max-width:1100px; margin:0 0 18px; padding:13px 15px; border:1px solid var(--line);
+  border-radius:var(--radius); background:var(--panel); }
+.plan-fact { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.plan-fact .k { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--quiet); }
+.plan-fact .v { font-size:12.5px; overflow-wrap:anywhere; }
+.plan-fact .v code { font-size:11.5px; }
+[data-refs].is-dim, .step.is-dim-sel, .mm-node.is-dim-sel { opacity:.22; }
+tr[data-refs] { cursor:pointer; }
+tr[data-refs].is-hit td { background:var(--accent-soft); }
+.step.is-hit .arrow { stroke:var(--accent); stroke-width:2.6; }
+.step.is-hit .step-label { fill:var(--accent); font-weight:600; }
+.mm-node.is-hit .mm-box { stroke:var(--accent); stroke-width:2.4; }
+.plan-empty { max-width:900px; padding:14px 16px; border:1px dashed var(--line-strong);
+  border-radius:var(--radius); color:var(--ink-2); font-size:12.5px; }
+.plan-out { margin:0; padding-left:18px; max-width:100ch; color:var(--ink-2); font-size:12.5px; }
+.plan-out li { margin-bottom:5px; }
+
 /* -------------------------------------------------------------- call map */
 svg.callmap { display:block; }
 .cm-module { fill:var(--panel-2); stroke:var(--line); }
@@ -666,6 +693,8 @@ export type NavId =
   | "runtime-coverage"
   | "source"
   | "impact"
+  | "plans"
+  | "plan"
   | "run";
 
 /** What the index knows about itself, printed in the top right of every screen. */
@@ -718,6 +747,7 @@ const PROJECT_VIEWS: Array<{ id: NavId; label: string; hint: string; href: strin
   { id: "invariants", label: "Invariants", hint: "what outcomes say they protect", href: "/invariants" },
   { id: "architecture", label: "Architecture", hint: "modules and the traffic between them", href: "/architecture" },
   { id: "callgraph", label: "Call graph", hint: "every function the doors reach", href: "/callgraph" },
+  { id: "plans", label: "Plans", hint: "agent plans, before the code", href: "/plans" },
 ];
 
 const NAV_LABEL: Record<NavId, string> = {
@@ -737,6 +767,8 @@ const NAV_LABEL: Record<NavId, string> = {
   "runtime-coverage": "Runtime coverage",
   source: "Source",
   impact: "Impact",
+  plans: "Plans",
+  plan: "Plan review",
   run: "Run",
 };
 

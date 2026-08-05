@@ -36,6 +36,12 @@ export {
   type ResolveResult,
 } from "./manifests.js";
 export { publicNames, type PublicName } from "./exports.js";
+export {
+  enrichMinimalApis,
+  type MinimalApiDiagnostic,
+  type MinimalApiEnrichment,
+  type MinimalApiOptions,
+} from "./minimal-api.js";
 
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 

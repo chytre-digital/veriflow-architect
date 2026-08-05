@@ -112,7 +112,7 @@ describe("opening an older database", () => {
     expect(store.schemaVersion()).toBe(SCHEMA_VERSION);
     expect(store.migration?.from).toBe(1);
     expect(store.migration?.to).toBe(SCHEMA_VERSION);
-    expect(store.migration?.applied.map((a) => a.to)).toEqual([2, 3, 4, 5]);
+    expect(store.migration?.applied.map((a) => a.to)).toEqual([2, 3, 4, 5, 6]);
   });
 
   it("keeps every row that was in it", () => {

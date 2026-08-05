@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { buildCallGraph, deriveModules, detectEntryPoints, type SourceReader } from "@veriflow/callgraph";
+import {
+  buildCallGraph,
+  deriveModules,
+  detectEntryPoints,
+  enrichMinimalApis,
+  type SourceReader,
+} from "@veriflow/callgraph";
 import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
 import { ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
@@ -31,11 +37,15 @@ import {
   impactOf,
   importRuntimeCoverage,
   invariantIndex,
+  inspectPlan,
   kindOf,
   listEffectiveAnswerRows,
+  buildPlanReview,
   loadStoredAnswer,
+  loadStoredPlan,
   loadRuntimeCoverageRun,
   refExists,
+  savePlan,
   metricsForStoredAnswer,
   saveDeclaredArchitecture,
   storedArchitectureConformance,
@@ -44,6 +54,7 @@ import {
   undecidedQuestions,
   verifyStoredAnswer,
   type AnswerMetrics,
+  type PlanAnalysis,
   type StoredAnswer,
   type Verification,
 } from "@veriflow/answers";
@@ -59,9 +70,10 @@ import {
   commitExport,
   dumpStore,
   prepareAnswerExport,
+  renderPlanMarkdown,
   restoreDump,
 } from "@veriflow/export";
-import { startServer } from "@veriflow/server";
+import { planArtifactHtml, startServer } from "@veriflow/server";
 import { createInterface } from "node:readline/promises";
 import { createTerminalQuestionPump } from "./run-questions.js";
 import {
@@ -77,7 +89,7 @@ import {
 } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { InitError, ProjectLock, initWorkspace, readConfig, DEFAULT_DOCUMENTATION } from "@veriflow/workspace";
-import type { EntryPoint, Snapshot, SymbolRecord } from "@veriflow/contracts";
+import type { CallSite, EntryPoint, Snapshot, SymbolRecord } from "@veriflow/contracts";
 
 const program = new Command();
 program.name("veriflow").description("Generate an application's architecture and answer questions about it");
@@ -170,18 +182,27 @@ function sourceReader(root: string): SourceReader {
 function detectDoors(
   root: string,
   symbols: SymbolRecord[],
+  callSites: CallSite[],
   ignore: Pick<Ignore, "matches">,
   onNote: (message: string) => void = () => {},
-): EntryPoint[] {
+): { symbols: SymbolRecord[]; callSites: CallSite[]; entryPoints: EntryPoint[] } {
+  const source = sourceReader(root);
+  const minimalApis = enrichMinimalApis(symbols, callSites, {
+    source,
+    onUnresolved: (diagnostic) =>
+      onNote(`${diagnostic.path}:${diagnostic.line} Minimal API not detected: ${diagnostic.reason}`),
+  });
   const manifests = readManifests(root, {
     ignore,
     onMalformed: (path, reason) => onNote(`${path} is not readable as JSON: ${reason}`),
   });
-  return detectEntryPoints(symbols, {
+  const conventional = detectEntryPoints(minimalApis.symbols, {
     manifests,
-    source: sourceReader(root),
+    source,
     onUnresolved: (entry, reason) => onNote(`${entry.manifest} declares ${entry.name}, but ${reason}`),
   });
+  const entryPoints = [...conventional, ...minimalApis.entryPoints].sort((a, b) => a.id.localeCompare(b.id));
+  return { symbols: minimalApis.symbols, callSites: minimalApis.callSites, entryPoints };
 }
 
 function fail(message: string): never {
@@ -375,10 +396,20 @@ program
     const allSymbols = await provider.symbols({ path: ctx.root });
     const allCallSites = await provider.callSites({ path: ctx.root });
 
-    const { symbols, callSites, dropped } = applyIgnore(
+    const filtered = applyIgnore(
       { symbols: allSymbols, callSites: allCallSites },
       ignore,
     );
+    const undeclared: string[] = [];
+    const detected = detectDoors(
+      ctx.root,
+      filtered.symbols,
+      filtered.callSites,
+      ignore,
+      (note) => undeclared.push(note),
+    );
+    const { symbols, callSites, entryPoints } = detected;
+    const { dropped } = filtered;
 
     ctx.store.insertSymbols(snapshot.id, symbols);
     ctx.store.insertCallSites(snapshot.id, callSites);
@@ -388,8 +419,6 @@ program
     );
     const modules = deriveModules(symbols, { communityBySymbol });
     ctx.store.insertModules(snapshot.id, modules);
-    const undeclared: string[] = [];
-    const entryPoints = detectDoors(ctx.root, symbols, ignore, (note) => undeclared.push(note));
     ctx.store.insertEntryPoints(snapshot.id, entryPoints);
 
     // Computed once here and stored with coordinates, so opening the browser recomputes nothing and
@@ -487,7 +516,11 @@ program
   .action(async (pathArg: string | undefined, options: { json?: boolean }) => {
     const ctx = open(pathArg);
     const provider = createProvider(readConfig(ctx.root)?.index.provider);
-    const symbols = await provider.symbols({ path: ctx.root });
+    const allSymbols = await provider.symbols({ path: ctx.root });
+    const { symbols } = applyIgnore(
+      { symbols: allSymbols, callSites: [] },
+      loadIgnore(ctx.root).ignore,
+    );
     const modules = deriveModules(symbols, {
       communityBySymbol: new Map(
         symbols.filter((s) => s.communityId !== undefined).map((s) => [s.id, s.communityId!]),
@@ -628,15 +661,17 @@ program
     // The same filter the index applies. Reading the provider directly and skipping it would draw a
     // graph over code the project asked not to have indexed.
     const ignore = loadIgnore(ctx.root).ignore;
-    const { symbols, callSites } = applyIgnore(
+    const filtered = applyIgnore(
       {
         symbols: await provider.symbols({ path: ctx.root }),
         callSites: await provider.callSites({ path: ctx.root }),
       },
       ignore,
     );
+    const detected = detectDoors(ctx.root, filtered.symbols, filtered.callSites, ignore);
+    const { symbols, callSites } = detected;
 
-    let entryPoints = detectDoors(ctx.root, symbols, ignore);
+    let entryPoints = detected.entryPoints;
     if (options.entry) {
       const needle = options.entry.toLowerCase();
       entryPoints = entryPoints.filter(
@@ -701,10 +736,11 @@ program
   .requiredOption("--question <id>")
   .requiredOption("--snapshot <id>")
   .option("--parent <answerId>", "the observed answer this run proposes a change to (veriflow propose)")
+  .option("--plan <planId>", "the saved plan this bounded translation run may read")
   .description("MCP server exposed to the agent for one run (launched by veriflow ask)")
   .action(async (
     pathArg: string | undefined,
-    options: { run: string; question: string; snapshot: string; parent?: string },
+    options: { run: string; question: string; snapshot: string; parent?: string; plan?: string },
   ) => {
     // No lock and no banner: this process is a child of the agent and speaks MCP on stdio, so any
     // stray stdout would corrupt the protocol.
@@ -714,6 +750,7 @@ program
       questionId: options.question,
       snapshotId: options.snapshot,
       ...(options.parent ? { parentAnswerId: options.parent } : {}),
+      ...(options.plan ? { planId: options.plan } : {}),
     });
   });
 
@@ -1555,6 +1592,254 @@ program
     ctx.close();
   });
 
+/* ------------------------------------------------------------------ plan (F023) */
+
+program
+  .command("plan")
+  .argument("<doc>", "a Markdown plan produced by a person or coding agent")
+  .argument("[path]")
+  .option("--save", "persist an immutable plan artifact for translation and graphical review")
+  .option("--json", "machine-readable output")
+  .option("--since <ref>", "the tree state the plan's line claims were written against")
+  .option("--window <n>", "lines a claim may move and still count as an exact match", String(DRIFT_WINDOW))
+  .description("check a plan's line claims and bare paths against indexed architecture without an agent")
+  .action((
+    docArg: string,
+    pathArg: string | undefined,
+    options: { save?: boolean; json?: boolean; since?: string; window: string },
+  ) => {
+    // F023's default is a measurement, not a write. The project row already exists when a snapshot
+    // does; touching it here would make a plain plan inspection mutate the store on every run.
+    const ctx = open(pathArg, { touchProject: false });
+    const docFile = resolve(docArg);
+    if (!existsSync(docFile)) {
+      ctx.close();
+      fail(`no such plan: ${docArg}`);
+    }
+    const relative = relative_(ctx.root, docFile);
+    const insideProject = relative !== ".." && !relative.startsWith(`..${sep}`) && !isAbsolute(relative);
+    const docPath = insideProject ? relative.split(sep).join("/") : docFile.split(sep).join("/");
+    // Captured content makes an external plan replayable; its machine-specific absolute location
+    // does not belong in the stable artifact or a portable dump.
+    const sourceRef = insideProject ? docPath : `external:${basename(docFile)}`;
+    const markdown = readFileSync(docFile, "utf8");
+
+    let analysis: PlanAnalysis;
+    try {
+      analysis = inspectPlan(ctx.store, ctx.root, ctx.projectId, docPath, markdown, {
+        sourceRef,
+        ...(options.since ? { since: options.since } : {}),
+        driftWindow: Number(options.window),
+      });
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    const saved = options.save ? savePlan(ctx.store, ctx.projectId, analysis, markdown) : undefined;
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, analysis, ...(saved ? { saved: { id: saved.plan.id, inserted: saved.inserted } } : {}) }, null, 2));
+      ctx.close();
+      return;
+    }
+
+    log(analysis.source.ref);
+    log(
+      `  snapshot  ${analysis.snapshot.id.slice(0, 12)}${analysis.snapshot.dirty ? " (dirty tree)" : ""}` +
+        `  · baseline ${analysis.baseline.commit?.slice(0, 12) ?? "none"}`,
+    );
+    log(
+      `  ${analysis.counts.total} reference(s) · ${analysis.counts.located} located · ` +
+        `${analysis.counts.drifted} drifted · ${analysis.counts.missing} missing · ` +
+        `${analysis.counts.planned} planned · ${analysis.counts.unanchored} unanchored`,
+    );
+
+    const notable = analysis.references.filter((reference) => reference.outcome !== "located");
+    if (notable.length > 0) log("");
+    for (const reference of notable) {
+      const where = reference.line
+        ? `${reference.path}:${reference.line}${reference.nowLine ? ` → :${reference.nowLine}` : ""}`
+        : reference.path;
+      log(`  ${reference.outcome.toUpperCase().padEnd(10)} ${where}`);
+      log(`             ${analysis.source.ref}:${reference.docLine}  ${reference.raw}`);
+      if (reference.note) log(`             ${reference.note}`);
+    }
+
+    log(`\n  lands in ${analysis.flows.length} stored flow(s)`);
+    if (analysis.flows.length === 0) {
+      log("    No stored answer maps to these references. That does not mean the plan affects no behaviour.");
+    }
+    for (const flow of analysis.flows) {
+      const lines = flow.paths.reduce((sum, path) => sum + path.citedLines.length, 0);
+      log(`    ${flow.id.slice(0, 8)}  ${flow.title}  · ${lines} cited line(s) in ${flow.paths.length} path(s)`);
+    }
+
+    if (analysis.unreachedModules.length > 0) {
+      log(`\n  enters ${analysis.unreachedModules.length} module(s) no observed answer reaches`);
+      for (const module of analysis.unreachedModules) {
+        log(`    ${module.id}  ${module.state === "planned" ? "[planned — not indexed]" : "[unreached]"}`);
+      }
+    }
+    if (saved) {
+      log(`\n  ${saved.inserted ? "saved" : "already saved"}  ${saved.plan.id}`);
+      log(
+        `  translate: veriflow plan-propose ${saved.plan.id.slice(0, 13)}` +
+          ` ${analysis.flows[0]?.id.slice(0, 8) ?? "<answerId>"}`,
+      );
+      log(`  review:    veriflow open   →  /plans/${saved.plan.id}`);
+      log(`  share:     veriflow export --plan ${saved.plan.id.slice(0, 13)} --out plan-review.html`);
+    } else {
+      log("\n  read-only — use --save to create a plan artifact");
+    }
+    ctx.close();
+  });
+
+/* ------------------------------------------------------------------ plans (F025) */
+
+program
+  .command("plans")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("list the saved plans this project can review, newest first")
+  .action((pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg, { touchProject: false });
+    const rows = ctx.store.listPlans(ctx.projectId).map((row) => ({
+      id: String(row["id"]),
+      sourceKind: String(row["source_kind"]),
+      sourceRef: String(row["source_ref"]),
+      contentSha256: String(row["content_sha256"]),
+      snapshotId: String(row["snapshot_id"]),
+      createdAt: String(row["created_at"]),
+      proposals: ctx.store.planProposalsForPlan(String(row["id"])).map((p) => String(p["answer_id"])),
+    }));
+    if (options.json) {
+      log(JSON.stringify({ contractVersion: 1, plans: rows }, null, 2));
+      ctx.close();
+      return;
+    }
+    if (rows.length === 0) {
+      log("No plan has been saved yet.");
+      log("  veriflow plan <doc.md> --save   inspect a plan and keep it as a reviewable artifact");
+      ctx.close();
+      return;
+    }
+    for (const row of rows) {
+      log(`${row.id}`);
+      log(
+        `  ${row.sourceRef}  [${row.sourceKind}]  ${row.createdAt.slice(0, 16).replace("T", " ")}` +
+          `  snapshot ${row.snapshotId.slice(0, 12)}`,
+      );
+      log(
+        row.proposals.length
+          ? `  translated: ${row.proposals.map((id) => id.slice(0, 8)).join(", ")}  ·  review: /plans/${row.id}`
+          : `  not translated  ·  veriflow plan-propose ${row.id.slice(0, 13)} <answerId>`,
+      );
+    }
+    ctx.close();
+  });
+
+/* ----------------------------------------------------------- plan-propose (F024) */
+
+program
+  .command("plan-propose")
+  .argument("<planId>", "the saved plan to translate")
+  .argument("<answerId>", "the observed flow the plan changes")
+  .argument("[path]")
+  .option("--client <id>", "agent client", "claude-code")
+  .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--timeout <ms>", "run timeout in milliseconds", "900000")
+  .description("translate a saved plan into a proposed FlowAnswer without repository exploration")
+  .action(async (
+    planArg: string,
+    answerArg: string,
+    pathArg: string | undefined,
+    options: { client: string; clientCommand?: string; timeout: string },
+  ) => {
+    const ctx = open(pathArg);
+    const saved = loadStoredPlan(ctx.store, planArg);
+    if (!saved || saved.projectId !== ctx.projectId) {
+      ctx.close();
+      fail(`no saved plan with id or prefix "${planArg}" in this project - run: veriflow plan <doc> --save`);
+    }
+    const parent = loadStoredAnswer(ctx.store, ctx.root, answerArg);
+    if (!parent) {
+      ctx.close();
+      fail(`no stored answer with id or prefix "${answerArg}" - run: veriflow answers`);
+    }
+    if (parent.kind !== "observed") {
+      ctx.close();
+      fail(`${parent.row.id.slice(0, 8)} is a proposal; translate a plan against an observed flow`);
+    }
+    if (!ctx.store.readSnapshot(saved.snapshotId)) {
+      ctx.close();
+      fail(`plan ${saved.id} names snapshot ${saved.snapshotId}, which is no longer stored`);
+    }
+
+    const question = `Translate saved plan ${saved.id} against observed flow "${parent.answer.title}"`;
+    let runPlan: AskPlan;
+    try {
+      const ordinary = planAsk(ctx.store, ctx.projectId, question);
+      // Translation is replayable against the exact registry F023 measured, even after a later
+      // re-index. The bounded server never opens source, so using the saved snapshot is sufficient.
+      runPlan = { ...ordinary, snapshot: saved.analysis.snapshot };
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    const client = options.client === "codex"
+      ? new CodexAdapter(options.clientCommand)
+      : new ClaudeCodeAdapter(options.clientCommand);
+    const capabilities = await client.probe();
+    if (!capabilities) {
+      ctx.close();
+      fail(
+        `agent client "${options.client}" is not available on this machine - ` +
+          `if it is installed, give the executable directly with --client-command <path>`,
+      );
+    }
+
+    log(`Translating ${saved.id.slice(0, 13)} — ${saved.sourceRef}`);
+    log(`  against ${parent.row.id.slice(0, 8)} — ${parent.answer.title}`);
+    log(`  bounded tools: saved plan · observed parent · module registry · submit`);
+    log(`${capabilities.id} ${capabilities.version} - ${capabilities.transport}`);
+    log(`snapshot ${runPlan.snapshot.id.slice(0, 8)}${runPlan.snapshot.dirty ? " (dirty tree)" : ""}\n`);
+
+    const { session } = createAskRun({
+      root: ctx.root,
+      store: ctx.store,
+      projectId: ctx.projectId,
+      plan: runPlan,
+      client,
+      timeoutMs: Number(options.timeout),
+      proposal: {
+        parentAnswerId: parent.row.id,
+        parentTitle: parent.answer.title,
+        change: `translate ${saved.sourceRef}`,
+        planId: saved.id,
+        planSourceRef: saved.sourceRef,
+      },
+      sink: {
+        onEvent(event) {
+          const payload = event.payload as Record<string, unknown>;
+          if (event.channel === "assistant" && typeof payload["text"] === "string") log(payload["text"] as string);
+          if (event.channel === "tool-call") log(`  -> ${String(payload["name"])}`);
+          if (event.channel === "stderr") log(`  ! ${String(payload["text"])}`);
+        },
+      },
+    });
+    process.once("SIGINT", () => void session.cancel("interrupted"));
+    const result = await session.run();
+    log(`\nRun ${result.runId.slice(0, 8)} - ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
+    const answers = answersFromRun(ctx.store, result.runId);
+    for (const answer of answers) {
+      reportAnswer(answer);
+      log(`    compare: veriflow diff ${parent.row.id.slice(0, 8)} ${answer.id.slice(0, 8)}`);
+    }
+    if (answers.length === 0) log("  No proposal was submitted.");
+    ctx.close();
+  });
+
 /* ------------------------------------------------------------------ check-claims */
 
 program
@@ -2121,21 +2406,27 @@ program
   .argument("[path]")
   .option("--doc", "write the answer as a markdown document with a mermaid diagram")
   .option("--json", "dump the store to a portable file instead")
+  .option("--plan <planId>", "write the plan review artifact for a saved plan instead")
+  .option("--md", "with --plan: honest markdown instead of the self-contained HTML")
+  .option("--proposal <answerId>", "with --plan: draw this translation instead of the newest")
   .option("--all", "with --json: include the tables a re-index would rebuild")
   .option("--no-transcripts", "with --json: leave the agent transcripts out")
-  .option("--out <file>", "with --json: where to write the dump (default: stdout)")
+  .option("--out <file>", "with --json or --plan: where to write it (default: stdout)")
   .option("--to <path>", "repository-relative target, inside a documentation root")
   .option("--expect <revision>", "the revision this update replaces")
   .option("--owner <name>", "frontmatter owner")
   .option("--yes", "write without asking")
   .option("--force-stale", "export an answer whose citations no longer all locate")
-  .description("write an approved answer into the repository as markdown, or dump the store")
+  .description("write an approved answer or a plan review out of the store, or dump the store")
   .action(async (
     answerArg: string | undefined,
     pathArg: string | undefined,
     options: {
       doc?: boolean;
       json?: boolean;
+      plan?: string;
+      md?: boolean;
+      proposal?: string;
       all?: boolean;
       transcripts?: boolean;
       out?: string;
@@ -2155,6 +2446,43 @@ program
     }
 
     const ctx = open(path);
+
+    /**
+     * The plan review, as one file. HTML is the default because it is the artifact the browser draws
+     * and the only format that keeps colour, strike and the overlay geometry; Markdown is offered for
+     * places HTML cannot go and says in its own text what it had to give up.
+     */
+    if (options.plan) {
+      const review = buildPlanReview(ctx.store, ctx.root, options.plan, {
+        ...(options.proposal ? { proposalId: options.proposal } : {}),
+      });
+      if (!review) {
+        ctx.close();
+        fail(`no saved plan with id or prefix "${options.plan}" - run: veriflow plan <doc.md> --save`);
+      }
+      const document = options.md ? renderPlanMarkdown(review).text : planArtifactHtml(review);
+      if (!options.out) {
+        log(document);
+        ctx.close();
+        return;
+      }
+      writeFileSync(resolve(options.out), document, "utf8");
+      log(`Wrote ${options.out} — ${(Buffer.byteLength(document) / 1024).toFixed(1)} KB, ${
+        options.md ? "markdown" : "self-contained HTML — no network, no VeriFlow needed to open it"
+      }`);
+      log(`  plan       ${review.plan.id}`);
+      log(`  source     ${review.plan.sourceRef} · sha256 ${review.plan.contentSha256.slice(0, 12)}`);
+      log(`  snapshot   ${review.plan.snapshotId}${review.snapshotIsLatest ? "" : " (the tree has been indexed again since)"}`);
+      log(`  observed   ${review.observed ? `${review.observed.id.slice(0, 8)}  ${review.observed.title}` : "none"}`);
+      log(`  proposal   ${review.proposal ? `${review.proposal.id.slice(0, 8)}  ${review.proposal.title}` : "none — not translated"}`);
+      log(
+        `  layers     ${review.flow.steps.length} step(s) · ${review.modules.nodes.length} module(s) · ` +
+          `${review.claims.length} claim(s)`,
+      );
+      for (const line of review.exclusions) log(`  excluded   ${line}`);
+      ctx.close();
+      return;
+    }
 
     if (options.json) {
       let dump;
@@ -2189,7 +2517,10 @@ program
 
     if (!options.doc) {
       ctx.close();
-      fail("say what to export: --doc for a markdown document, --json for a portable dump");
+      fail(
+        "say what to export: --doc for a markdown document, --plan <id> for a plan review artifact, " +
+          "--json for a portable dump",
+      );
     }
     if (!answer) {
       ctx.close();
@@ -2353,12 +2684,21 @@ program
     const ctx = open(pathArg);
     const provider = createProvider(readConfig(ctx.root)?.index.provider);
     const ignore = loadIgnore(ctx.root).ignore;
-    const { symbols } = applyIgnore(
-      { symbols: await provider.symbols({ path: ctx.root }), callSites: [] },
+    const filtered = applyIgnore(
+      {
+        symbols: await provider.symbols({ path: ctx.root }),
+        callSites: await provider.callSites({ path: ctx.root }),
+      },
       ignore,
     );
     const notes: string[] = [];
-    const entryPoints = detectDoors(ctx.root, symbols, ignore, (note) => notes.push(note));
+    const { entryPoints } = detectDoors(
+      ctx.root,
+      filtered.symbols,
+      filtered.callSites,
+      ignore,
+      (note) => notes.push(note),
+    );
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, entryPoints, notDetected: notes }, null, 2));
     } else {

@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -146,6 +146,36 @@ const MIGRATIONS: readonly Migration[] = [
          END`,
     ],
   },
+  {
+    to: 6,
+    summary: "saved plan artifacts and their bounded proposal provenance",
+    statements: [
+      `CREATE TABLE plans (
+         id TEXT PRIMARY KEY,
+         project_id TEXT NOT NULL REFERENCES projects(id),
+         snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+         contract_version INTEGER NOT NULL,
+         source_kind TEXT NOT NULL,
+         source_ref TEXT NOT NULL,
+         content_sha256 TEXT NOT NULL,
+         content_text TEXT NOT NULL,
+         payload_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         UNIQUE (project_id, snapshot_id, source_kind, source_ref, content_sha256)
+       )`,
+      `CREATE INDEX plans_by_project
+         ON plans(project_id, created_at DESC, id)`,
+      `CREATE TABLE plan_proposals (
+         plan_id TEXT NOT NULL REFERENCES plans(id),
+         answer_id TEXT NOT NULL UNIQUE REFERENCES answers(id),
+         parent_answer_id TEXT NOT NULL REFERENCES answers(id),
+         snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+         links_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         PRIMARY KEY (plan_id, answer_id)
+       )`,
+    ],
+  },
 ];
 
 /** Tables a migration is expected to preserve, counted before and after. */
@@ -154,6 +184,8 @@ const COUNTED_TABLES = [
   "declared_architecture_revisions",
   "declared_architecture_heads",
   "runtime_coverage_runs",
+  "plans",
+  "plan_proposals",
   "snapshots",
   "answers",
   "answer_citations",
@@ -498,6 +530,34 @@ CREATE INDEX IF NOT EXISTS runtime_coverage_runs_by_answer
   ON runtime_coverage_runs(answer_id, imported_at DESC, id);
 `;
 
+/** Kept out of SCHEMA so schema-5 databases are backed up before these tables are created. */
+const PLAN_SCHEMA = `
+CREATE TABLE IF NOT EXISTS plans (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+  contract_version INTEGER NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_ref TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  content_text TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (project_id, snapshot_id, source_kind, source_ref, content_sha256)
+);
+CREATE INDEX IF NOT EXISTS plans_by_project
+  ON plans(project_id, created_at DESC, id);
+CREATE TABLE IF NOT EXISTS plan_proposals (
+  plan_id TEXT NOT NULL REFERENCES plans(id),
+  answer_id TEXT NOT NULL UNIQUE REFERENCES answers(id),
+  parent_answer_id TEXT NOT NULL REFERENCES answers(id),
+  snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+  links_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (plan_id, answer_id)
+);
+`;
+
 export interface OpenOptions {
   /** Absolute path to veriflow.db. Parent directories are created. */
   file: string;
@@ -526,6 +586,7 @@ export class Store {
     if (!row) {
       this.db.exec(DECLARED_ARCHITECTURE_SCHEMA);
       this.db.exec(RUNTIME_COVERAGE_SCHEMA);
+      this.db.exec(PLAN_SCHEMA);
       this.db
         .prepare("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)")
         .run(String(SCHEMA_VERSION));
@@ -544,6 +605,7 @@ export class Store {
     if (found === SCHEMA_VERSION) {
       this.db.exec(DECLARED_ARCHITECTURE_SCHEMA);
       this.db.exec(RUNTIME_COVERAGE_SCHEMA);
+      this.db.exec(PLAN_SCHEMA);
       return;
     }
 
@@ -741,6 +803,96 @@ export class Store {
          ORDER BY created_at DESC, revision`,
       )
       .all(projectId) as Array<Record<string, unknown>>;
+  }
+
+  /* ----------------------------------------------------------- saved plans (F023/F024) */
+
+  /**
+   * Save one immutable, content-addressed plan measurement. Repeating the same plan against the
+   * same indexed snapshot is an idempotent read of the first row, including its original timestamp.
+   */
+  insertPlan(plan: {
+    id: string;
+    projectId: string;
+    snapshotId: string;
+    contractVersion: number;
+    sourceKind: string;
+    sourceRef: string;
+    contentSha256: string;
+    contentText: string;
+    payload: unknown;
+    createdAt: string;
+  }): { inserted: boolean; row: Record<string, unknown> } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO plans
+           (id, project_id, snapshot_id, contract_version, source_kind, source_ref, content_sha256,
+            content_text, payload_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          plan.id,
+          plan.projectId,
+          plan.snapshotId,
+          plan.contractVersion,
+          plan.sourceKind,
+          plan.sourceRef,
+          plan.contentSha256,
+          plan.contentText,
+          JSON.stringify(plan.payload),
+          plan.createdAt,
+        );
+      const row = this.db.prepare("SELECT * FROM plans WHERE id = ?").get(plan.id) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) throw new Error(`plan ${plan.id} could not be read after insert`);
+      this.db.exec("COMMIT");
+      return { inserted: Number(result.changes) > 0, row };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  readPlan(id: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM plans WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  findPlanByPrefix(prefix: string): Record<string, unknown> | undefined {
+    return this.db
+      .prepare("SELECT * FROM plans WHERE id LIKE ? ORDER BY created_at DESC, id LIMIT 1")
+      .get(`${prefix}%`) as Record<string, unknown> | undefined;
+  }
+
+  listPlans(projectId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT id, project_id, snapshot_id, contract_version, source_kind, source_ref,
+                content_sha256, created_at
+         FROM plans WHERE project_id = ? ORDER BY created_at DESC, id`,
+      )
+      .all(projectId) as Array<Record<string, unknown>>;
+  }
+
+  planProposalForAnswer(answerId: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM plan_proposals WHERE answer_id = ?").get(answerId) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  /**
+   * Every translation of one plan, newest first. A plan may be translated more than once — against a
+   * second observed flow, or after the first attempt was rejected — and the review surface names the
+   * ones it is not drawing rather than presenting the newest as the only one.
+   */
+  planProposalsForPlan(planId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare("SELECT * FROM plan_proposals WHERE plan_id = ? ORDER BY created_at DESC, answer_id")
+      .all(planId) as Array<Record<string, unknown>>;
   }
 
   insertSnapshot(snapshot: Snapshot, statsJson: string | null): void {
@@ -1012,6 +1164,12 @@ export class Store {
     intent?: number;
     openQuestions: number;
     body: unknown;
+    /** Present only when F024 translated this proposal from a saved plan. Stored atomically. */
+    planProvenance?: {
+      planId: string;
+      parentAnswerId: string;
+      links: unknown;
+    };
     citations: Array<{
       subjectKind: string;
       subjectId: string;
@@ -1077,6 +1235,22 @@ export class Store {
           c.plannedPath ?? null,
         );
       });
+      if (answer.planProvenance) {
+        this.db
+          .prepare(
+            `INSERT INTO plan_proposals
+             (plan_id, answer_id, parent_answer_id, snapshot_id, links_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            answer.planProvenance.planId,
+            answer.id,
+            answer.planProvenance.parentAnswerId,
+            answer.snapshotId,
+            JSON.stringify(answer.planProvenance.links),
+            new Date().toISOString(),
+          );
+      }
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");

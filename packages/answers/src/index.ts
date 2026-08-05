@@ -8,6 +8,8 @@ export * from "./freshness.js";
 export * from "./invariants.js";
 export * from "./lineage.js";
 export * from "./metrics.js";
+export * from "./plan.js";
+export * from "./plan-review.js";
 export * from "./project.js";
 export * from "./read.js";
 export * from "./runtime-coverage.js";

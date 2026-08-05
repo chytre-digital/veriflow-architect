@@ -6,6 +6,7 @@ import { prepareWrite, revisionOf, ConflictError, type ExportRequest, type Pendi
 
 export * from "./mermaid.js";
 export * from "./markdown.js";
+export * from "./plan-markdown.js";
 export * from "./write.js";
 export * from "./dump.js";
 

@@ -39,6 +39,18 @@ const RULES: Rule[] = [
     match: (p) => (/^src\/app\//.test(p) ? "src/app" : undefined),
   },
   {
+    // Vertical-slice .NET backends conventionally put a deployable feature below `Features`.
+    // Keep the first segment as the boundary: `Features/Images/Blurhash` is the Images feature,
+    // while Program.cs and shared infrastructure remain owned by the surrounding application.
+    source: "feature-root",
+    match: (p) => {
+      const m = /(?:^|\/)Features\/([^/]+)(?:\/|$)/i.exec(p);
+      if (!m || m.index === undefined) return undefined;
+      const featureStart = m.index + (m[0]!.startsWith("/") ? 1 : 0);
+      return p.slice(0, featureStart + "Features/".length + m[1]!.length);
+    },
+  },
+  {
     source: "layer-root",
     match: (p) => {
       const m = /^src\/([^/]+)\//.exec(p);
