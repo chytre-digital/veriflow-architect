@@ -1,10 +1,18 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { FlowAnswer } from "@veriflow/flow-answer";
 import { allSteps, intentModuleOf } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
 import type { Snapshot } from "@veriflow/contracts";
+import {
+  planSourceLocationAt,
+  type PlanSource,
+  type PlanSourceHint,
+  type PlanSourceKind,
+  type PlanSourceLocation,
+  type PlanSourcePhase,
+} from "@veriflow/plan-source";
 import {
   checkClaims,
   extractClaims,
@@ -41,6 +49,8 @@ export interface PlanReference {
   confidence?: "exact" | "low";
   resolvedFrom?: string;
   note?: string;
+  /** Adapter-specific location; `docLine` remains the line in normalized captured content. */
+  sourceLocation?: { ref: string; line: number; label?: string };
   module?: {
     id: string;
     label: string;
@@ -64,10 +74,13 @@ export interface PlanFlowImpact {
 export interface PlanAnalysis {
   contractVersion: typeof PLAN_CONTRACT_VERSION;
   source: {
-    kind: "markdown";
+    kind: PlanSourceKind;
     ref: string;
     contentSha256: string;
     bytes: number;
+    phase: PlanSourcePhase;
+    locations: PlanSourceLocation[];
+    hints: PlanSourceHint[];
   };
   snapshot: Snapshot;
   baseline: Baseline;
@@ -80,13 +93,20 @@ export interface PlanAnalysis {
     state: "existing" | "planned";
     planReferenceIds: string[];
   }>;
-  skipped: Array<{ docLine: number; raw: string; reason: string }>;
+  skipped: Array<{
+    docLine: number;
+    raw: string;
+    reason: string;
+    sourceLocation?: { ref: string; line: number; label?: string };
+  }>;
   durationMs: number;
 }
 
 export interface InspectPlanOptions extends CheckClaimsOptions {
   /** Defaults to the Markdown path passed as `docPath`. */
   sourceRef?: string;
+  /** F026 adapter output. When present it owns source identity, fingerprint and line provenance. */
+  source?: PlanSource;
 }
 
 interface BarePlanPath {
@@ -120,6 +140,17 @@ export function inspectPlan(
   const bytes = Buffer.byteLength(markdown, "utf8");
   if (bytes > MAX_PLAN_BYTES) {
     throw new Error(`plan is ${bytes} bytes, budget is ${MAX_PLAN_BYTES}`);
+  }
+  if (options.source) {
+    if (options.source.content !== markdown) {
+      throw new Error("plan-source content does not match the content passed for inspection");
+    }
+    if (options.source.fingerprint !== sha256(markdown)) {
+      throw new Error("plan-source fingerprint does not match its captured content");
+    }
+    if (resolve(options.source.projectRoot) !== resolve(root)) {
+      throw new Error("plan-source project root does not match the inspected project");
+    }
   }
 
   const snapshot = store.latestSnapshot(projectId);
@@ -179,6 +210,9 @@ export function inspectPlan(
     return {
       id: `r${String(index + 1).padStart(4, "0")}`,
       ...reference,
+      ...(options.source
+        ? { sourceLocation: planSourceLocationAt(options.source, reference.docLine) }
+        : {}),
       ...(module ? { module } : {}),
     };
   });
@@ -214,15 +248,30 @@ export function inspectPlan(
     // reference above. Keep genuine parse/ambiguity failures visible.
     if (!representedLineClaims.has(occurrenceKey(candidate.docLine, candidate.raw))) return true;
     return !/no indexed file matches/.test(candidate.reason);
-  });
+  }).map((candidate) => ({
+    ...candidate,
+    ...(options.source
+      ? { sourceLocation: planSourceLocationAt(options.source, candidate.docLine) }
+      : {}),
+  }));
+
+  const source = options.source;
 
   return {
     contractVersion: PLAN_CONTRACT_VERSION,
     source: {
-      kind: "markdown",
-      ref: options.sourceRef ?? docPath,
-      contentSha256: sha256(markdown),
+      kind: source?.kind ?? "markdown",
+      ref: source?.ref ?? options.sourceRef ?? docPath,
+      contentSha256: source?.fingerprint ?? sha256(markdown),
       bytes,
+      phase: source?.phase ?? "pre-code",
+      locations: source?.locations ?? [{
+        normalizedStartLine: 1,
+        normalizedEndLine: markdown.split(/\r?\n/).length,
+        sourceRef: options.sourceRef ?? docPath,
+        sourceStartLine: 1,
+      }],
+      hints: source?.hints ?? [],
     },
     snapshot,
     baseline: check.baseline,
@@ -235,6 +284,27 @@ export function inspectPlan(
     skipped,
     durationMs: Date.now() - started,
   };
+}
+
+/** Feed any F026 adapter through the exact F023 inspector used by named Markdown input. */
+export function inspectPlanSource(
+  store: Store,
+  projectId: string,
+  source: PlanSource,
+  options: Omit<InspectPlanOptions, "source" | "sourceRef"> = {},
+): PlanAnalysis {
+  return inspectPlan(
+    store,
+    source.projectRoot,
+    projectId,
+    source.baselinePath ?? source.ref,
+    source.content,
+    {
+      ...options,
+      source,
+      ...(options.since || !source.baselineRef ? {} : { since: source.baselineRef }),
+    },
+  );
 }
 
 function lineReference(
@@ -427,6 +497,12 @@ export function planIdFor(projectId: string, analysis: PlanAnalysis): string {
       analysis.source.kind,
       analysis.source.ref,
       analysis.source.contentSha256,
+      // Keep F023 Markdown ids stable. Combined/private sources additionally bind their original
+      // locations and hints so equal prose moved between spec.md/tasks.md cannot reopen stale
+      // provenance from an earlier idempotent save.
+      ...(analysis.source.kind === "markdown"
+        ? []
+        : [analysis.source.phase, analysis.source.locations, analysis.source.hints]),
     ]),
   ).slice(0, 32)}`;
 }

@@ -113,6 +113,7 @@ export interface PlanClaim {
   note?: string;
   /** Where the claim is written in the source plan. */
   docLine: number;
+  sourceLocation?: { ref: string; line: number; label?: string };
   module?: { id: string; label: string; state: "existing" | "planned"; reach?: ModuleReach };
   /** Stored flows this claim lands in, with the exact lines they cite in this file. */
   flows: Array<{ id: string; title: string; citedLines: number[] }>;
@@ -315,6 +316,7 @@ export function buildPlanReview(
       ...(reference.resolvedFrom ? { resolvedFrom: reference.resolvedFrom } : {}),
       ...(reference.note ? { note: reference.note } : {}),
       docLine: reference.docLine,
+      ...(reference.sourceLocation ? { sourceLocation: reference.sourceLocation } : {}),
       ...(reference.module ? { module: reference.module } : {}),
       flows,
       steps,

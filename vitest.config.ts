@@ -17,6 +17,7 @@ export default defineConfig({
       "@veriflow/store": p("./packages/store/src/index.ts"),
       "@veriflow/provider-protocol": p("./packages/provider-protocol/src/index.ts"),
       "@veriflow/provider-crg": p("./packages/provider-crg/src/index.ts"),
+      "@veriflow/plan-source": p("./packages/plan-source/src/index.ts"),
       "@veriflow/callgraph": p("./packages/callgraph/src/index.ts"),
       "@veriflow/workspace": p("./packages/workspace/src/index.ts"),
       "@veriflow/providers": p("./packages/providers/src/index.ts"),

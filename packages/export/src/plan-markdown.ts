@@ -56,7 +56,11 @@ export function renderPlanMarkdown(review: PlanReview): PlanDocument {
 
   out.push("| | |", "|---|---|");
   out.push(`| Plan | \`${review.plan.id}\` |`);
-  out.push(`| Source | \`${tableCell(review.plan.sourceRef)}\` (${review.plan.sourceKind}, ${review.plan.bytes} bytes) |`);
+  out.push(
+    `| Source | \`${tableCell(review.plan.sourceRef)}\` (${review.plan.sourceKind}, ${
+      review.analysis.source.phase ?? "pre-code"
+    }${review.analysis.source.phase === "post-code" ? " — code already exists" : ""}, ${review.plan.bytes} bytes) |`,
+  );
   out.push(`| Content fingerprint | \`sha256:${review.plan.contentSha256}\` |`);
   out.push(
     `| Indexed snapshot | \`${review.plan.snapshotId}\`${
@@ -226,7 +230,9 @@ export function renderPlanMarkdown(review: PlanReview): PlanDocument {
         ? claim.steps.map((step) => `${tableCell(step.label)} (${step.change})`).join("<br>")
         : "no translated step";
       out.push(
-        `| \`${claim.id}\` \`${tableCell(claim.raw)}\` | ${tableCell(review.plan.sourceRef)}:${claim.docLine} | ` +
+        `| \`${claim.id}\` \`${tableCell(claim.raw)}\` | ${tableCell(
+          claim.sourceLocation?.ref ?? review.plan.sourceRef,
+        )}:${claim.sourceLocation?.line ?? claim.docLine} | ` +
           `${claim.outcome} | ${where} | ${module} | ${flows} | ${steps} |`,
       );
     }
@@ -238,7 +244,9 @@ export function renderPlanMarkdown(review: PlanReview): PlanDocument {
     out.push("| At | Statement | Why |", "|---|---|---|");
     for (const entry of review.skipped) {
       out.push(
-        `| ${tableCell(review.plan.sourceRef)}:${entry.docLine} | \`${tableCell(entry.raw)}\` | ${tableCell(entry.reason)} |`,
+        `| ${tableCell(entry.sourceLocation?.ref ?? review.plan.sourceRef)}:${
+          entry.sourceLocation?.line ?? entry.docLine
+        } | \`${tableCell(entry.raw)}\` | ${tableCell(entry.reason)} |`,
       );
     }
     out.push("");

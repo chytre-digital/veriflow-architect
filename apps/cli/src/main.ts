@@ -37,7 +37,7 @@ import {
   impactOf,
   importRuntimeCoverage,
   invariantIndex,
-  inspectPlan,
+  inspectPlanSource,
   kindOf,
   listEffectiveAnswerRows,
   buildPlanReview,
@@ -58,6 +58,10 @@ import {
   type StoredAnswer,
   type Verification,
 } from "@veriflow/answers";
+import {
+  loadPlanSource,
+  type PlanSourceKind,
+} from "@veriflow/plan-source";
 import {
   DEFAULT_DEPTH,
   SPAGHETTI_BANDS,
@@ -1596,38 +1600,41 @@ program
 
 program
   .command("plan")
-  .argument("<doc>", "a Markdown plan produced by a person or coding agent")
+  .argument("<source>", "a Markdown file, spec-kit directory, Claude transcript scope/current, or Git base")
   .argument("[path]")
   .option("--save", "persist an immutable plan artifact for translation and graphical review")
   .option("--json", "machine-readable output")
+  .option("--from <adapter>", "plan source adapter: markdown, speckit, claude-code, or git-branch", "markdown")
   .option("--since <ref>", "the tree state the plan's line claims were written against")
   .option("--window <n>", "lines a claim may move and still count as an exact match", String(DRIFT_WINDOW))
-  .description("check a plan's line claims and bare paths against indexed architecture without an agent")
+  .description("capture a plan source and check it against indexed architecture without an agent")
   .action((
-    docArg: string,
+    sourceArg: string,
     pathArg: string | undefined,
-    options: { save?: boolean; json?: boolean; since?: string; window: string },
+    options: { save?: boolean; json?: boolean; from: string; since?: string; window: string },
   ) => {
     // F023's default is a measurement, not a write. The project row already exists when a snapshot
     // does; touching it here would make a plain plan inspection mutate the store on every run.
     const ctx = open(pathArg, { touchProject: false });
-    const docFile = resolve(docArg);
-    if (!existsSync(docFile)) {
+    const sourceKinds: PlanSourceKind[] = ["markdown", "speckit", "claude-code", "git-branch"];
+    if (!sourceKinds.includes(options.from as PlanSourceKind)) {
       ctx.close();
-      fail(`no such plan: ${docArg}`);
+      fail(
+        `unsupported plan source adapter "${options.from}"; use markdown, speckit, claude-code, or git-branch`,
+      );
     }
-    const relative = relative_(ctx.root, docFile);
-    const insideProject = relative !== ".." && !relative.startsWith(`..${sep}`) && !isAbsolute(relative);
-    const docPath = insideProject ? relative.split(sep).join("/") : docFile.split(sep).join("/");
-    // Captured content makes an external plan replayable; its machine-specific absolute location
-    // does not belong in the stable artifact or a portable dump.
-    const sourceRef = insideProject ? docPath : `external:${basename(docFile)}`;
-    const markdown = readFileSync(docFile, "utf8");
+    const source = loadPlanSource(options.from as PlanSourceKind, {
+      projectRoot: ctx.root,
+      source: sourceArg,
+    });
+    if (source.status !== "ready") {
+      ctx.close();
+      fail(`${source.status}: ${source.message}\n  searched only: ${source.scope}`);
+    }
 
     let analysis: PlanAnalysis;
     try {
-      analysis = inspectPlan(ctx.store, ctx.root, ctx.projectId, docPath, markdown, {
-        sourceRef,
+      analysis = inspectPlanSource(ctx.store, ctx.projectId, source, {
         ...(options.since ? { since: options.since } : {}),
         driftWindow: Number(options.window),
       });
@@ -1636,14 +1643,15 @@ program
       fail(error instanceof Error ? error.message : String(error));
     }
 
-    const saved = options.save ? savePlan(ctx.store, ctx.projectId, analysis, markdown) : undefined;
+    const saved = options.save ? savePlan(ctx.store, ctx.projectId, analysis, source.content) : undefined;
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, analysis, ...(saved ? { saved: { id: saved.plan.id, inserted: saved.inserted } } : {}) }, null, 2));
       ctx.close();
       return;
     }
 
-    log(analysis.source.ref);
+    log(`${analysis.source.ref}  [${analysis.source.kind}, ${analysis.source.phase}]`);
+    if (analysis.source.phase === "post-code") log("  post-implementation source — this code already exists");
     log(
       `  snapshot  ${analysis.snapshot.id.slice(0, 12)}${analysis.snapshot.dirty ? " (dirty tree)" : ""}` +
         `  · baseline ${analysis.baseline.commit?.slice(0, 12) ?? "none"}`,
@@ -1661,7 +1669,10 @@ program
         ? `${reference.path}:${reference.line}${reference.nowLine ? ` → :${reference.nowLine}` : ""}`
         : reference.path;
       log(`  ${reference.outcome.toUpperCase().padEnd(10)} ${where}`);
-      log(`             ${analysis.source.ref}:${reference.docLine}  ${reference.raw}`);
+      log(
+        `             ${reference.sourceLocation?.ref ?? analysis.source.ref}:` +
+          `${reference.sourceLocation?.line ?? reference.docLine}  ${reference.raw}`,
+      );
       if (reference.note) log(`             ${reference.note}`);
     }
 

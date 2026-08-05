@@ -428,11 +428,18 @@ features:
     title: Replaceable agent-plan source adapters
     spec: ../docs/product/m7-plan-overlay-plan.md
     iteration: M7-plan-overlay
-    status: ready
+    status: shipped
     dependsOn: [F023]
     outcome: >-
       Markdown, spec-kit, Claude Code plan-mode transcripts and branch diffs enter through one plan
       source contract and receive the same deterministic inspection semantics.
+    notes: >-
+      `veriflow plan <source> --from <adapter>` loads one versioned architecture-free source contract.
+      Markdown names one file; spec-kit combines only spec.md, plan.md and tasks.md with per-file
+      locations and [P] task hints; Claude Code stays inside one explicitly named/current project
+      scope and selects a successful ExitPlanMode input; Git diffs are labelled post-code. Missing or
+      changed private formats return named no-plan/unsupported states and no adapter scans globally,
+      uses a network, writes the store, or changes Git.
   F027:
     title: Agent installation and automatic plan handoff
     spec: ../docs/product/m7-plan-overlay-plan.md

@@ -204,7 +204,12 @@ function facts(review: PlanReview, mode: Mode): string {
     mode === "page" ? `<a href="${esc(href)}">${esc(text)}</a>` : esc(text);
   const rows: Array<[string, string]> = [
     ["Plan", `<code>${esc(review.plan.id)}</code>`],
-    ["Source", `<code>${esc(review.plan.sourceRef)}</code> · ${review.plan.bytes} bytes`],
+    [
+      "Source",
+      `<code>${esc(review.plan.sourceRef)}</code> · ${review.plan.bytes} bytes · ${esc(
+        review.analysis.source.phase ?? "pre-code",
+      )}${review.analysis.source.phase === "post-code" ? " — code already exists" : ""}`,
+    ],
     ["Fingerprint", `<code>${esc(review.plan.contentSha256)}</code>`],
     [
       "Indexed snapshot",
@@ -459,7 +464,9 @@ function claimTable(review: PlanReview, link: (href: string, text: string) => st
                 }`;
         return `<tr data-claim="${esc(claim.id)}" data-refs="${esc(claim.id)}">
           <td><code>${esc(claim.raw)}</code>
-            <div class="dim">${esc(review.plan.sourceRef)}:${claim.docLine} · ${esc(claim.kind)} · <code>${esc(
+            <div class="dim">${esc(claim.sourceLocation?.ref ?? review.plan.sourceRef)}:${
+              claim.sourceLocation?.line ?? claim.docLine
+            } · ${esc(claim.kind)} · <code>${esc(
               claim.id,
             )}</code></div></td>
           <td><span class="${outcomePill(claim.outcome)}">${esc(claim.outcome)}</span>${
@@ -516,7 +523,9 @@ function skippedTable(review: PlanReview): string {
     <tbody>${review.skipped
       .map(
         (entry) => `<tr>
-          <td><code>${esc(review.plan.sourceRef)}:${entry.docLine}</code></td>
+          <td><code>${esc(entry.sourceLocation?.ref ?? review.plan.sourceRef)}:${
+            entry.sourceLocation?.line ?? entry.docLine
+          }</code></td>
           <td><code>${esc(entry.raw)}</code></td>
           <td>${esc(entry.reason)}</td>
         </tr>`,

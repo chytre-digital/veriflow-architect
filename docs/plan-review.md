@@ -14,6 +14,33 @@ veriflow export --plan <planId> --out review.html   # one file, opens anywhere
 
 `veriflow plans` lists what has been saved.
 
+## Plan sources
+
+Named Markdown remains the default and the portable fallback for every coding client:
+
+```powershell
+veriflow plan docs/plans/add-invoicing.md --save
+veriflow plan specs/026-invoicing --from speckit --save
+veriflow plan current --from claude-code --save
+veriflow plan main --from git-branch --save
+```
+
+All four commands end in the same deterministic F023 inspector. The adapter only captures source
+kind, stable reference, project root, normalized content, fingerprint, original line locations and
+optional hints; it does not infer modules, translate a flow or render a review.
+
+The spec-kit adapter reads only `spec.md`, `plan.md` and `tasks.md` in the explicitly named feature
+directory. It retains which file and line supplied each statement and carries task ids and `[P]`
+markers as structured hints. The Claude Code adapter reads only the named transcript file/directory,
+or the exact local project scope selected by `current`; it accepts the latest successful
+`ExitPlanMode` input and never treats intermediate reasoning as an approved plan. A changed private
+format or absent approval returns a named `unsupported` or `no-plan` state with the searched scope.
+It never scans the whole home directory. Codex and clients without a stable approved-plan source use
+the Markdown command and are not described as automatic.
+
+`git-branch` reads the working-tree diff against the named base without changing Git and labels the
+saved artifact `post-code — code already exists`. The other adapters are pre-code sources.
+
 ## The three layers
 
 **Flow.** The observed flow and the plan's translation in one drawing. A step the plan adds is green,
@@ -62,7 +89,8 @@ and the proposal. Re-exporting an unchanged plan against the same snapshot produ
 
 ## What it reads, and what it never writes
 
-The page and both exports read stored rows only: the immutable plan artifact F023 saved, the
+The page and both exports read stored rows only: the immutable plan artifact F023 saved (including
+the F026 source kind and original per-file locations), the
 translation F024 stored with its per-step plan links, the observed parent answer, and the module
 registry of the snapshot the plan was measured against. Opening a plan review starts no agent, runs
 no provider, writes no row, and touches neither the working tree nor Git.

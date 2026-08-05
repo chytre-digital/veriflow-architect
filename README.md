@@ -48,7 +48,9 @@ through — each number naming the tool it mirrors, and disagreements shown rath
 that renders anywhere, written without a single Git command.
 
 Before any of that code exists, `veriflow plan <doc.md> --save` checks an agent's plan against the
-indexed architecture without starting a model, and the
+indexed architecture without starting a model. The same command accepts spec-kit feature directories,
+an approved plan from one explicitly scoped Claude Code transcript, or a Git branch diff through
+`--from`; and the
 [plan review](docs/plan-review.md) at `/plans/<id>` draws the current flow, the planned one, the
 modules it touches and every claim it makes as one shareable page — exportable as a single
 self-contained HTML file for a reviewer who has no VeriFlow installed.

@@ -7,8 +7,8 @@ promoted: M7-plan-overlay
 
 # Where VeriFlow goes after M6
 
-> **Exploration with a promoted core.** F023–F024 are shipped; the graphical overlay, source
-> adapters, agent handoff and question queue remain implementation-ready F025–F028 in `roadmap.yaml`.
+> **Exploration with a promoted core.** F023–F026 are shipped; agent handoff and the question queue
+> remain implementation-ready F027–F028 in `roadmap.yaml`.
 > Their detailed contract is
 > [m7-plan-overlay-plan.md](m7-plan-overlay-plan.md). Token economics and decision tooling remain
 > candidates. This document records the wider reasoning against the code as it stands after M6 on

@@ -768,6 +768,7 @@ packages/
 ├── snapshot/             # tree state: file hashes, git facts, change detection
 ├── provider-protocol/    # code intelligence contract
 ├── provider-crg/         # the only place that knows code-review-graph exists
+├── plan-source/          # versioned Markdown/spec-kit/Claude/Git plan-source adapters
 ├── callgraph/            # reachability, buckets, traffic matrix, layout
 ├── metrics/              # deterministic code metrics
 ├── agent-session/        # client adapters, streaming, ask_user, transcripts
@@ -781,7 +782,7 @@ Allowed dependency direction:
 ```text
 apps/*  → core → contracts
                 ↘ store → contracts
-core    → provider-protocol, callgraph, metrics, flow-answer, agent-session, snapshot
+core    → provider-protocol, plan-source, callgraph, metrics, flow-answer, agent-session, snapshot
 provider-crg → provider-protocol
 web     → contracts
 ```

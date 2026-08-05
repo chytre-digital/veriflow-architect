@@ -1,6 +1,6 @@
 # Product roadmap
 
-Twenty-five shipped features through M7's primary feature, followed by three ready M7 features. The
+Twenty-six shipped features through M7's source adapters, followed by two ready M7 features. The
 first three iterations produce the original MVP: on a real repository, what the
 [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a verified flow answer out,
 stored locally, browsable and available to an agent. Iteration 4 assembles many answers into a project
@@ -79,7 +79,7 @@ Iteration 7 — see the plan before the code
     ↓
   F025 draw flow, modules and claims in one shareable plan review   ← primary feature [shipped]
     ↓
-  F026 accept Markdown, spec-kit, Claude Code and branch plan sources
+  F026 accept Markdown, spec-kit, Claude Code and branch plan sources              [shipped]
     ↓
   F027 install the integration and hand approved plans to the review screen
     ↓

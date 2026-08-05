@@ -20,6 +20,7 @@
       "@veriflow/store": ["packages/store/src/index.ts"],
       "@veriflow/provider-protocol": ["packages/provider-protocol/src/index.ts"],
       "@veriflow/provider-crg": ["packages/provider-crg/src/index.ts"],
+      "@veriflow/plan-source": ["packages/plan-source/src/index.ts"],
       "@veriflow/callgraph": ["packages/callgraph/src/index.ts"],
       "@veriflow/workspace": ["packages/workspace/src/index.ts"],
       "@veriflow/providers": ["packages/providers/src/index.ts"],
