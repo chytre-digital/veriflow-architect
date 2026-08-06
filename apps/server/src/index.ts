@@ -35,8 +35,9 @@ import {
 import {
   ClaudeCodeAdapter,
   CodexAdapter,
+  agentRunProfile,
   type AgentClientAdapter,
-  type ClientCapabilities,
+  type AgentRunProfile,
 } from "@veriflow/agent-session";
 import { AskError, answersFromRun } from "@veriflow/ask";
 import { computeTraffic } from "@veriflow/callgraph";
@@ -91,10 +92,10 @@ const DEFAULT_TIMEOUT_MS = 900_000;
 
 export interface AppOptions {
   /** Which agent client a run started from the browser uses. */
-  client?: { id: string; command?: string };
+  client?: { id: string; command?: string; model?: string; reasoningEffort?: string };
   timeoutMs?: number;
   /** Overrides client construction entirely; a test injects a scripted client here. */
-  createClient?: () => AgentClientAdapter;
+  createClient?: (profile: AgentRunProfile) => AgentClientAdapter;
   /** Overrides the resolved CLI entry point the per-run MCP server is spawned from. */
   cliEntry?: string;
 }
@@ -118,34 +119,28 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
   const config = readConfig(root);
   const projectName = config?.project.name ?? basename(root);
   const projectId = config?.project.id ?? basename(root).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const defaultProfile = agentRunProfile({
+    clientId: options.client?.id ?? "claude-code",
+    model: options.client?.model,
+    reasoningEffort: options.client?.reasoningEffort,
+  });
 
   const createClient =
     options.createClient ??
-    (() =>
-      options.client?.id === "codex"
-        ? new CodexAdapter(options.client.command)
-        : new ClaudeCodeAdapter(options.client?.command));
+    ((selected: AgentRunProfile) => {
+      const command = selected.clientId === defaultProfile.clientId ? options.client?.command : undefined;
+      return selected.clientId === "codex" ? new CodexAdapter(command) : new ClaudeCodeAdapter(command);
+    });
 
   const runs = new RunRegistry({
     root,
     dbFile,
     projectId,
     createClient,
+    defaultProfile,
     defaultTimeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     ...(options.cliEntry ? { cliEntry: options.cliEntry } : {}),
   });
-
-  // Probed once and remembered: the manifest has to state the client and its permission mode, and
-  // spawning the agent's binary on every page view to re-learn its version would be absurd.
-  let probed: ClientCapabilities | undefined;
-  let probedOnce = false;
-  const describeClient = async (): Promise<ClientCapabilities | undefined> => {
-    if (!probedOnce) {
-      probed = await createClient().probe();
-      probedOnce = true;
-    }
-    return probed;
-  };
 
   const withStore = <T>(fn: (store: Store) => T): T => {
     const store = new Store({ file: dbFile });
@@ -1008,71 +1003,143 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
 
   /* ------------------------------------------------------------------ ask (F006) */
 
+  const agentClientsForView = async (refresh = false) =>
+    (await runs.clients(refresh)).map((item) => ({
+      id: item.id,
+      available: item.available,
+      reason: item.reason,
+      version: item.capabilities?.version,
+      transport: item.capabilities?.transport,
+      permissionMode: item.capabilities?.readOnlyMode,
+      reasoningEffortValues: item.capabilities?.reasoningEffortValues,
+    }));
+
+  const planForView = (question: string, entry?: string) => {
+    const plan = runs.plan(question, entry);
+    const candidates = plan.ranking.candidates.map((candidate) => ({
+      id: candidate.entryPoint.id,
+      label: candidate.entryPoint.label,
+      path: candidate.entryPoint.path,
+      kind: candidate.entryPoint.kind,
+      score: candidate.score,
+      chosen: candidate.entryPoint.id === plan.chosen?.id,
+    }));
+    // An explicit entry choice survives a profile-only replan even when its lexical score was below
+    // the displayed ranking floor. Otherwise the selected radio would disappear from the form.
+    if (plan.chosen && !candidates.some((candidate) => candidate.id === plan.chosen!.id)) {
+      candidates.push({
+        id: plan.chosen.id,
+        label: plan.chosen.label,
+        path: plan.chosen.path,
+        kind: plan.chosen.kind,
+        score: 0,
+        chosen: true,
+      });
+    }
+    return {
+      classification: plan.classification,
+      candidates,
+      margin: plan.ranking.margin,
+      threshold: plan.ranking.threshold,
+      chosenLabel: plan.chosen?.label,
+      snapshotId: plan.snapshot.id,
+      snapshotDirty: Boolean(plan.snapshot.dirty),
+    };
+  };
+
+  app.get("/api/agent-clients", async (c) =>
+    c.json({
+      contractVersion: 1,
+      clients: await runs.clients(c.req.query("refresh") === "1"),
+    }),
+  );
+
   app.get("/ask", async (c) => {
     const question = c.req.query("q") ?? "";
+    const rawProfile = {
+      clientId: c.req.query("client") ?? defaultProfile.clientId,
+      model: c.req.query("model") ?? defaultProfile.model,
+      reasoningEffort: c.req.query("effort") ?? defaultProfile.reasoningEffort,
+    };
+    const clients = await agentClientsForView(c.req.query("refreshClients") === "1");
     const live = runs.current();
     const base = {
       chrome: withStore((store) => chromeOf(store, "ask")),
       project: projectName,
+      profile: rawProfile,
+      clients,
       liveRunId: live?.runId,
       liveQuestion: live?.question,
     };
     if (!question.trim()) return c.html(askPage(base));
 
+    let plan: ReturnType<typeof planForView>;
     try {
-      const plan = runs.plan(question, c.req.query("entry"));
-      const capabilities = await describeClient();
+      plan = planForView(question, c.req.query("entry"));
+    } catch (error) {
+      return c.html(askPage({ ...base, question, error: reason(error) }), 400);
+    }
+
+    try {
+      const profile = agentRunProfile(rawProfile);
+      const { capabilities, provenance } = await runs.previewProfile(profile);
       return c.html(
         askPage({
           ...base,
           question,
-          plan: {
-            classification: plan.classification,
-            candidates: plan.ranking.candidates.map((candidate) => ({
-              id: candidate.entryPoint.id,
-              label: candidate.entryPoint.label,
-              path: candidate.entryPoint.path,
-              kind: candidate.entryPoint.kind,
-              score: candidate.score,
-              chosen: candidate.entryPoint.id === plan.chosen?.id,
-            })),
-            margin: plan.ranking.margin,
-            threshold: plan.ranking.threshold,
-            chosenLabel: plan.chosen?.label,
-            snapshotId: plan.snapshot.id,
-            snapshotDirty: Boolean(plan.snapshot.dirty),
+          plan,
+          client: {
+            id: capabilities.id,
+            version: capabilities.version,
+            transport: capabilities.transport,
+            permissionMode: capabilities.readOnlyMode,
+            model: provenance.effective.model,
+            reasoningEffort: provenance.effective.reasoningEffort,
+            root,
           },
-          client: capabilities
-            ? {
-                id: capabilities.id,
-                version: capabilities.version,
-                transport: capabilities.transport,
-                permissionMode: capabilities.readOnlyMode,
-                root,
-              }
-            : undefined,
         }),
       );
     } catch (error) {
-      return c.html(askPage({ ...base, question, error: reason(error) }), 400);
+      return c.html(askPage({ ...base, question, plan, error: reason(error) }), 400);
     }
   });
 
   app.post("/ask", async (c) => {
     const body = await c.req.parseBody();
-    const question = String(body["q"] ?? "");
-    const entry = body["entry"] ? String(body["entry"]) : undefined;
-    const supersedes = body["supersedes"] ? String(body["supersedes"]) : undefined;
+    const formValue = (key: string): string | undefined => {
+      const raw = body[key];
+      const value = Array.isArray(raw) ? raw[0] : raw;
+      return value instanceof File || value === undefined ? undefined : String(value);
+    };
+    const question = formValue("q") ?? "";
+    const entry = formValue("entry") || undefined;
+    const supersedes = formValue("supersedes") || undefined;
+    const rawProfile = {
+      clientId: formValue("client") ?? defaultProfile.clientId,
+      model: formValue("model") ?? defaultProfile.model,
+      reasoningEffort: formValue("effort") ?? defaultProfile.reasoningEffort,
+    };
     try {
-      const status = await runs.start({ question, entry, supersedes });
+      const profile = agentRunProfile(rawProfile);
+      const status = await runs.start({ question, entry, supersedes, profile });
       return c.redirect(`/runs/${status.runId}`, 303);
     } catch (error) {
       const live = runs.current();
+      const clients = await agentClientsForView();
+      let plan: ReturnType<typeof planForView> | undefined;
+      try {
+        if (question.trim()) plan = planForView(question, entry);
+      } catch {
+        // The original error is more useful; the form still keeps every submitted value.
+      }
       return c.html(
         askPage({
           chrome: withStore((store) => chromeOf(store, "ask")),
           project: projectName,
           question,
+          profile: rawProfile,
+          clients,
+          plan,
           error: reason(error),
           liveRunId: live?.runId,
           liveQuestion: live?.question,
@@ -1253,6 +1320,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       return c.json({
         contractVersion: 1,
         answer: found.answer,
+        runProfile: found.runProfile,
         snapshot: found.snapshot,
         freshness: found.freshness,
         corrections: found.corrections,
@@ -1326,6 +1394,7 @@ function runView(
       events: Array<{ seq: number; ts: string; channel: string; payload: unknown }>;
       pending: Array<{ id: string; question: string; options?: string[] }>;
       state: "running" | "settled";
+      runProfile?: ReturnType<Store["readRunProfile"]>;
     })
   | undefined {
   const row = store.readRun(runId);
@@ -1336,6 +1405,7 @@ function runView(
   return {
     runId,
     question: String(store.readQuestion(String(row["question_id"]))?.["text"] ?? ""),
+    runProfile: store.readRunProfile(runId),
     events: store.readRunEvents(runId),
     pending: store.pendingQuestions(runId),
     state: settled ? "settled" : "running",

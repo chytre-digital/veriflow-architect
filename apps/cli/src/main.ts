@@ -3090,13 +3090,23 @@ program
   .option("--port <n>", "loopback port", "4747")
   .option("--client <id>", "agent client used by a run started from the browser", "claude-code")
   .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--model <id>", "initial browser model default; blank means the client default")
+  .option("--effort <level>", "initial browser effort default; blank means the client default")
   .option("--timeout <ms>", "run timeout in milliseconds", "900000")
   .description("read stored answers in the browser, and ask new questions there")
   .action(
     async (
       pathArg: string | undefined,
-      options: { port: string; client: string; clientCommand?: string; timeout: string },
+      options: {
+        port: string;
+        client: string;
+        clientCommand?: string;
+        model?: string;
+        effort?: string;
+        timeout: string;
+      },
     ) => {
+      const profile = requestedProfile(options);
       const root = resolve(pathArg ?? process.cwd());
       if (!existsSync(join(root, ".veriflow", "veriflow.db"))) {
         fail(`no VeriFlow workspace at ${root} - run: veriflow init`);
@@ -3104,7 +3114,12 @@ program
       const { url } = await startServer({
         root,
         port: Number(options.port),
-        client: { id: options.client, command: options.clientCommand },
+        client: {
+          id: profile.clientId,
+          command: options.clientCommand,
+          model: profile.model,
+          reasoningEffort: profile.reasoningEffort,
+        },
         timeoutMs: Number(options.timeout),
       });
       log(`VeriFlow reading ${root}`);

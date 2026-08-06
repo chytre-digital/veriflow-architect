@@ -1162,6 +1162,11 @@ export interface FlowPageInput {
   citations: CitationRow[];
   freshness: Freshness;
   snapshot: SnapshotFacts;
+  /** Immutable provenance of the run that submitted this answer. */
+  runProfile?: {
+    requested: { clientId: string; model?: string; reasoningEffort?: string };
+    effective: { clientId: string; clientVersion: string; model: string; reasoningEffort: string };
+  };
   selectedStepId?: string;
   selectedBranchId?: string;
   overlay?: {
@@ -1396,6 +1401,12 @@ export function flowPage(input: FlowPageInput): string {
          stored answer. Opening the UI never runs tests. The
           <a href="/answers/${esc(row.id)}/metrics?view=coverage">test-identifier proxy</a> remains a separate measurement.</p></div>`
     : "";
+  const runProfile = input.runProfile
+    ? `<div class="manifest">
+        <div><b>agent run requested</b> ${esc(input.runProfile.requested.clientId)} · model ${esc(input.runProfile.requested.model ?? "client-default")} · effort ${esc(input.runProfile.requested.reasoningEffort ?? "client-default")}</div>
+        <div><b>agent run effective</b> ${esc(`${input.runProfile.effective.clientId} ${input.runProfile.effective.clientVersion}`)} · model ${esc(input.runProfile.effective.model)} · effort ${esc(input.runProfile.effective.reasoningEffort)}</div>
+      </div>`
+    : "";
 
   return shell(
     input.chrome,
@@ -1448,6 +1459,7 @@ export function flowPage(input: FlowPageInput): string {
        }`,
        })}
        ${answerLineagePanel(input.lineage)}
+       ${runProfile}
        ${input.overlay ? "" : variantChips(answer, row.id, input.selectedBranchId)}
        ${input.overlay ? "" : runtimeCoverage}
        ${
@@ -3045,8 +3057,28 @@ export interface AskPageInput {
     snapshotId: string;
     snapshotDirty: boolean;
   };
-  /** The client the run would use — probed, not assumed. */
-  client?: { id: string; version: string; transport: string; permissionMode?: string; root: string };
+  /** Submitted values stay in the form across planning, profile review and a refusal. */
+  profile: { clientId: string; model?: string; reasoningEffort?: string };
+  /** Both supported clients are explained, but only installed clients become select options. */
+  clients: Array<{
+    id: string;
+    available: boolean;
+    reason?: string;
+    version?: string;
+    transport?: string;
+    permissionMode?: string;
+    reasoningEffortValues?: readonly string[];
+  }>;
+  /** The exact effective profile the final server-side preflight accepted. */
+  client?: {
+    id: string;
+    version: string;
+    transport: string;
+    permissionMode?: string;
+    model?: string;
+    reasoningEffort?: string;
+    root: string;
+  };
   /** A refusal: nothing indexed, no client, a run already going. */
   error?: string;
   /** A run this browser can rejoin instead of starting a second one. */
@@ -3070,8 +3102,15 @@ export function askPage(input: AskPageInput): string {
 
   const error = input.error ? `<div class="note bad">${esc(input.error)}</div>` : "";
 
+  const profileControls = runProfileControls(input, "plan");
+  const unavailable = input.clients
+    .filter((item) => !item.available)
+    .map((item) => `<div class="meta"><b>${esc(item.id)}</b> unavailable — ${esc(item.reason ?? "probe failed")}</div>`)
+    .join("");
   const form = `<form class="ask" method="get" action="/ask">
       <textarea name="q" placeholder="Jak funguje rezervace a zaplacení lekce?" autofocus>${esc(input.question ?? "")}</textarea>
+      ${profileControls}
+      ${unavailable ? `<div class="note">${unavailable}</div>` : ""}
       <div class="row"><button class="primary" type="submit">Plan the run</button>
         <span class="meta">Nothing runs yet — the next screen shows what would.</span></div>
     </form>`;
@@ -3127,8 +3166,10 @@ export function askPage(input: AskPageInput): string {
        yours to settle.</p>`;
 
   const client = input.client;
-  const manifest = `<div class="manifest">
+  const manifest = `<div class="manifest" id="run-profile-manifest">
       <div><b>agent</b> ${esc(client ? `${client.id} ${client.version} — ${client.transport}` : "unavailable")}</div>
+      <div><b>model</b> ${esc(client?.model ?? "client-default")}</div>
+      <div><b>reasoning effort</b> ${esc(client?.reasoningEffort ?? "client-default")}</div>
       <div><b>permission mode</b> ${esc(client?.permissionMode ?? "client default")}</div>
       <div><b>working directory</b> ${esc(client?.root ?? "")}</div>
       <div><b>snapshot</b> ${esc(plan.snapshotId.slice(0, 8))}${plan.snapshotDirty ? " (dirty tree)" : ""}</div>
@@ -3143,9 +3184,16 @@ export function askPage(input: AskPageInput): string {
      <form method="post" action="/ask">
        <input type="hidden" name="q" value="${esc(input.question ?? "")}">
        <h2 class="section">Entry points ranked</h2>${candidates}${decision}
+       <h2 class="section">Agent run profile</h2>
+       ${runProfileControls(input, "confirm")}
+       ${unavailable ? `<div class="note">${unavailable}</div>` : ""}
+       <div class="row" style="margin-top:10px">
+         <button class="quiet" type="submit" formmethod="get" formaction="/ask">Review this profile</button>
+         <span class="meta">Question and entry-point choice stay in place.</span>
+       </div>
        <h2 class="section">What will run</h2>${manifest}
        <div class="row" style="margin-top:18px">
-         <button class="primary" type="submit"${input.liveRunId ? " disabled" : ""}>${
+         <button class="primary" type="submit"${input.liveRunId || !client ? " disabled" : ""}>${
            plan.classification.kind === "location" ? "Ask anyway" : "Start the run"
          }</button>
          <a href="/ask" class="meta">edit the question</a>
@@ -3159,6 +3207,10 @@ export interface RunPageInput {
   project: string;
   runId: string;
   question: string;
+  runProfile?: {
+    requested: { clientId: string; model?: string; reasoningEffort?: string };
+    effective: { clientId: string; clientVersion: string; model: string; reasoningEffort: string };
+  };
   events: Array<{ seq: number; ts: string; channel: string; payload: unknown }>;
   pending: Array<{ id: string; question: string; options?: string[] }>;
   state: "running" | "settled";
@@ -3226,6 +3278,13 @@ export function runPage(input: RunPageInput): string {
            <button class="quiet" type="submit">Cancel the run</button></form>`
       : `<a class="meta" href="/ask">Ask another question</a>`;
 
+  const profile = input.runProfile
+    ? `<div class="manifest">
+        <div><b>requested</b> ${esc(input.runProfile.requested.clientId)} · model ${esc(input.runProfile.requested.model ?? "client-default")} · effort ${esc(input.runProfile.requested.reasoningEffort ?? "client-default")}</div>
+        <div><b>effective</b> ${esc(`${input.runProfile.effective.clientId} ${input.runProfile.effective.clientVersion}`)} · model ${esc(input.runProfile.effective.model)} · effort ${esc(input.runProfile.effective.reasoningEffort)}</div>
+      </div>`
+    : "";
+
   return askShell(
     input.chrome,
     "Run",
@@ -3238,11 +3297,39 @@ export function runPage(input: RunPageInput): string {
       actions: controls,
     },
     `${input.error ? `<div class="note bad">${esc(input.error)}</div>` : ""}
+     ${profile}
      <div id="pending">${pending}</div>
      <div id="console">${transcript}</div>
      <div id="answers">${answers}</div>
      ${input.state === "running" ? `<script>${runScript(input.runId, lastSeq)}</script>` : ""}`,
   );
+}
+
+function runProfileControls(input: AskPageInput, id: string): string {
+  const available = input.clients.filter((item) => item.available);
+  const selectedAvailable = available.some((item) => item.id === input.profile.clientId);
+  const options = `${
+    selectedAvailable ? "" : '<option value="" selected disabled>choose an installed client</option>'
+  }${available
+    .map(
+      (item) => `<option value="${esc(item.id)}"${item.id === input.profile.clientId ? " selected" : ""}>${esc(
+        `${item.id}${item.version ? ` ${item.version}` : ""}`,
+      )}</option>`,
+    )
+    .join("")}`;
+  const effortHint =
+    available.find((item) => item.id === input.profile.clientId)?.reasoningEffortValues?.join(", ") ??
+    "client-native value";
+  return `<div class="manifest profile-controls">
+      <label><b>agent</b><br><select name="client"${available.length ? "" : " disabled"}>${options}</select></label>
+      ${available.length ? "" : `<input type="hidden" name="client" value="${esc(input.profile.clientId)}">`}
+      <label><b>model</b><br><input name="model" value="${esc(input.profile.model ?? "")}" placeholder="client default"></label>
+      <label><b>reasoning effort</b><br><input name="effort" value="${esc(
+        input.profile.reasoningEffort ?? "",
+      )}" placeholder="client default" aria-describedby="effort-hint-${esc(id)}"></label>
+      <div class="meta" id="effort-hint-${esc(id)}">Leave model or effort blank for the client default. Effort vocabulary: ${esc(effortHint)}.</div>
+      <div><button class="quiet" type="submit" name="refreshClients" value="1" formmethod="get" formaction="/ask">Probe clients again</button></div>
+    </div>`;
 }
 
 /**

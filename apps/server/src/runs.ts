@@ -1,4 +1,12 @@
-import type { AgentClientAdapter } from "@veriflow/agent-session";
+import {
+  agentRunProfile,
+  prepareAgentRunProfile,
+  type AgentClientAdapter,
+  type AgentClientId,
+  type AgentRunProfile,
+  type AgentRunProvenance,
+  type ClientCapabilities,
+} from "@veriflow/agent-session";
 import {
   AskError,
   answersFromRun,
@@ -36,6 +44,15 @@ export interface StartRunInput {
   entry?: string;
   supersedes?: string;
   timeoutMs?: number;
+  /** Immutable for this run; consecutive runs may deliberately choose different clients. */
+  profile: AgentRunProfile;
+}
+
+export interface ClientAvailability {
+  id: AgentClientId;
+  available: boolean;
+  capabilities?: ClientCapabilities;
+  reason?: string;
 }
 
 export interface RegistryOptions {
@@ -43,7 +60,8 @@ export interface RegistryOptions {
   dbFile: string;
   projectId: string;
   /** Built per run, so a browser run and a terminal run can use different clients. */
-  createClient: () => AgentClientAdapter;
+  createClient: (profile: AgentRunProfile) => AgentClientAdapter;
+  defaultProfile: AgentRunProfile;
   defaultTimeoutMs: number;
   /** Overrides the resolved CLI entry point; a test points this at a stub. */
   cliEntry?: string;
@@ -66,8 +84,42 @@ interface Live {
 export class RunRegistry {
   private live?: Live;
   private readonly settled = new Map<string, RunStatus>();
+  private readonly probes = new Map<AgentClientId, Promise<ClientAvailability>>();
 
   constructor(private readonly options: RegistryOptions) {}
+
+  get defaultProfile(): AgentRunProfile {
+    return { ...this.options.defaultProfile };
+  }
+
+  /** Probe both supported clients once. A deliberate refresh clears only this availability cache. */
+  async clients(refresh = false): Promise<ClientAvailability[]> {
+    if (refresh) this.probes.clear();
+    return Promise.all((["claude-code", "codex"] as const).map((id) => this.probeClient(id)));
+  }
+
+  /** Resolve exactly the submitted profile without changing clients or silently dropping controls. */
+  async previewProfile(profile: AgentRunProfile): Promise<{
+    capabilities: ClientCapabilities;
+    provenance: AgentRunProvenance;
+  }> {
+    const availability = (await this.clients()).find((item) => item.id === profile.clientId)!;
+    if (!availability.available || !availability.capabilities) {
+      throw new AskError(
+        availability.reason ?? `agent client "${profile.clientId}" is unavailable`,
+        "client-unavailable",
+      );
+    }
+    const client = this.options.createClient(profile);
+    try {
+      return {
+        capabilities: availability.capabilities,
+        provenance: await prepareAgentRunProfile(client, profile, availability.capabilities),
+      };
+    } catch (error) {
+      throw new AskError(error instanceof Error ? error.message : String(error), "client-unavailable");
+    }
+  }
 
   /** The plan a person sees before committing minutes of agent time to it. */
   plan(question: string, entry?: string): AskPlan {
@@ -96,17 +148,10 @@ export class RunRegistry {
       );
     }
 
-    const client = this.options.createClient();
-    // Probed here rather than inside the session, so an absent client is a refusal on the ask screen
-    // instead of a console that opens and immediately dies.
-    const capabilities = await client.probe();
-    if (!capabilities) {
-      throw new AskError(
-        `agent client "${client.id}" is not available on this machine — start the server with ` +
-          `--client-command <path> if it is installed behind a shim`,
-        "client-unavailable",
-      );
-    }
+    // Availability, syntax and client-native profile acceptance are all resolved before Store
+    // construction, so a refusal cannot leave a question, run or answer behind.
+    const { capabilities, provenance } = await this.previewProfile(input.profile);
+    const client = this.options.createClient(input.profile);
 
     const store = new Store({ file: this.options.dbFile });
     const plan = planAsk(store, this.options.projectId, input.question, { entry: input.entry });
@@ -137,6 +182,9 @@ export class RunRegistry {
       projectId: this.options.projectId,
       plan,
       client,
+      profile: input.profile,
+      capabilities,
+      profileProvenance: provenance,
       timeoutMs: input.timeoutMs ?? this.options.defaultTimeoutMs,
       ...(this.options.cliEntry ? { cliEntry: this.options.cliEntry } : {}),
       sink: {
@@ -185,6 +233,44 @@ export class RunRegistry {
       });
 
     return status;
+  }
+
+  private probeClient(id: AgentClientId): Promise<ClientAvailability> {
+    const cached = this.probes.get(id);
+    if (cached) return cached;
+    const profile = agentRunProfile({ clientId: id });
+    const pending = (async (): Promise<ClientAvailability> => {
+      try {
+        const capabilities = await this.options.createClient(profile).probe();
+        if (!capabilities) {
+          return {
+            id,
+            available: false,
+            reason:
+              `agent client "${id}" is not available on this machine (not installed or executable)` +
+              (id === this.options.defaultProfile.clientId
+                ? " — restart with --client-command <path> if it is installed behind a shim"
+                : ""),
+          };
+        }
+        if (capabilities.id !== id) {
+          return {
+            id,
+            available: false,
+            reason: `agent adapter for "${id}" reported "${capabilities.id}"; refusing to fall back`,
+          };
+        }
+        return { id, available: true, capabilities };
+      } catch (error) {
+        return {
+          id,
+          available: false,
+          reason: `agent client "${id}" could not be probed: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    })();
+    this.probes.set(id, pending);
+    return pending;
   }
 
   /**
