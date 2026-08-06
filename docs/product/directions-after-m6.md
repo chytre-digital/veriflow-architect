@@ -8,11 +8,11 @@ promoted: M7-plan-overlay
 # Where VeriFlow goes after M6
 
 > **Exploration with a promoted core.** F023–F028 are shipped. The next user-visible gap found by
-> dogfooding is per-run agent, model and reasoning-effort selection in the browser.
-> Their detailed contract is
-> [m7-plan-overlay-plan.md](m7-plan-overlay-plan.md). Token economics and decision tooling remain
-> candidates. This document records the wider reasoning against the code as it stands after M6 on
-> 2026-08-04 (F001–F022 shipped).
+> dogfooding became the F029–F038 M8 plan: per-run profiles, declared discovery, editable PRDs and a
+> context pack. Their detailed contracts are [M7](m7-plan-overlay-plan.md) and
+> [M8](m8-controlled-context-plan.md). Remaining candidates moved to
+> [directions-after-m7.md](directions-after-m7.md). This document preserves the reasoning against the
+> code as it stood after M6 on 2026-08-04 (F001–F022 shipped).
 
 ## 0 · The five bets, in one page
 
@@ -439,13 +439,16 @@ also the cheapest path to the languages VeriFlow currently cannot see.
 | 4 | **F026 · plan-source adapter protocol** (`markdown`, `claude-code`, `speckit`, `git-branch`) | Generalises input only after one Markdown path works end to end. | small | high |
 | 5 | **F027 · `install-agent` + approved-plan handoff** | Makes the F025 outcome automatic where the client exposes a stable hook and visibly manual elsewhere. | small | unlocks adoption |
 | 6 | **F028 · the question queue** | Fixes cold start after the graphical plan path exists; converts uncovered plan areas into explicit next questions. | small | high |
-| 7 | **candidate · per-run agent profile in the browser** | Lets the person spending an F028 run choose Claude Code or Codex, its model and reasoning effort without restarting the server. | small–medium | high for adoption and cost control |
-| 8 | **candidate · project-declared architecture discovery** | Lets an unconventional codebase declare its entry points and feature/module boundaries in `.veriflow/config.yaml` instead of requiring another hard-coded detector. | small–medium | high for framework coverage |
-| 9 | **candidate · context pack + `cost` receipt** | Makes the token claim measurable and the surface cheaper without delaying the plan overlay. | small | high |
-| 10 | **candidate · options matrix** | The decision tool. It depends on cheap proposals-from-documents and should follow real use of the plan screen. | medium | high, later |
-| 11 | **candidate · decisions with freshness / exposure** | Valuable and the most likely to drift toward the banned score; keep it last and read-only. | medium | medium |
+| 7 | **F029–F030 · per-run agent profiles** | Let one browser session choose Claude Code or Codex, model and effort per run with immutable provenance. | small–medium | high for adoption and cost control |
+| 8 | **F031–F032 · project-declared discovery** | Let unconventional repositories declare entry points and feature/module boundaries as data. | small–medium | high for framework coverage |
+| 9 | **F033–F037 · editable product requirements** | Add human-owned Markdown intent, guided authoring, safe web/MCP editing, flow conformance and update proposals. | medium–large | **high** |
+| 10 | **F038 · agent context pack** | Collapse the multi-call orientation ritual into one bounded read with architecture and product context. | small | high |
 
-### TODO · Per-run agent, model and reasoning controls
+Rows 7–10 are promoted to [M8](m8-controlled-context-plan.md). Token receipts, options matrices,
+freshness-aware decisions, exposure, PRD-driven queue suggestions and the LSP indexer remain in
+[directions-after-m7.md](directions-after-m7.md).
+
+### Promoted to F029–F030 · Per-run agent, model and reasoning controls
 
 The F028 dogfood exposed another hidden global. The browser preview says which agent will run, but it
 does not let the person change it. Codex already works from the terminal with
@@ -485,7 +488,7 @@ Codex run with a named model and effort, and then previews a Claude Code run wit
 server. Both manifests show the selected profile. An invalid selection produces a refusal and zero
 new run/question/answer rows.
 
-### TODO · Project-declared entry points and feature boundaries
+### Promoted to F031–F032 · Project-declared entry points and feature boundaries
 
 Producing the architecture for the .NET Kvesteros codebase required adding product code for two
 repository-specific conventions: ASP.NET Minimal API entry points and `Features/*` module boundaries.
@@ -508,6 +511,124 @@ framework-derived results. A path, symbol, or pattern that matches nothing is a 
 data-only: no project scripts or arbitrary code loaded from `.veriflow/`. The built-in detectors remain
 the zero-config default; the configuration is the escape hatch for repository conventions that do not
 justify extending the whole tool.
+
+### Promoted to F033–F037 · Editable product requirements as declared product intent
+
+VeriFlow can describe what code does, compare declared architectural boundaries with observed
+traffic, and draw a proposed implementation plan. It still has no human-owned statement of **what
+the product is supposed to do and why**. A product requirements document fills that gap:
+
+- a PRD says which users, outcomes, requirements, invariants and non-goals matter;
+- a plan says how somebody proposes to change the implementation;
+- a flow answer says what one indexed version of the code actually does.
+
+Do not collapse those three artefacts. Code that disagrees with a PRD may be wrong, or the document
+may have fallen behind. VeriFlow shows the disagreement and preserves both revisions; a person
+decides which side changes.
+
+#### Authoring and ownership
+
+Let a person start with as little as one paragraph about the whole project, one feature, or only the
+part they care about. `veriflow prd init` and an installed **product-requirements skill** can run the
+same guided intake: ask only the missing questions about actors, desired outcomes, scope, invariants,
+non-goals and known entry points/modules, then generate a draft. Unknown answers remain explicit open
+questions; the agent must not fill them with invented business intent.
+
+Generation is optional. `veriflow prd add <markdown>` accepts and validates a document the person
+wrote directly, starts no model and asks no questions when the required ids and scope are already
+present. The guided CLI and skill are onboarding paths to the same Markdown contract, not separate
+sources of product truth.
+
+The result is ordinary Markdown under a configured documentation root, for example
+`docs/product/requirements.md` or one focused document per feature. It is the human-editable source
+of truth and can be changed in any editor, in VeriFlow's web UI, or through its explicit PRD-editing
+MCP surface after generation. VeriFlow records its repository-relative path, content fingerprint and
+the revision used by each assessment; it does not hide a duplicate canonical PRD in SQLite.
+
+Use a small Markdown contract rather than a schema disguised as prose:
+
+- frontmatter with stable document id, `status`, `owner`, `last-reviewed` and scope anchors;
+- problem, actors and desired outcomes;
+- scope and explicit non-goals;
+- requirements and invariants with stable ids such as `PRD-PAY-001`;
+- open questions and assumptions.
+
+Scope anchors may name modules, entry points, paths and other requirement ids. The prose remains
+free-form and editable; only ids and explicit anchors are structural. Generating or updating the file
+uses F009's safety boundary: show the complete Markdown and exact diff, require explicit approval,
+write only inside a documentation root, require the expected content revision, and run no Git
+command. The skill proposes content; it never writes the document through unrestricted agent tools.
+
+#### Web and MCP editing surfaces
+
+The browser must make the Markdown genuinely editable rather than only rendering it. A PRD detail
+screen provides source and preview modes, validates ids and scope anchors while editing, and shows
+the exact saved-file diff before an explicit **Save PRD** action. Saving sends the revision that the
+editor opened; if the file changed on disk meanwhile, the UI preserves the draft and shows a
+revision conflict with both versions instead of overwriting either one.
+
+MCP needs the same contract, split into deliberate steps rather than a generic filesystem write:
+
+- `list_prds` and `get_prd` return the Markdown, path and content revision;
+- `prepare_prd_update` accepts a complete candidate Markdown document plus `expectedRevision`,
+  validates it and returns the exact diff without writing;
+- `apply_prd_update` accepts the prepared proposal id, expected revision and attributed author, then
+  writes only the validated PRD path and returns its new revision.
+
+The existing read-only MCP surface and the MCP server mounted inside an `ask` run do not expose
+`apply_prd_update`. A flow-answering agent may prepare a proposal, but it cannot approve its own
+change to product intent. The write tool belongs to a separately enabled interactive PRD-editor MCP
+capability, visibly registered by the user. It still has no general file, source-code, command or Git
+access. The web editor and MCP editor call the same revision-safe application service, so neither can
+bypass path validation, diff preview, attribution or conflict detection.
+
+#### Relevance and conformance on every flow
+
+When a flow is created or re-verified, compare it with every current PRD whose explicit scope may
+apply. Publish one of three relevance states with the reason and matched anchors:
+
+- `relevant` — the flow intersects an anchored entry point, module, path or referenced requirement;
+- `not-relevant` — an explicit scope or non-goal excludes it;
+- `unknown` — prose or incomplete anchors do not justify either claim.
+
+Absence of a keyword is never proof that a PRD is unrelated. For a relevant document, attach a
+requirement assessment to the flow:
+
+- `aligned` when cited observed behaviour satisfies the explicit requirement;
+- `violated` only when cited observed behaviour directly contradicts it;
+- `unknown` when evidence or business intent is insufficient;
+- `not-applicable` for requirements outside this particular flow despite the document being relevant.
+
+Every row names the requirement id, PRD fingerprint, flow answer id, snapshot id and supporting or
+contradicting citations. The browser, export and MCP surfaces show the same assessment. Editing the
+PRD makes the assessment stale just as editing cited source can make a flow stale; VeriFlow never
+silently reinterprets a stored answer against new intent.
+
+#### Suggest document updates, never apply intent automatically
+
+If a flow reveals important product behaviour that no relevant requirement describes, VeriFlow may
+offer a Markdown patch: for example a missing failure outcome, externally visible side effect or
+invariant. The proposal states why the behaviour appears product-significant and cites the flow
+evidence behind it. It must remain a separate choice from fixing the code:
+
+1. change the implementation to satisfy the current requirement;
+2. update the PRD because the observed behaviour is intentional;
+3. keep both and record an explicit unresolved deviation.
+
+Only an approved, revision-safe diff updates the Markdown. A concurrent manual edit invalidates the
+proposal instead of being overwritten. Later, F028 can add a `requirement-uncovered` suggestion when
+a scoped requirement has no standing observed flow; it still proposes one run rather than generating
+answers in bulk.
+
+Acceptance starts from a short description of one important feature. The guided skill asks the
+missing questions and produces a draft PRD; the user edits and approves the Markdown once in the web
+UI and once through the explicitly enabled MCP editor. Both paths show the same validation and diff
+and produce the same next revision. One observed flow is classified `relevant` and receives
+evidence-backed requirement states, while an explicitly out-of-scope flow is `not-relevant` without
+forced assessments. An important newly observed outcome produces a reviewable PRD patch. Declining
+it writes nothing, approving it changes only that Markdown file, and an intervening manual edit
+causes a revision conflict rather than data loss. The MCP server used by that flow cannot apply the
+patch itself.
 
 F022 has shipped independently; none of the above depends on it. F021's correction UI gives ordinary
 review work the path that writes attributed rows to `answer_corrections`, while F022 makes follow-ups,

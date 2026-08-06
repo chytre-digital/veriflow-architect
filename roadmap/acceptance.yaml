@@ -650,3 +650,153 @@ features:
       - "plan-touched unreached module provenance and invariant near-miss disagreement;"
       - "ask-next preview, confirm, decline, and concurrent refresh;"
       - "browser/CLI/MCP parity plus no-run, no-bulk-generation, and read-only assertions."
+  F029:
+    title: "Agent run profile contract and persistence"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "Every agent-backed CLI path accepts one client, optional client-native model, and optional reasoning effort through the same versioned run-profile contract."
+      - "Codex and Claude Code adapters translate explicit values through their native controls; omitted values remain visibly client-default and no cross-client model alias is invented."
+      - "An unavailable client or rejected explicit profile fails before question/run/answer persistence and never falls back to another client, model, or effort."
+      - "Requested and effective client/version/model/effort survive run persistence, answer provenance, export, MCP reads, and portable dump/restore."
+      - "Changing profile values never changes allowed tools, permission mode, sandbox, working directory, snapshot, or repository-write boundaries."
+    tests:
+      - "Claude Code and Codex argument construction for explicit and omitted model/effort;"
+      - "ask, propose, and bounded plan translation parity;"
+      - "unavailable client, invalid/rejected profile, and no-fallback cases;"
+      - "schema migration, run/answer history, export, MCP, and dump/restore round-trip;"
+      - "tool allowlist, sandbox, source, repository, and Git immutability assertions."
+  F030:
+    title: "Per-run agent profile in the browser"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "The ask screen lists successfully probed Claude Code and Codex clients, explains unavailable clients, and allows model/effort input for the selected client."
+      - "The final preview shows effective client/version/model/effort beside permissions, working directory, snapshot, and tools before the explicit start action."
+      - "One browser server can start a run with one client and preview/start the next with another client without restart or stale global state."
+      - "Queue preview carries question/scope into ask without selecting a client, creating a row, or starting a run; profile choice remains a separate step."
+      - "Completed run and answer pages display the immutable stored profile and agree with CLI/export/MCP provenance."
+    tests:
+      - "multi-client probing, unavailable labels, defaults, and capability-cache refresh;"
+      - "form/preview preservation of question, entry point, model, and effort;"
+      - "Claude-to-Codex and Codex-to-Claude sequential browser runs;"
+      - "queue preview/decline no-write and invalid-profile refusal;"
+      - "browser/CLI/export/MCP stored-profile parity."
+  F031:
+    title: "Project-declared entry points"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "Versioned `.veriflow/config.yaml` data can declare an entry point by stable id, repository-relative path, kind, label, and symbol or source location."
+      - "Configured entry points augment automatic discovery by default, retain `configured` provenance, and deduplicate only by a proven stable identity."
+      - "A scoped explicit replacement names what it replaces; config never silently erases convention-, framework-, or manifest-derived doors."
+      - "Unmatched, ambiguous, ignored, out-of-repository, duplicate, and invalid declarations are diagnostics in doctor, index, entrypoints, browser, and MCP."
+      - "Configuration is data-only and cannot load scripts, imports, callbacks, environment interpolation, commands, or network content."
+    tests:
+      - "symbol- and location-based declarations plus stable id/label/kind;"
+      - "augment, explicit scoped replace, deduplication, and provenance;"
+      - "unmatched, ambiguous, ignored, escaped, duplicate, and invalid diagnostics;"
+      - "snapshot/callgraph/browser/MCP propagation and portable paths;"
+      - "no code execution, command, network, source write, or Git mutation."
+  F032:
+    title: "Project-declared feature and module boundaries"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "`analysis.moduleRules` derives stable module/feature ids and labels from validated path patterns and a named captured boundary segment."
+      - "Configured ownership feeds module registry, traffic, architecture, flow coverage, plan impact, and PRD scope through the existing F003 identities."
+      - "Built-in, manifest, and configured provenance remain visible; collisions and overlapping rules are ambiguous diagnostics rather than first-match wins."
+      - "Rules matching nothing, escaping the repository, producing invalid ids, or collapsing distinct paths unexpectedly are reported by doctor and index."
+      - "Rules remain declarative and apply the same ignore, normalization, and repository-boundary policy as indexed provider evidence."
+    tests:
+      - "Features/* and two additional layout fixtures with stable derived ids/labels;"
+      - "ownership, traffic, architecture, answer/plan/PRD scope propagation;"
+      - "overlap, collision, no-match, escape, ignored path, and invalid-template diagnostics;"
+      - "re-index stability and config-version backward compatibility;"
+      - "data-only parsing with no project code, command, network, or Git action."
+  F033:
+    title: "PRD Markdown contract and registry"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "Hand-written Markdown under a configured documentation root registers without a model when document id, requirement ids, and explicit scope are valid."
+      - "The parser preserves free-form prose while validating frontmatter, duplicate ids, requirement structure, anchors, paths, assumptions, and open questions."
+      - "The Markdown file remains canonical; VeriFlow stores its relative path/current fingerprint and historical references without a hidden competing document body."
+      - "List/show/check surfaces name missing, changed, invalid, and out-of-root documents instead of silently dropping them."
+      - "PRD list/detail metadata agree across CLI, browser, and read-only MCP, and every path stays repository-relative in dumps and outputs."
+    tests:
+      - "valid project and focused-feature PRDs plus manual add/list/show/check;"
+      - "duplicate/missing ids, invalid frontmatter, bad anchors, paths, and open questions;"
+      - "canonical-file fingerprint/history behaviour after manual edits;"
+      - "missing, changed, invalid, out-of-root, and symlink-escape states;"
+      - "CLI/browser/MCP/dump parity, no model, no Git, and no implicit write."
+  F034:
+    title: "Revision-safe PRD editing in browser and MCP"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "The browser edits complete PRD Markdown in source/preview modes, validates it, and shows the exact file diff before an attributed explicit save."
+      - "Saving requires the revision originally opened; a concurrent disk edit preserves both the draft and current content and refuses overwrite."
+      - "`prepare_prd_update` is read-only and returns validation/diff; `apply_prd_update` applies only that prepared content and cannot retarget its path."
+      - "The apply tool exists only on a separately enabled interactive PRD-editor MCP capability and is absent from ordinary read-only and per-run MCP tool lists."
+      - "Web and MCP editors call one service limited to validated PRDs under documentation roots and perform no source, command, network, or Git action."
+    tests:
+      - "browser source/preview/edit/validation/diff/save workflow;"
+      - "expected-revision success, stale conflict, preserved draft, attribution, and reason;"
+      - "MCP prepare/apply identity, expiry/conflict, retarget refusal, and idempotence;"
+      - "ordinary/per-run MCP write-tool absence and explicit editor registration;"
+      - "path traversal, symlink escape, non-PRD target, source, command, and Git safety."
+  F035:
+    title: "Guided PRD authoring and installed skill"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "A user can start from one paragraph about a project or focused feature and receive only the missing questions from one versioned intake contract."
+      - "CLI wizard and installed Claude Code/Codex skill produce the same normalized Markdown sections for equivalent completed intake."
+      - "Skipped or uncertain answers remain attributed open questions; generated text never invents business intent, actors, invariants, scope, or non-goals."
+      - "The result ends as an editable F034 draft/diff and neither the wizard nor agent approves or writes it implicitly."
+      - "Cancel, client failure, partial answers, and invalid anchors preserve the user's input and create no PRD file or registry state."
+    tests:
+      - "project-wide and focused-feature guided intake;"
+      - "CLI, Claude Code, and Codex equivalent-contract fixtures;"
+      - "skip/unknown/open-question and exact-user-answer provenance;"
+      - "editable preview, explicit approval boundary, and no self-approval;"
+      - "cancel, failure, partial/invalid input, no-write, and install-agent integration."
+  F036:
+    title: "Flow relevance and PRD conformance"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "Every new observed flow evaluates candidate PRDs from explicit entry-point/module/path/requirement anchors and stores the exact PRD fingerprint and snapshot used."
+      - "Relevance is `relevant`, `not-relevant`, or `unknown` with matched/excluding anchors; absence of keyword similarity never proves irrelevance."
+      - "Relevant requirements are `aligned`, `violated`, `unknown`, or `not-applicable`; aligned/violated require valid observed citations and direct explanations."
+      - "PRD edits and source-code drift are separate freshness dimensions, and re-verification never silently reinterprets an old answer against new intent."
+      - "Browser, CLI, export, and MCP serve the same assessments and distinguish comparison from enforcement or a product/architecture health score."
+    tests:
+      - "entry-point, module, path, requirement, explicit exclusion, and ambiguous relevance;"
+      - "all requirement states plus missing/invalid evidence rejection;"
+      - "answer/snapshot/PRD fingerprint persistence and independent freshness;"
+      - "manual PRD edit and source drift without silent semantic reassessment;"
+      - "browser/CLI/export/MCP parity and no enforcement/score wording."
+  F037:
+    title: "Evidence-backed PRD update proposals"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "A named PRD and stored observed answer can produce a proposed Markdown update using only that document, answer, and cited evidence."
+      - "Every proposed requirement/outcome/invariant change explains product significance and cites the observed flow evidence behind it."
+      - "The proposal stores base PRD fingerprint, answer/snapshot ids, attribution, complete candidate Markdown, and exact diff without changing the canonical file."
+      - "The UI keeps change-code, update-PRD, and unresolved-deviation choices separate; declining writes nothing and concurrent PRD edits invalidate apply."
+      - "Approval routes through F034, changes only the PRD Markdown, and cannot be performed by the proposing flow run's MCP surface."
+    tests:
+      - "missing outcome, side effect, invariant, and no-justified-update fixtures;"
+      - "bounded tool/input surface and evidence-required validation;"
+      - "stored proposal provenance, deterministic diff, and no-write preview;"
+      - "three resolution choices, decline, stale conflict, and revision-safe apply;"
+      - "per-run apply-tool absence, PRD-only write, no source/command/Git mutation."
+  F038:
+    title: "Agent context pack"
+    spec: "../docs/product/m8-controlled-context-plan.md"
+    acceptance:
+      - "`get_context_pack` requires explicit paths, task, or answer scope and returns matched modules/entry points, standing flows/citations, invariants, undecided questions, freshness, relevant PRD state, and uncovered scope."
+      - "The pack is deterministic for the same store/revisions, carries snapshot/answer/PRD/review provenance, and explains unmatched or ambiguous input."
+      - "The ordinary MCP byte budget bounds output; truncation names the exact source tool/cursor that serves every omitted section."
+      - "CLI JSON and MCP return the same semantic contract, and one call replaces the published multi-call orientation ritual in fixture benchmarks."
+      - "Reading a pack starts no model, agent run, provider update, test, write, command, network request, or Git operation."
+    tests:
+      - "path, task, and answer scopes plus unmatched/ambiguous input;"
+      - "modules, flows, citations, invariants, questions, freshness, PRD, and gaps;"
+      - "deterministic ordering, provenance, byte budget, truncation, and continuation links;"
+      - "CLI/MCP parity and benchmarked call-count/byte comparison;"
+      - "no model/run/provider/test/write/command/network/Git assertions."

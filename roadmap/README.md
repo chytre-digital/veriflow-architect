@@ -1,6 +1,7 @@
 # Product roadmap
 
-Twenty-eight shipped features through the completed M7 plan overlay. The
+Thirty shipped features through the first M8 run-control slice, followed by eight planned M8 features
+that make repository conventions and product intent explicit. The
 first three iterations produce the original MVP: on a real repository, what the
 [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a verified flow answer out,
 stored locally, browsable and available to an agent. Iteration 4 assembles many answers into a project
@@ -10,6 +11,9 @@ from a real test run beside the retained coverage proxy, and finishes the in-ans
 Iteration 7 makes the plan overlay the primary product surface: an agent's
 approved plan is drawn against current architecture for a person before implementation starts, then
 the project suggests the next useful question without auto-generating an answer.
+Iteration 8 lets a person control the client/model/effort per run, declare project-specific discovery,
+author and safely edit Markdown PRDs, compare flows with product intent, and orient an agent through
+one bounded context-pack read.
 
 Each feature is intended to fit one implementation task and carries its own acceptance and manual
 verification contract.
@@ -84,6 +88,23 @@ Iteration 7 — see the plan before the code
   F027 install the integration and hand approved plans to the review screen       [shipped]
     ↓
   F028 rank the next evidence-backed architecture question                        [shipped]
+
+Iteration 8 — control the run and product context
+  F029 persist and execute one explicit agent run profile                         [shipped]
+    ↓
+  F030 choose the agent/model/effort per browser run                              [shipped]
+
+  F031 declare repository-specific entry points                                  [planned]
+    ↓
+  F032 declare feature/module boundary rules                                      [planned]
+
+  F033 validate and register human-owned Markdown PRDs                            [planned]
+    ├─→ F034 edit PRDs revision-safely in browser and MCP                         [planned]
+    │     └─→ F035 generate PRD drafts through guided CLI/agent questions         [planned]
+    └─→ F036 assess flow relevance and requirement conformance                    [planned]
+          └─→ F037 propose evidence-backed PRD updates                            [planned]
+
+  F036 ─→ F038 return one bounded agent context pack                              [planned]
 ```
 
 The order follows the two things the MVP exists to do: **generate an application's architecture**, then
@@ -125,6 +146,16 @@ F008 and F009 depend on F005/F006 only, and can be reordered freely.
 | [F026](../docs/product/m7-plan-overlay-plan.md) | Plan-source adapters | Markdown, spec-kit, Claude Code and branch sources enter through one replaceable contract. |
 | [F027](../docs/product/m7-plan-overlay-plan.md) | Agent installation and handoff | Registration and supported hooks deliver an approved plan to the graphical review surface. |
 | [F028](../docs/product/m7-plan-overlay-plan.md) | Question queue | VeriFlow suggests the next evidence-backed question while a person remains the boundary that starts a run. |
+| [F029](../docs/product/m8-controlled-context-plan.md) | Agent run profile | Client-native model/effort choices become immutable run provenance without changing permissions. |
+| [F030](../docs/product/m8-controlled-context-plan.md) | Browser run profile | One browser session chooses Claude Code or Codex and its model/effort per run. |
+| [F031](../docs/product/m8-controlled-context-plan.md) | Declared entry points | Data-only project config adds otherwise-undetected doors with configured provenance. |
+| [F032](../docs/product/m8-controlled-context-plan.md) | Declared module boundaries | Path rules derive stable feature/module identities for unconventional repositories. |
+| [F033](../docs/product/m8-controlled-context-plan.md) | PRD Markdown contract | Human-owned product requirements are validated and registered by stable ids and fingerprints. |
+| [F034](../docs/product/m8-controlled-context-plan.md) | PRD web/MCP editor | Browser and explicitly enabled MCP editing share revision-safe diff-previewed writes. |
+| [F035](../docs/product/m8-controlled-context-plan.md) | Guided PRD authoring | A short description and missing questions produce an editable draft without invented intent. |
+| [F036](../docs/product/m8-controlled-context-plan.md) | PRD flow conformance | Flows carry evidence-backed relevance and per-requirement states against exact intent revisions. |
+| [F037](../docs/product/m8-controlled-context-plan.md) | PRD update proposals | Observed behaviour can propose a cited Markdown patch that only a person may approve. |
+| [F038](../docs/product/m8-controlled-context-plan.md) | Agent context pack | One bounded read returns relevant architecture, flows, invariants, questions, freshness, PRD state and gaps. |
 
 ## Exit gate per iteration
 
@@ -162,6 +193,13 @@ existing and proposed modules are visually distinct, every source-plan claim rem
 its evidence state, and the same plan's uncovered area enters a deterministic question queue from
 which a person — never a background process — may start the next run.
 
+**Iteration 8** is complete when one browser session can choose and persist different agent profiles
+per run; project configuration adds entry points and module boundaries with visible provenance; a
+focused Markdown PRD can be authored manually or through guided questions, edited with identical
+revision safety in web and explicitly enabled MCP, and compared with observed flows using cited
+relevance/conformance states; a PRD update remains a human-approved proposal; and one bounded context
+pack supplies the relevant architecture and product context without starting a run or write.
+
 Automated tests run without a model, an account, or a network. Windows is the primary platform;
 F001–F003 and F005 portable tests also run on one Unix-like runner.
 
@@ -188,13 +226,12 @@ lives on where. Much of
 [`docs/veriflow-architecture-spec.md`](../docs/veriflow-architecture-spec.md), previously marked
 long-term exploration, is now in scope.
 
-## Candidates beyond M7, not yet implementation-ready
+## Candidates beyond M8, not yet implementation-ready
 
-1. a first-party/LSP indexer behind the F002 protocol, removing the external dependency;
-2. a context pack, text MCP format and measured `citedSource` cost receipt;
-3. an options matrix comparing up to three proposals without selecting or scoring a winner;
-4. project decisions with evidence freshness and per-module exposure kept as separate counts;
-5. editor deep links and structural flow corrections, after their review boundary is settled.
+The remaining directions — measured cost receipts, dense text responses, options matrices,
+freshness-aware decisions, exposure, PRD-driven queue suggestions and a first-party/LSP indexer — are
+kept in [`directions-after-m7.md`](../docs/product/directions-after-m7.md). F038 promotes only the
+semantic context-pack contract; it does not silently absorb the separate token-economics work.
 
 Open decisions that can still alter existing features are in [open-questions.md](open-questions.md).
 Q3, Q4, Q6 and Q8 retain working defaults; Q5 is explicitly deferred until correction editing grows

@@ -74,6 +74,14 @@ iterations:
       implementation: current and planned flow steps are overlaid, touched and proposed modules are
       distinct, every plan claim keeps its evidence state, and the same project offers an
       evidence-backed next question without starting an agent run by itself.
+  - id: M8-controlled-context
+    name: Control the run and product context
+    features: [F029, F030, F031, F032, F033, F034, F035, F036, F037, F038]
+    done: >-
+      A person chooses client/model/effort per run, declares repository-specific architecture
+      conventions, authors and revision-safely edits Markdown product requirements, sees relevant
+      flows compared with those exact requirements, and gives an agent the bounded architecture and
+      product context for a task through one read-only MCP call.
 
 features:
   F001:
@@ -473,6 +481,96 @@ features:
       rank components. `ask --next` previews and confirms explicitly, then refuses a stale
       confirmation if a concurrent refresh changed the queue; reading and declining write no run,
       question or answer.
+  F029:
+    title: Agent run profile contract and persistence
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: shipped
+    dependsOn: [F004, F005]
+    outcome: >-
+      Every agent-backed operation accepts a client-native model/effort profile, applies it without
+      changing the sandbox, and stores requested and effective values as immutable run provenance.
+  F030:
+    title: Per-run agent profile in the browser
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: shipped
+    dependsOn: [F006, F028, F029]
+    outcome: >-
+      One browser session can choose an available Claude Code or Codex profile for each run and show
+      its effective values before start and throughout answer history without restarting the server.
+  F031:
+    title: Project-declared entry points
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F001, F003]
+    outcome: >-
+      Data-only config adds repository-specific entry points with configured provenance and visible
+      diagnostics while preserving automatic detection by default.
+  F032:
+    title: Project-declared feature and module boundaries
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F003, F031]
+    outcome: >-
+      Declarative path rules derive stable feature/module identities for unconventional repositories
+      and feed every existing ownership, traffic, plan and scope surface without project code.
+  F033:
+    title: PRD Markdown contract and registry
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F001, F009, F012]
+    outcome: >-
+      Human-owned Markdown product requirements are validated and registered by stable document and
+      requirement ids, scope anchors and content fingerprints without starting a model.
+  F034:
+    title: Revision-safe PRD editing in browser and MCP
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F006, F010, F033]
+    outcome: >-
+      Web and explicitly enabled interactive MCP editors share one diff-previewed, attributed,
+      optimistic-revision write service limited to validated PRD Markdown.
+  F035:
+    title: Guided PRD authoring and installed skill
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F027, F033, F034]
+    outcome: >-
+      A short project/feature description plus guided unanswered questions becomes an editable PRD
+      draft without invented business intent or self-approved writes.
+  F036:
+    title: Flow relevance and PRD conformance
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F005, F007, F010, F018, F033]
+    outcome: >-
+      Observed flows carry revision-pinned PRD relevance and per-requirement aligned, violated,
+      unknown or not-applicable assessments with evidence and separate source/intent freshness.
+  F037:
+    title: Evidence-backed PRD update proposals
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F034, F036]
+    outcome: >-
+      A flow can propose a cited Markdown PRD patch for human review, while decline writes nothing,
+      stale proposals conflict, and the proposing run cannot apply its own product-intent change.
+  F038:
+    title: Agent context pack
+    spec: ../docs/product/m8-controlled-context-plan.md
+    iteration: M8-controlled-context
+    status: planned
+    dependsOn: [F010, F011, F016, F028, F036]
+    outcome: >-
+      One bounded read-only tool returns task-relevant modules, flows, citations, invariants, open
+      questions, freshness, product intent and uncovered scope with explicit truncation paths.
 
 blocking:
   - question: Q2
