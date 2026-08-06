@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -257,6 +257,36 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
       `CREATE INDEX IF NOT EXISTS prd_edits_by_document
          ON prd_edits(project_id, document_id, applied_at DESC)`,
+    ],
+  },
+  {
+    to: 10,
+    summary: "PRD draft proposals may precede registration while retaining their bound identity",
+    rebuildsReferencedTable: true,
+    statements: [
+      `CREATE TABLE prd_update_proposals_v2 (
+         id TEXT PRIMARY KEY,
+         project_id TEXT NOT NULL,
+         document_id TEXT NOT NULL,
+         target_path TEXT NOT NULL,
+         expected_revision TEXT NOT NULL,
+         candidate_revision TEXT NOT NULL,
+         markdown TEXT NOT NULL,
+         diff_json TEXT NOT NULL,
+         diagnostics_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         expires_at TEXT NOT NULL,
+         applied_at TEXT,
+         result_json TEXT
+       )`,
+      `INSERT INTO prd_update_proposals_v2
+         (id, project_id, document_id, target_path, expected_revision, candidate_revision,
+          markdown, diff_json, diagnostics_json, created_at, expires_at, applied_at, result_json)
+       SELECT id, project_id, document_id, target_path, expected_revision, candidate_revision,
+          markdown, diff_json, diagnostics_json, created_at, expires_at, applied_at, result_json
+       FROM prd_update_proposals`,
+      `DROP TABLE prd_update_proposals`,
+      `ALTER TABLE prd_update_proposals_v2 RENAME TO prd_update_proposals`,
     ],
   },
 ];
@@ -694,8 +724,7 @@ CREATE TABLE IF NOT EXISTS prd_update_proposals (
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
   applied_at TEXT,
-  result_json TEXT,
-  FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
+  result_json TEXT
 );
 CREATE TABLE IF NOT EXISTS prd_edits (
   proposal_id TEXT PRIMARY KEY REFERENCES prd_update_proposals(id),

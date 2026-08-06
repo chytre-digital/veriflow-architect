@@ -30,8 +30,9 @@ export function createPrdEditorServer(options: PrdEditorServerOptions): McpServe
     {
       instructions:
         "Interactive PRD editor. prepare_prd_update changes no canonical file. apply_prd_update " +
-        "requires a prepared identity, exact opened revision, author and reason, and may write only " +
-        "that registered Markdown document under a configured documentation root.",
+        "requires a prepared identity, its exact bound revision (including missing for a new PRD), " +
+        "author and reason, and may write only that proposal's Markdown target under a configured " +
+        "documentation root.",
     },
   );
 
@@ -86,7 +87,7 @@ export function createPrdEditorServer(options: PrdEditorServerOptions): McpServe
       title: "Apply one prepared PRD update",
       description:
         "Apply only the exact content and target bound into a prepared proposal. Requires the " +
-        "opened revision, author and reason; conflicts never overwrite the current file.",
+        "bound revision, author and reason; conflicts never overwrite the current file.",
       inputSchema: {
         proposalId: z.string(),
         expectedRevision: z.string(),

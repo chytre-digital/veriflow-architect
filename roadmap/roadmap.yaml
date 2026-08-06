@@ -539,7 +539,7 @@ features:
     title: Guided PRD authoring and installed skill
     spec: ../docs/product/m8-controlled-context-plan.md
     iteration: M8-controlled-context
-    status: planned
+    status: shipped
     dependsOn: [F027, F033, F034]
     outcome: >-
       A short project/feature description plus guided unanswered questions becomes an editable PRD

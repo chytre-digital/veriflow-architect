@@ -10,6 +10,7 @@ import {
   buildAgentInstallPlan,
   diagnoseAgentIntegration,
   handoffApprovedClaudePlan,
+  productRequirementsSkillText,
   type AgentLauncher,
   type ArchitectureDigest,
 } from "@veriflow/agent-integration";
@@ -83,6 +84,7 @@ describe("F027 agent installation", () => {
       ".mcp.json",
       ".claude/settings.json",
       ".claude/skills/veriflow/SKILL.md",
+      ".claude/skills/product-requirements/SKILL.md",
       "CLAUDE.md",
     ]);
     expect(plan.changes.every((change) => change.diff.some((line) => line.kind === "+"))).toBe(true);
@@ -106,6 +108,8 @@ describe("F027 agent installation", () => {
     });
     expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toContain("# Existing project guidance");
     expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toContain("3 indexed modules");
+    expect(readFileSync(join(root, ".claude/skills/product-requirements/SKILL.md"), "utf8"))
+      .toBe(productRequirementsSkillText());
 
     expect(diagnoseAgentIntegration({ root, client: "claude-code", launcher, digest }).state).toBe("registered");
     expect(buildAgentInstallPlan({ root, client: "claude-code", launcher, digest }).changes).toEqual([]);
@@ -141,6 +145,10 @@ describe("F027 agent installation", () => {
     const skill = readFileSync(join(root, ".agents/skills/veriflow/SKILL.md"), "utf8");
     expect(skill).toContain("This handoff is manual");
     expect(skill).toContain("An empty impact result means no stored answer cites that path");
+    const productSkill = readFileSync(join(root, ".agents/skills/product-requirements/SKILL.md"), "utf8");
+    expect(productSkill).toBe(productRequirementsSkillText());
+    expect(productSkill).toContain("Ask only the returned `missingQuestions`");
+    expect(productSkill).toContain("Never call `apply_prd_update`");
     const diagnosis = diagnoseAgentIntegration({ root, client: "codex", launcher, digest });
     expect(diagnosis).toMatchObject({ state: "registered", capability: "manual-plan-handoff" });
     expect(diagnosis.manualCommand).toContain("plan <approved-plan.md>");

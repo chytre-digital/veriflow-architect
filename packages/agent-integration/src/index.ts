@@ -405,6 +405,7 @@ function desiredFiles(
   strict: boolean,
 ): DesiredFile[] {
   const skill = skillText(client, launcher, root);
+  const productRequirementsSkill = productRequirementsSkillText();
   const digestBlock = architectureDigestBlock(digest);
   if (client === "claude-code") {
     const mcpPath = ".mcp.json";
@@ -453,6 +454,7 @@ function desiredFiles(
         });
       }),
       exactDesired(".claude/skills/veriflow/SKILL.md", skill),
+      exactDesired(".claude/skills/product-requirements/SKILL.md", productRequirementsSkill),
       managedTextDesired(root, "CLAUDE.md", digestBlock),
     ];
   }
@@ -480,6 +482,7 @@ function desiredFiles(
       },
     },
     exactDesired(".agents/skills/veriflow/SKILL.md", skill),
+    exactDesired(".agents/skills/product-requirements/SKILL.md", productRequirementsSkill),
     managedTextDesired(root, "AGENTS.md", digestBlock),
   ];
 }
@@ -508,6 +511,36 @@ function skillText(client: AgentClient, launcher: AgentLauncher, root: string): 
     client === "claude-code"
       ? "After the user approves ExitPlanMode, the installed PostToolUse hook saves the exact approved plan, translates it only when one observed flow is unambiguous, and prints its review URL. It does not approve or implement the plan."
       : `Codex has no installed automatic approved-plan hook. This handoff is manual: \`${manual}\`. Use the printed plan id with \`plan-propose <planId> <answerId>\`, then open \`/plans/<planId>\`.`,
+  ].join("\n"));
+}
+
+export function productRequirementsSkillText(): string {
+  return endNewline([
+    "---",
+    "name: product-requirements",
+    "description: Guide a user from a short project or feature description to an editable VeriFlow PRD draft. Use when the user wants to create, draft, define, or clarify product requirements, actors, outcomes, scope, non-goals, requirements, invariants, assumptions, anchors, or open questions.",
+    "---",
+    "",
+    "# Draft product requirements",
+    "",
+    "1. Preserve the user's starting paragraph exactly. Call `prepare_prd_draft` with intake",
+    "   `contractVersion: 1`, kind `project` or `feature`, that paragraph as `brief`, every exact",
+    "   answer already known, and a provisional documentation path such as",
+    "   `docs/product/prd-draft.md`.",
+    "2. Ask only the returned `missingQuestions`, in their returned order, through the client's",
+    "   native question channel. Do not infer an actor, outcome, scope item, non-goal, requirement,",
+    "   invariant, assumption, anchor, owner, or open question from repository code or from silence.",
+    "3. Preserve answers verbatim. Represent an explicit `none` with an empty list or empty anchor",
+    "   object. Put skipped or uncertain fields in `unresolved` with reason `skipped` or `uncertain`",
+    "   and retain any exact uncertain response.",
+    "4. Call `prepare_prd_draft` again with the completed intake and the intended path. Show the full",
+    "   editable Markdown, diagnostics, exact diff, and proposal id. Let the user edit and prepare",
+    "   again as often as needed.",
+    "5. Stop at preview. Never call `apply_prd_update`, never write a PRD or source file, never run",
+    "   Git, and never treat your own draft as approved product intent.",
+    "",
+    "If the question channel or client fails, return the partial intake JSON and exact answers to the",
+    "user so the session can resume. Do not create a file, registry row, or substitute guessed text.",
   ].join("\n"));
 }
 

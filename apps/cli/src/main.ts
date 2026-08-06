@@ -86,7 +86,20 @@ import {
   loadPlanSource,
   type PlanSourceKind,
 } from "@veriflow/plan-source";
-import { getPrd, listPrds, registerPrd, PrdValidationError, type PrdRegistryEntry } from "@veriflow/prd";
+import {
+  getPrd,
+  listPrds,
+  prepareGuidedPrdDraft,
+  prdIntakeQuestions,
+  registerPrd,
+  PRD_INTAKE_CONTRACT_VERSION,
+  PrdValidationError,
+  type PrdIntake,
+  type PrdIntakeAnswers,
+  type PrdIntakeQuestion,
+  type PrdRegistryEntry,
+  type PrdScopeAnchors,
+} from "@veriflow/prd";
 import {
   DEFAULT_DEPTH,
   SPAGHETTI_BANDS,
@@ -2862,6 +2875,128 @@ program
 const prdCommand = program.command("prd").description("register and inspect human-owned Markdown product requirements");
 
 prdCommand
+  .command("init")
+  .argument("[path]")
+  .option("--kind <kind>", "intake scope: project or feature", "feature")
+  .option("--brief <paragraph>", "exact starting project or feature description")
+  .option("--answers <json>", "prefill intake answers with one JSON object")
+  .option("--target <markdown>", "repository-relative Markdown target under a documentation root")
+  .option("--json", "machine-readable preview")
+  .description("guide one paragraph into an editable PRD draft without approving or writing it")
+  .action(async (
+    pathArg: string | undefined,
+    options: { kind: string; brief?: string; answers?: string; target?: string; json?: boolean },
+  ) => {
+    if (options.kind !== "project" && options.kind !== "feature") {
+      fail(`unsupported PRD intake kind "${options.kind}"; use project or feature`);
+    }
+    const root = resolve(pathArg ?? process.cwd());
+    let answers: PrdIntakeAnswers;
+    try {
+      const parsed = options.answers ? JSON.parse(options.answers) : {};
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("--answers must be one JSON object");
+      }
+      answers = parsed as PrdIntakeAnswers;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    let brief = options.brief;
+    let intake: PrdIntake | undefined;
+    let rl: ReturnType<typeof createInterface> | undefined;
+    const ask = async (prompt: string): Promise<string> => {
+      rl ??= createInterface({ input: process.stdin, output: process.stdout });
+      return rl.question(prompt);
+    };
+    try {
+      if (brief === undefined) {
+        const response = await ask("Describe the project or focused feature in one paragraph (or type cancel): ");
+        if (response.trim().toLowerCase() === "cancel") {
+          printPrdIntakeStop("cancelled", {
+            contractVersion: PRD_INTAKE_CONTRACT_VERSION,
+            kind: options.kind,
+            brief: response,
+            answers,
+          }, options.json);
+          return;
+        }
+        brief = response;
+      }
+
+      intake = {
+        contractVersion: PRD_INTAKE_CONTRACT_VERSION,
+        kind: options.kind,
+        brief,
+        answers,
+      };
+      for (const question of prdIntakeQuestions(intake)) {
+        const suffix = question.answerKind === "list"
+          ? " (semicolon-separated; none, skip, uncertain, or cancel)"
+          : question.answerKind === "anchors"
+            ? " (JSON object; none, skip, uncertain, or cancel)"
+            : " (skip, uncertain, or cancel)";
+        const response = await ask(`${question.prompt}${suffix}: `);
+        const control = response.trim().toLowerCase();
+        if (control === "cancel") {
+          printPrdIntakeStop("cancelled", intake, options.json);
+          return;
+        }
+        if (control === "skip" || control === "uncertain" || control === "?" || control.startsWith("uncertain:")) {
+          intake.unresolved ??= [];
+          intake.unresolved.push({
+            field: question.id,
+            reason: control === "skip" ? "skipped" : "uncertain",
+            ...(response.length ? { response } : {}),
+          });
+          continue;
+        }
+        recordPrdIntakeAnswer(intake.answers, question, response);
+      }
+    } catch (error) {
+      printPrdIntakeStop(
+        "client-failure",
+        intake ?? {
+          contractVersion: PRD_INTAKE_CONTRACT_VERSION,
+          kind: options.kind,
+          brief: brief ?? "",
+          answers,
+        },
+        options.json,
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exitCode = 1;
+      return;
+    } finally {
+      rl?.close();
+    }
+
+    const documentationRoots = readConfig(root)?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
+    const id = intake.answers.documentId?.trim().toLowerCase() || "prd-draft";
+    const target = options.target ?? `${documentationRoots[0] ?? "docs"}/product/${id}.md`;
+    const ctx = open(root);
+    try {
+      const draft = prepareGuidedPrdDraft(
+        ctx.store,
+        ctx.root,
+        ctx.projectId,
+        documentationRoots,
+        intake,
+        target,
+      );
+      if (options.json) {
+        log(JSON.stringify({ state: draft.proposal ? "prepared" : "incomplete", draft }, null, 2));
+      } else {
+        printGuidedPrdDraft(draft);
+      }
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    ctx.close();
+  });
+
+prdCommand
   .command("add")
   .argument("<markdown>")
   .argument("[path]")
@@ -2968,6 +3103,76 @@ function printPrd(entry: PrdRegistryEntry): void {
   }
   for (const item of entry.diagnostics) {
     log(`  ${item.severity.padEnd(7)} ${item.code}${item.line ? `:${item.line}` : ""}  ${item.message}`);
+  }
+}
+
+function recordPrdIntakeAnswer(answers: PrdIntakeAnswers, question: PrdIntakeQuestion, response: string): void {
+  if (question.answerKind === "scalar") {
+    (answers as Record<string, unknown>)[question.id] = response;
+    return;
+  }
+  if (question.answerKind === "list") {
+    (answers as Record<string, unknown>)[question.id] = response.trim().toLowerCase() === "none"
+      ? []
+      : response.split(";").filter((item) => item.trim().length > 0);
+    return;
+  }
+  if (response.trim().toLowerCase() === "none") {
+    answers.anchors = emptyPrdAnchors();
+    return;
+  }
+  const value = JSON.parse(response) as PrdScopeAnchors;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("anchor answer must be a JSON object or none");
+  }
+  answers.anchors = value;
+}
+
+function emptyPrdAnchors(): PrdScopeAnchors {
+  return {
+    entryPoints: [],
+    modules: [],
+    paths: [],
+    requirements: [],
+    excludes: { entryPoints: [], modules: [], paths: [], requirements: [] },
+  };
+}
+
+function printPrdIntakeStop(
+  state: "cancelled" | "client-failure",
+  intake: PrdIntake,
+  json = false,
+  error?: string,
+): void {
+  const result = {
+    contractVersion: PRD_INTAKE_CONTRACT_VERSION,
+    state,
+    intake,
+    ...(error ? { error } : {}),
+  };
+  if (json) log(JSON.stringify(result, null, 2));
+  else {
+    log(state === "cancelled" ? "PRD intake cancelled." : "The client question channel failed.");
+    log("No PRD file, registry entry, or approval proposal was created. Exact partial input:");
+    log(JSON.stringify(result, null, 2));
+  }
+}
+
+function printGuidedPrdDraft(draft: ReturnType<typeof prepareGuidedPrdDraft>): void {
+  log(`Guided PRD ${draft.proposal ? "proposal prepared" : "draft incomplete"}`);
+  log(`  target       ${draft.targetPath}`);
+  log(`  revision     ${draft.revision}`);
+  if (draft.proposal) log(`  proposal     ${draft.proposal.proposalId}`);
+  log("  The Markdown was not written or approved. Review and apply it through the explicit F034 editor.");
+  log("\nEditable Markdown preview:\n");
+  log(draft.markdown);
+  log("Exact diff:");
+  for (const line of draft.diff) log(`${line.kind}${line.text}`);
+  if (draft.diagnostics.length) {
+    log("\nDiagnostics:");
+    for (const item of draft.diagnostics) {
+      log(`  ${item.severity.padEnd(7)} ${item.code}${item.line ? `:${item.line}` : ""}  ${item.message}`);
+    }
   }
 }
 

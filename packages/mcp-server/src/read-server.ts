@@ -35,7 +35,12 @@ import {
   type ToolResponseEnvelope,
 } from "@veriflow/answers";
 import { FUNCTION_RULES, METRIC_RULES, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from "@veriflow/metrics";
-import { getPrd, listPrds, preparePrdUpdate } from "@veriflow/prd";
+import {
+  getPrd,
+  listPrds,
+  prepareGuidedPrdDraft,
+  preparePrdUpdate,
+} from "@veriflow/prd";
 import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
 
 /**
@@ -67,6 +72,47 @@ const BYTE_BUDGET = 48_000;
 /** Each listed answer costs a hash pass over the files it cites, so the listing page stays small. */
 const ANSWER_PAGE = 25;
 const REACHABILITY_DEPTH = 6;
+
+const prdAnchorsSchema = z.object({
+  entryPoints: z.array(z.string()),
+  modules: z.array(z.string()),
+  paths: z.array(z.string()),
+  requirements: z.array(z.string()),
+  excludes: z.object({
+    entryPoints: z.array(z.string()),
+    modules: z.array(z.string()),
+    paths: z.array(z.string()),
+    requirements: z.array(z.string()),
+  }).strict(),
+}).strict();
+
+const prdIntakeSchema = z.object({
+  contractVersion: z.literal(1),
+  kind: z.enum(["project", "feature"]),
+  brief: z.string(),
+  answers: z.object({
+    documentId: z.string().optional(),
+    title: z.string().optional(),
+    owner: z.string().optional(),
+    actors: z.array(z.string()).optional(),
+    outcomes: z.array(z.string()).optional(),
+    scope: z.array(z.string()).optional(),
+    nonGoals: z.array(z.string()).optional(),
+    requirements: z.array(z.string()).optional(),
+    invariants: z.array(z.string()).optional(),
+    anchors: prdAnchorsSchema.optional(),
+    assumptions: z.array(z.string()).optional(),
+    openQuestions: z.array(z.string()).optional(),
+  }).strict(),
+  unresolved: z.array(z.object({
+    field: z.enum([
+      "documentId", "title", "owner", "actors", "outcomes", "scope", "nonGoals",
+      "requirements", "invariants", "anchors", "assumptions", "openQuestions",
+    ]),
+    reason: z.enum(["skipped", "uncertain"]),
+    response: z.string().optional(),
+  }).strict()).optional(),
+}).strict();
 
 const INSTRUCTIONS = [
   "VeriFlow serves flow answers that were produced by an agent run and checked citation by citation.",
@@ -214,6 +260,36 @@ export function createReadServer(options: ReadServerOptions): McpServer {
           expectedRevision,
         });
         return projectOr(() => ({ data: { proposal } }));
+      } catch (error) {
+        return refuse(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
+  server.registerTool(
+    "prepare_prd_draft",
+    {
+      title: "Guide and preview a new PRD draft",
+      description:
+        "Apply the versioned PRD intake contract to exact user answers. Returns only missing " +
+        "questions plus normalized Markdown, diagnostics and an exact create diff. Completed valid " +
+        "input receives an F034 proposal; this tool cannot approve or write the file.",
+      inputSchema: {
+        targetPath: z.string(),
+        intake: prdIntakeSchema,
+      },
+    },
+    async ({ targetPath, intake }) => {
+      try {
+        const draft = prepareGuidedPrdDraft(
+          store,
+          root,
+          projectId,
+          documentationRoots,
+          intake,
+          targetPath,
+        );
+        return projectOr(() => ({ data: { draft } }));
       } catch (error) {
         return refuse(error instanceof Error ? error.message : String(error));
       }
