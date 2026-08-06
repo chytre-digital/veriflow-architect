@@ -1,14 +1,14 @@
 ---
 status: proposal
 owner: TODO
-last-reviewed: 2026-08-05
+last-reviewed: 2026-08-06
 promoted: M7-plan-overlay
 ---
 
 # Where VeriFlow goes after M6
 
-> **Exploration with a promoted core.** F023–F026 are shipped; agent handoff and the question queue
-> remain implementation-ready F027–F028 in `roadmap.yaml`.
+> **Exploration with a promoted core.** F023–F028 are shipped. The next user-visible gap found by
+> dogfooding is per-run agent, model and reasoning-effort selection in the browser.
 > Their detailed contract is
 > [m7-plan-overlay-plan.md](m7-plan-overlay-plan.md). Token economics and decision tooling remain
 > candidates. This document records the wider reasoning against the code as it stands after M6 on
@@ -439,10 +439,51 @@ also the cheapest path to the languages VeriFlow currently cannot see.
 | 4 | **F026 · plan-source adapter protocol** (`markdown`, `claude-code`, `speckit`, `git-branch`) | Generalises input only after one Markdown path works end to end. | small | high |
 | 5 | **F027 · `install-agent` + approved-plan handoff** | Makes the F025 outcome automatic where the client exposes a stable hook and visibly manual elsewhere. | small | unlocks adoption |
 | 6 | **F028 · the question queue** | Fixes cold start after the graphical plan path exists; converts uncovered plan areas into explicit next questions. | small | high |
-| 7 | **candidate · project-declared architecture discovery** | Lets an unconventional codebase declare its entry points and feature/module boundaries in `.veriflow/config.yaml` instead of requiring another hard-coded detector. | small–medium | high for framework coverage |
-| 8 | **candidate · context pack + `cost` receipt** | Makes the token claim measurable and the surface cheaper without delaying the plan overlay. | small | high |
-| 9 | **candidate · options matrix** | The decision tool. It depends on cheap proposals-from-documents and should follow real use of the plan screen. | medium | high, later |
-| 10 | **candidate · decisions with freshness / exposure** | Valuable and the most likely to drift toward the banned score; keep it last and read-only. | medium | medium |
+| 7 | **candidate · per-run agent profile in the browser** | Lets the person spending an F028 run choose Claude Code or Codex, its model and reasoning effort without restarting the server. | small–medium | high for adoption and cost control |
+| 8 | **candidate · project-declared architecture discovery** | Lets an unconventional codebase declare its entry points and feature/module boundaries in `.veriflow/config.yaml` instead of requiring another hard-coded detector. | small–medium | high for framework coverage |
+| 9 | **candidate · context pack + `cost` receipt** | Makes the token claim measurable and the surface cheaper without delaying the plan overlay. | small | high |
+| 10 | **candidate · options matrix** | The decision tool. It depends on cheap proposals-from-documents and should follow real use of the plan screen. | medium | high, later |
+| 11 | **candidate · decisions with freshness / exposure** | Valuable and the most likely to drift toward the banned score; keep it last and read-only. | medium | medium |
+
+### TODO · Per-run agent, model and reasoning controls
+
+The F028 dogfood exposed another hidden global. The browser preview says which agent will run, but it
+does not let the person change it. Codex already works from the terminal with
+`veriflow ask --client codex`, and `veriflow open --client codex` makes every run from that server use
+Codex. The latter is a server-start choice, not a choice for one browser run. Neither surface accepts
+a model or reasoning effort today, even though both client CLIs have native model and effort controls.
+
+Add a **Run profile** to `/ask` and its confirmation screen:
+
+- choose `claude-code` or `codex` from clients that VeriFlow has actually probed successfully; the
+  choice belongs to the run, so the next run can use another client without restarting
+  `veriflow open`;
+- choose an optional client-native model id and reasoning effort after choosing the client. Blank
+  means the client's own default. Do not maintain a fake cross-client model catalogue, translate
+  model names between providers, or silently fall back when an explicit value is rejected;
+- give the CLI the same contract with `ask --client <id> --model <id> --effort <level>`. The
+  equivalent `open` flags supply initial browser defaults rather than fixing the server to one
+  client;
+- pass the choices through the adapters using their native controls: Codex `-m` plus
+  `model_reasoning_effort`, Claude Code `--model` plus `--effort`. Capability probing owns validation
+  because the supported effort set can differ by client version and model;
+- show the effective client, version, model, effort, permission mode and working directory on the
+  final preview. If the client is missing or an explicit model/effort is unsupported, refuse before
+  creating a run, question or answer. Never downgrade to another client or default silently;
+- persist the requested profile and whatever effective values the client reports on the immutable
+  run manifest, then expose them on the stored answer. `client default` is an honest effective value
+  when the client does not report the resolved model;
+- keep the current read-only tool and sandbox restrictions independent of model choice. Selecting a
+  more capable model must not widen the allowed tools or permissions.
+
+The question queue remains a client-free read model. `Preview this run` carries the suggested
+question and scope into `/ask`; the person chooses the run profile there. Reading, refreshing or
+declining the queue still creates nothing.
+
+Acceptance is one open browser session that defaults to Claude Code, starts one explicitly confirmed
+Codex run with a named model and effort, and then previews a Claude Code run without restarting the
+server. Both manifests show the selected profile. An invalid selection produces a refusal and zero
+new run/question/answer rows.
 
 ### TODO · Project-declared entry points and feature boundaries
 
