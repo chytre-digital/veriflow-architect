@@ -1,6 +1,6 @@
 # Product roadmap
 
-Thirty shipped features through the first M8 run-control slice, followed by eight planned M8 features
+Thirty-one shipped features through the first M8 product-intent slice, followed by seven planned M8 features
 that make repository conventions and product intent explicit. The
 first three iterations produce the original MVP: on a real repository, what the
 [frozen mockup](../artifacts/mockups/README.md) shows — a question in, a verified flow answer out,
@@ -98,7 +98,7 @@ Iteration 8 — control the run and product context
     ↓
   F032 declare feature/module boundary rules                                      [planned]
 
-  F033 validate and register human-owned Markdown PRDs                            [planned]
+  F033 validate and register human-owned Markdown PRDs                            [shipped]
     ├─→ F034 edit PRDs revision-safely in browser and MCP                         [planned]
     │     └─→ F035 generate PRD drafts through guided CLI/agent questions         [planned]
     └─→ F036 assess flow relevance and requirement conformance                    [planned]

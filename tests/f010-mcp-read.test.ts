@@ -7,9 +7,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { forgetSnapshotDrift } from "@veriflow/answers";
 import { createReadServer } from "@veriflow/mcp-server";
+import { registerPrd } from "@veriflow/prd";
 import { captureSnapshot } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
-import { initWorkspace } from "@veriflow/workspace";
+import { initWorkspace, readConfig } from "@veriflow/workspace";
 import type { CallSite, ModuleRecord, SymbolRecord } from "@veriflow/contracts";
 
 /**
@@ -122,6 +123,39 @@ function fixture(options: { extraEdges?: number; answer?: boolean } = {}): Fixtu
   );
 
   const answerId = "answer-1";
+  write(root, "docs/product/payments.md", `---
+id: PRD-PAY
+status: active
+owner: test
+last-reviewed: 2026-08-06
+scope:
+  paths:
+    - ${ROUTE}
+---
+## Problem
+Payments must settle.
+## Actors
+- Customer
+## Desired outcomes
+The refund completes.
+## Scope
+Refund flow.
+## Non-goals
+None.
+## Requirements
+### PRD-PAY-001 — Settle the refund
+The refund must settle.
+## Invariants
+### PRD-PAY-002 — Do not lose money
+Money must remain accounted for.
+## Assumptions
+- Stripe is reachable.
+## Open questions
+- [ ] Who retries failures?
+`);
+  const prdProjectId = readConfig(root)!.project.id;
+  store.upsertProject(prdProjectId, root, "p");
+  registerPrd(store, root, prdProjectId, ["docs"], "docs/product/payments.md", "2026-08-06T08:00:00.000Z");
   if (options.answer === false) return { root, store, answerId };
 
   store.createQuestion("q-1", "p", "How is a booking refunded?");
@@ -259,6 +293,8 @@ afterEach(async () => {
 function callsFor(answerId: string): Record<string, Record<string, unknown>> {
   return {
     list_flow_answers: {},
+    list_prds: {},
+    get_prd: { prdId: "PRD-PAY" },
     get_flow_answer: { answerId },
     get_flow_steps: { answerId },
     get_flow_paths: { answerId },

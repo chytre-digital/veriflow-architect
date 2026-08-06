@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -197,6 +197,31 @@ const MIGRATIONS: readonly Migration[] = [
          effective_reasoning_effort = 'client-default'`,
     ],
   },
+  {
+    to: 8,
+    summary: "human-owned PRD registry and immutable fingerprint history",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS prd_documents (
+         project_id TEXT NOT NULL REFERENCES projects(id),
+         id TEXT NOT NULL,
+         path TEXT NOT NULL,
+         registered_fingerprint TEXT NOT NULL,
+         registered_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL,
+         PRIMARY KEY (project_id, id),
+         UNIQUE (project_id, path)
+       )`,
+      `CREATE TABLE IF NOT EXISTS prd_revisions (
+         project_id TEXT NOT NULL,
+         document_id TEXT NOT NULL,
+         fingerprint TEXT NOT NULL,
+         path TEXT NOT NULL,
+         first_seen_at TEXT NOT NULL,
+         PRIMARY KEY (project_id, document_id, fingerprint),
+         FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
+       )`,
+    ],
+  },
 ];
 
 /** Tables a migration is expected to preserve, counted before and after. */
@@ -207,6 +232,8 @@ const COUNTED_TABLES = [
   "runtime_coverage_runs",
   "plans",
   "plan_proposals",
+  "prd_documents",
+  "prd_revisions",
   "snapshots",
   "answers",
   "answer_citations",
@@ -594,6 +621,29 @@ CREATE TABLE IF NOT EXISTS plan_proposals (
 );
 `;
 
+/** Canonical PRD bodies stay in Markdown; only registry identity and seen fingerprints live here. */
+const PRD_SCHEMA = `
+CREATE TABLE IF NOT EXISTS prd_documents (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  registered_fingerprint TEXT NOT NULL,
+  registered_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, id),
+  UNIQUE (project_id, path)
+);
+CREATE TABLE IF NOT EXISTS prd_revisions (
+  project_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  path TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, document_id, fingerprint),
+  FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
+);
+`;
+
 export interface OpenOptions {
   /** Absolute path to veriflow.db. Parent directories are created. */
   file: string;
@@ -623,6 +673,7 @@ export class Store {
       this.db.exec(DECLARED_ARCHITECTURE_SCHEMA);
       this.db.exec(RUNTIME_COVERAGE_SCHEMA);
       this.db.exec(PLAN_SCHEMA);
+      this.db.exec(PRD_SCHEMA);
       this.db
         .prepare("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)")
         .run(String(SCHEMA_VERSION));
@@ -642,6 +693,7 @@ export class Store {
       this.db.exec(DECLARED_ARCHITECTURE_SCHEMA);
       this.db.exec(RUNTIME_COVERAGE_SCHEMA);
       this.db.exec(PLAN_SCHEMA);
+      this.db.exec(PRD_SCHEMA);
       return;
     }
 
@@ -856,6 +908,103 @@ export class Store {
          ORDER BY created_at DESC, revision`,
       )
       .all(projectId) as Array<Record<string, unknown>>;
+  }
+
+  /* ------------------------------------------------------- product requirements (F033) */
+
+  /**
+   * Register the exact Markdown revision currently on disk. The body deliberately never crosses
+   * this boundary: the file remains the only canonical copy, while old fingerprints remain usable
+   * as provenance after a later manual edit is accepted.
+   */
+  registerPrd(input: {
+    projectId: string;
+    id: string;
+    path: string;
+    fingerprint: string;
+    seenAt: string;
+  }): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const idRow = this.db
+        .prepare("SELECT path, registered_at FROM prd_documents WHERE project_id = ? AND id = ?")
+        .get(input.projectId, input.id) as { path: string; registered_at: string } | undefined;
+      if (idRow && idRow.path !== input.path) {
+        throw new Error(`PRD ${input.id} is already registered at ${idRow.path}`);
+      }
+      const pathRow = this.db
+        .prepare("SELECT id FROM prd_documents WHERE project_id = ? AND path = ?")
+        .get(input.projectId, input.path) as { id: string } | undefined;
+      if (pathRow && pathRow.id !== input.id) {
+        throw new Error(`${input.path} is already registered as PRD ${pathRow.id}`);
+      }
+
+      this.db
+        .prepare(
+          `INSERT INTO prd_documents
+             (project_id, id, path, registered_fingerprint, registered_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(project_id, id) DO UPDATE SET
+             path = excluded.path,
+             registered_fingerprint = excluded.registered_fingerprint,
+             updated_at = excluded.updated_at`,
+        )
+        .run(
+          input.projectId,
+          input.id,
+          input.path,
+          input.fingerprint,
+          idRow?.registered_at ?? input.seenAt,
+          input.seenAt,
+        );
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO prd_revisions
+             (project_id, document_id, fingerprint, path, first_seen_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(input.projectId, input.id, input.fingerprint, input.path, input.seenAt);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  listPrdDocuments(projectId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT project_id, id, path, registered_fingerprint, registered_at, updated_at
+         FROM prd_documents WHERE project_id = ? ORDER BY id`,
+      )
+      .all(projectId) as Array<Record<string, unknown>>;
+  }
+
+  readPrdDocument(projectId: string, idOrPrefix: string): Record<string, unknown> | undefined {
+    const exact = this.db
+      .prepare(
+        `SELECT project_id, id, path, registered_fingerprint, registered_at, updated_at
+         FROM prd_documents WHERE project_id = ? AND id = ?`,
+      )
+      .get(projectId, idOrPrefix) as Record<string, unknown> | undefined;
+    if (exact) return exact;
+    const rows = this.db
+      .prepare(
+        `SELECT project_id, id, path, registered_fingerprint, registered_at, updated_at
+         FROM prd_documents WHERE project_id = ? AND id LIKE ? ORDER BY id LIMIT 2`,
+      )
+      .all(projectId, `${idOrPrefix}%`) as Array<Record<string, unknown>>;
+    return rows.length === 1 ? rows[0] : undefined;
+  }
+
+  prdRevisionHistory(projectId: string, documentId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT project_id, document_id, fingerprint, path, first_seen_at
+         FROM prd_revisions WHERE project_id = ? AND document_id = ?
+         ORDER BY first_seen_at DESC, fingerprint`,
+      )
+      .all(projectId, documentId) as Array<Record<string, unknown>>;
   }
 
   /* ----------------------------------------------------------- saved plans (F023/F024) */

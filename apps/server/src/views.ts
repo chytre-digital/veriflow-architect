@@ -695,6 +695,8 @@ export type NavId =
   | "runtime-coverage"
   | "source"
   | "impact"
+  | "prds"
+  | "prd"
   | "plans"
   | "plan"
   | "run";
@@ -750,6 +752,7 @@ const PROJECT_VIEWS: Array<{ id: NavId; label: string; hint: string; href: strin
   { id: "invariants", label: "Invariants", hint: "what outcomes say they protect", href: "/invariants" },
   { id: "architecture", label: "Architecture", hint: "modules and the traffic between them", href: "/architecture" },
   { id: "callgraph", label: "Call graph", hint: "every function the doors reach", href: "/callgraph" },
+  { id: "prds", label: "Product requirements", hint: "human-owned product intent", href: "/prds" },
   { id: "plans", label: "Plans", hint: "agent plans, before the code", href: "/plans" },
 ];
 
@@ -771,6 +774,8 @@ const NAV_LABEL: Record<NavId, string> = {
   "runtime-coverage": "Runtime coverage",
   source: "Source",
   impact: "Impact",
+  prds: "Product requirements",
+  prd: "Product requirement",
   plans: "Plans",
   plan: "Plan review",
   run: "Run",

@@ -75,6 +75,9 @@ importers:
       '@veriflow/plan-source':
         specifier: workspace:*
         version: link:../../packages/plan-source
+      '@veriflow/prd':
+        specifier: workspace:*
+        version: link:../../packages/prd
       '@veriflow/provider-protocol':
         specifier: workspace:*
         version: link:../../packages/provider-protocol
@@ -123,6 +126,9 @@ importers:
       '@veriflow/metrics':
         specifier: workspace:*
         version: link:../../packages/metrics
+      '@veriflow/prd':
+        specifier: workspace:*
+        version: link:../../packages/prd
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../../packages/snapshot
@@ -251,12 +257,18 @@ importers:
       '@veriflow/metrics':
         specifier: workspace:*
         version: link:../metrics
+      '@veriflow/prd':
+        specifier: workspace:*
+        version: link:../prd
       '@veriflow/snapshot':
         specifier: workspace:*
         version: link:../snapshot
       '@veriflow/store':
         specifier: workspace:*
         version: link:../store
+      '@veriflow/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -277,6 +289,15 @@ importers:
         version: link:../store
 
   packages/plan-source: {}
+
+  packages/prd:
+    dependencies:
+      '@veriflow/export':
+        specifier: workspace:*
+        version: link:../export
+      '@veriflow/store':
+        specifier: workspace:*
+        version: link:../store
 
   packages/provider-crg:
     dependencies:

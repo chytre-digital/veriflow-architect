@@ -16,6 +16,7 @@
     "@veriflow/metrics": "workspace:*",
     "@veriflow/agent-integration": "workspace:*",
     "@veriflow/plan-source": "workspace:*",
+    "@veriflow/prd": "workspace:*",
     "@veriflow/provider-protocol": "workspace:*",
     "@veriflow/snapshot": "workspace:*",
     "@veriflow/store": "workspace:*",

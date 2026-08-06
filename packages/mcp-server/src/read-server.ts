@@ -35,6 +35,8 @@ import {
   type ToolResponseEnvelope,
 } from "@veriflow/answers";
 import { FUNCTION_RULES, METRIC_RULES, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from "@veriflow/metrics";
+import { getPrd, listPrds } from "@veriflow/prd";
+import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
 
 /**
  * The MCP server over what VeriFlow has already verified — the surface an agent designs and reviews
@@ -114,6 +116,9 @@ export function createReadServer(options: ReadServerOptions): McpServer {
   const pageSize = options.pageSize ?? PAGE_SIZE;
   const budget = options.byteBudget ?? BYTE_BUDGET;
   const store = new Store({ file: join(root, ".veriflow", "veriflow.db") });
+  const config = readConfig(root);
+  const projectId = config?.project.id ?? "";
+  const documentationRoots = config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
   const server = new McpServer({ name: "veriflow", version: "0.1.0" }, { instructions: INSTRUCTIONS });
 
   // The handle belongs to the server's lifetime; on Windows leaving it open also makes the
@@ -150,6 +155,42 @@ export function createReadServer(options: ReadServerOptions): McpServer {
     const { data, truncated } = build(snapshotId);
     return ok(projectEnvelope(store, root, snapshotId, data, truncated));
   };
+
+  /* ------------------------------------------------ product requirements */
+
+  server.registerTool(
+    "list_prds",
+    {
+      title: "List human-owned product requirements",
+      description:
+        "Registered Markdown PRDs with repository-relative paths, exact fingerprints and current " +
+        "valid/changed/missing/invalid state. Markdown remains canonical on disk; this read starts " +
+        "no model and changes nothing.",
+      inputSchema: {},
+    },
+    async () =>
+      projectOr(() => ({
+        data: { prds: listPrds(store, root, projectId, documentationRoots) },
+      })),
+  );
+
+  server.registerTool(
+    "get_prd",
+    {
+      title: "Read one canonical Markdown PRD",
+      description:
+        "Read one registered PRD by stable id or unique prefix. Returns its current Markdown, " +
+        "explicit scope anchors, structured requirements, registry history and diagnostics. " +
+        "Free-form prose never creates hidden scope.",
+      inputSchema: { prdId: z.string() },
+    },
+    async ({ prdId }) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, prdId);
+      return entry
+        ? projectOr(() => ({ data: { prd: entry } }))
+        : refuse(`no registered PRD with id or unique prefix "${prdId}"`);
+    },
+  );
 
   /* ---------------------------------------------------------------- answers */
 

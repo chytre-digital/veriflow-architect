@@ -25,6 +25,8 @@ export const PATH_PLACEHOLDER = "{path}";
  */
 export const CORE_TABLES = [
   "projects",
+  "prd_documents",
+  "prd_revisions",
   "declared_architecture_revisions",
   "declared_architecture_heads",
   "snapshots",

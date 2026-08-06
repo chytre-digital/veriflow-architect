@@ -44,7 +44,8 @@ import { computeTraffic } from "@veriflow/callgraph";
 import { layoutCallMap } from "@veriflow/diagram";
 import { isSecretPath } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
-import { readConfig } from "@veriflow/workspace";
+import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
+import { getPrd, listPrds } from "@veriflow/prd";
 import { RunRegistry, type RunStatus } from "./runs.js";
 import {
   answersPage,
@@ -77,6 +78,7 @@ import {
 import { callGraphPage, type CallGraphEdge, type CallGraphNode } from "./callgraph-page.js";
 import { correctionPreviewPage, correctionReviewPage } from "./correction-page.js";
 import { planPage, plansPage, planArtifactHtml, type PlanListRow } from "./plan-page.js";
+import { prdPage, prdsPage } from "./prd-page.js";
 import type { TrafficCell } from "@veriflow/contracts";
 
 /**
@@ -861,6 +863,64 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
           impact: impactOf(store, root, path),
         }),
       );
+    }),
+  );
+
+  /* ------------------------------------------------ product requirements (F033) */
+
+  app.get("/prds", (c) =>
+    withStore((store) =>
+      c.html(
+        prdsPage(
+          chromeOf(store, "prds"),
+          listPrds(store, root, projectId, config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots),
+        ),
+      ),
+    ),
+  );
+
+  app.get("/prds/:id", (c) =>
+    withStore((store) => {
+      const entry = getPrd(
+        store,
+        root,
+        projectId,
+        config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots,
+        c.req.param("id"),
+      );
+      return entry
+        ? c.html(prdPage(chromeOf(store, "prd"), entry))
+        : c.html(
+            notice(
+              store,
+              "prds",
+              "Product requirement not found",
+              `No registered PRD matches ${c.req.param("id")}.`,
+            ),
+            404,
+          );
+    }),
+  );
+
+  app.get("/api/prds", (c) =>
+    withStore((store) =>
+      c.json({
+        contractVersion: 1,
+        prds: listPrds(store, root, projectId, config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots),
+      }),
+    ),
+  );
+
+  app.get("/api/prds/:id", (c) =>
+    withStore((store) => {
+      const entry = getPrd(
+        store,
+        root,
+        projectId,
+        config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots,
+        c.req.param("id"),
+      );
+      return entry ? c.json({ contractVersion: 1, prd: entry }) : c.json({ error: "prd-not-found" }, 404);
     }),
   );
 

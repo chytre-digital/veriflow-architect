@@ -521,7 +521,7 @@ features:
     title: PRD Markdown contract and registry
     spec: ../docs/product/m8-controlled-context-plan.md
     iteration: M8-controlled-context
-    status: planned
+    status: shipped
     dependsOn: [F001, F009, F012]
     outcome: >-
       Human-owned Markdown product requirements are validated and registered by stable document and

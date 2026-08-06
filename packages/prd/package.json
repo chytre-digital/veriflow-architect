@@ -1,0 +1,11 @@
+{
+  "name": "@veriflow/prd",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@veriflow/export": "workspace:*",
+    "@veriflow/store": "workspace:*"
+  }
+}

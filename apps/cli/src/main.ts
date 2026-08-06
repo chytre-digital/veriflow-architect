@@ -86,6 +86,7 @@ import {
   loadPlanSource,
   type PlanSourceKind,
 } from "@veriflow/plan-source";
+import { getPrd, listPrds, registerPrd, PrdValidationError, type PrdRegistryEntry } from "@veriflow/prd";
 import {
   DEFAULT_DEPTH,
   SPAGHETTI_BANDS,
@@ -2839,6 +2840,120 @@ program
     }
     ctx.close();
   });
+
+/* ------------------------------------------------------------------ export */
+
+const prdCommand = program.command("prd").description("register and inspect human-owned Markdown product requirements");
+
+prdCommand
+  .command("add")
+  .argument("<markdown>")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("validate and register one canonical Markdown PRD without starting a model")
+  .action((markdown: string, pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const roots = readConfig(ctx.root)?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
+    try {
+      const entry = registerPrd(ctx.store, ctx.root, ctx.projectId, roots, markdown);
+      if (options.json) log(JSON.stringify(entry, null, 2));
+      else {
+        log(`Registered ${entry.id}`);
+        log(`  path         ${entry.path}`);
+        log(`  fingerprint  ${entry.registeredFingerprint}`);
+        log(`  requirements ${entry.document?.requirements.length ?? 0}`);
+        log(`  No model ran and the Markdown file was not changed.`);
+      }
+    } catch (error) {
+      ctx.close();
+      if (error instanceof PrdValidationError && error.diagnostics.length > 0) {
+        fail(
+          `${error.message}\n${error.diagnostics
+            .map((item) => `  ${item.code}${item.line ? `:${item.line}` : ""}  ${item.message}`)
+            .join("\n")}`,
+        );
+      }
+      fail(error instanceof Error ? error.message : String(error));
+    }
+    ctx.close();
+  });
+
+prdCommand
+  .command("list")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("list registered PRDs, including changed, missing, and invalid files")
+  .action((pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const roots = readConfig(ctx.root)?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
+    const entries = listPrds(ctx.store, ctx.root, ctx.projectId, roots);
+    if (options.json) log(JSON.stringify({ contractVersion: 1, prds: entries }, null, 2));
+    else {
+      log(`${entries.length} registered PRD(s)\n`);
+      for (const entry of entries) {
+        log(`  ${entry.state.padEnd(11)} ${entry.id.padEnd(24)} ${entry.path}`);
+      }
+      if (entries.length === 0) log(`  Add one with: veriflow prd add docs/product/requirements.md`);
+    }
+    ctx.close();
+  });
+
+prdCommand
+  .command("show")
+  .argument("<id>")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("show one PRD from its canonical Markdown file")
+  .action((id: string, pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const roots = readConfig(ctx.root)?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
+    const entry = getPrd(ctx.store, ctx.root, ctx.projectId, roots, id);
+    if (!entry) {
+      ctx.close();
+      fail(`no registered PRD with id or unique prefix "${id}"`);
+    }
+    if (options.json) log(JSON.stringify(entry, null, 2));
+    else printPrd(entry);
+    ctx.close();
+  });
+
+prdCommand
+  .command("check")
+  .argument("[id]")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("validate registered PRDs without changing their files or registry revisions")
+  .action((id: string | undefined, pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const roots = readConfig(ctx.root)?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
+    const entries = id
+      ? [getPrd(ctx.store, ctx.root, ctx.projectId, roots, id)].filter((entry): entry is PrdRegistryEntry => Boolean(entry))
+      : listPrds(ctx.store, ctx.root, ctx.projectId, roots);
+    if (id && entries.length === 0) {
+      ctx.close();
+      fail(`no registered PRD with id or unique prefix "${id}"`);
+    }
+    if (options.json) log(JSON.stringify({ contractVersion: 1, prds: entries }, null, 2));
+    else for (const entry of entries) printPrd(entry);
+    if (entries.some((entry) => entry.state !== "valid")) process.exitCode = 1;
+    ctx.close();
+  });
+
+function printPrd(entry: PrdRegistryEntry): void {
+  log(`${entry.id}  ${entry.state}`);
+  log(`  path         ${entry.path}`);
+  log(`  registered   ${entry.registeredFingerprint}`);
+  if (entry.currentFingerprint) log(`  current      ${entry.currentFingerprint}`);
+  if (entry.document) {
+    log(`  status       ${entry.document.status}`);
+    log(`  owner        ${entry.document.owner}`);
+    log(`  reviewed     ${entry.document.lastReviewed}`);
+    log(`  requirements ${entry.document.requirements.length}`);
+  }
+  for (const item of entry.diagnostics) {
+    log(`  ${item.severity.padEnd(7)} ${item.code}${item.line ? `:${item.line}` : ""}  ${item.message}`);
+  }
+}
 
 /* ------------------------------------------------------------------ export */
 
