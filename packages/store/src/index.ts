@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -222,6 +222,43 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    to: 9,
+    summary: "content-addressed PRD update proposals and attributed edit history",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS prd_update_proposals (
+         id TEXT PRIMARY KEY,
+         project_id TEXT NOT NULL,
+         document_id TEXT NOT NULL,
+         target_path TEXT NOT NULL,
+         expected_revision TEXT NOT NULL,
+         candidate_revision TEXT NOT NULL,
+         markdown TEXT NOT NULL,
+         diff_json TEXT NOT NULL,
+         diagnostics_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         expires_at TEXT NOT NULL,
+         applied_at TEXT,
+         result_json TEXT,
+         FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS prd_edits (
+         proposal_id TEXT PRIMARY KEY REFERENCES prd_update_proposals(id),
+         project_id TEXT NOT NULL,
+         document_id TEXT NOT NULL,
+         path TEXT NOT NULL,
+         from_fingerprint TEXT NOT NULL,
+         to_fingerprint TEXT NOT NULL,
+         author TEXT NOT NULL,
+         reason TEXT NOT NULL,
+         applied_at TEXT NOT NULL,
+         bytes_written INTEGER NOT NULL,
+         FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
+       )`,
+      `CREATE INDEX IF NOT EXISTS prd_edits_by_document
+         ON prd_edits(project_id, document_id, applied_at DESC)`,
+    ],
+  },
 ];
 
 /** Tables a migration is expected to preserve, counted before and after. */
@@ -234,6 +271,8 @@ const COUNTED_TABLES = [
   "plan_proposals",
   "prd_documents",
   "prd_revisions",
+  "prd_update_proposals",
+  "prd_edits",
   "snapshots",
   "answers",
   "answer_citations",
@@ -642,6 +681,37 @@ CREATE TABLE IF NOT EXISTS prd_revisions (
   PRIMARY KEY (project_id, document_id, fingerprint),
   FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
 );
+CREATE TABLE IF NOT EXISTS prd_update_proposals (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  target_path TEXT NOT NULL,
+  expected_revision TEXT NOT NULL,
+  candidate_revision TEXT NOT NULL,
+  markdown TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  diagnostics_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  applied_at TEXT,
+  result_json TEXT,
+  FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
+);
+CREATE TABLE IF NOT EXISTS prd_edits (
+  proposal_id TEXT PRIMARY KEY REFERENCES prd_update_proposals(id),
+  project_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  from_fingerprint TEXT NOT NULL,
+  to_fingerprint TEXT NOT NULL,
+  author TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  applied_at TEXT NOT NULL,
+  bytes_written INTEGER NOT NULL,
+  FOREIGN KEY (project_id, document_id) REFERENCES prd_documents(project_id, id)
+);
+CREATE INDEX IF NOT EXISTS prd_edits_by_document
+  ON prd_edits(project_id, document_id, applied_at DESC);
 `;
 
 export interface OpenOptions {
@@ -1003,6 +1073,106 @@ export class Store {
         `SELECT project_id, document_id, fingerprint, path, first_seen_at
          FROM prd_revisions WHERE project_id = ? AND document_id = ?
          ORDER BY first_seen_at DESC, fingerprint`,
+      )
+      .all(projectId, documentId) as Array<Record<string, unknown>>;
+  }
+
+  savePrdUpdateProposal(input: {
+    id: string;
+    projectId: string;
+    documentId: string;
+    targetPath: string;
+    expectedRevision: string;
+    candidateRevision: string;
+    markdown: string;
+    diff: unknown;
+    diagnostics: unknown;
+    createdAt: string;
+    expiresAt: string;
+  }): Record<string, unknown> {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO prd_update_proposals
+           (id, project_id, document_id, target_path, expected_revision, candidate_revision,
+            markdown, diff_json, diagnostics_json, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.projectId,
+        input.documentId,
+        input.targetPath,
+        input.expectedRevision,
+        input.candidateRevision,
+        input.markdown,
+        JSON.stringify(input.diff),
+        JSON.stringify(input.diagnostics),
+        input.createdAt,
+        input.expiresAt,
+      );
+    return this.readPrdUpdateProposal(input.id)!;
+  }
+
+  readPrdUpdateProposal(id: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM prd_update_proposals WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  completePrdUpdateProposal(
+    proposalId: string,
+    result: unknown,
+    appliedAt: string,
+  ): Record<string, unknown> {
+    this.db
+      .prepare(
+        `UPDATE prd_update_proposals SET applied_at = ?, result_json = ?
+         WHERE id = ? AND applied_at IS NULL`,
+      )
+      .run(appliedAt, JSON.stringify(result), proposalId);
+    return this.readPrdUpdateProposal(proposalId)!;
+  }
+
+  recordPrdEdit(input: {
+    proposalId: string;
+    projectId: string;
+    documentId: string;
+    path: string;
+    fromFingerprint: string;
+    toFingerprint: string;
+    author: string;
+    reason: string;
+    appliedAt: string;
+    bytesWritten: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO prd_edits
+           (proposal_id, project_id, document_id, path, from_fingerprint, to_fingerprint,
+            author, reason, applied_at, bytes_written)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.proposalId,
+        input.projectId,
+        input.documentId,
+        input.path,
+        input.fromFingerprint,
+        input.toFingerprint,
+        input.author,
+        input.reason,
+        input.appliedAt,
+        input.bytesWritten,
+      );
+  }
+
+  prdEditHistory(projectId: string, documentId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT proposal_id, project_id, document_id, path, from_fingerprint, to_fingerprint,
+                author, reason, applied_at, bytes_written
+         FROM prd_edits WHERE project_id = ? AND document_id = ?
+         ORDER BY applied_at DESC, proposal_id`,
       )
       .all(projectId, documentId) as Array<Record<string, unknown>>;
   }

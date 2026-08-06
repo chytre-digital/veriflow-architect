@@ -1,7 +1,16 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { resolveTarget, TargetError } from "@veriflow/export";
+import {
+  diffLines,
+  ConflictError,
+  prepareWrite,
+  resolveTarget,
+  revisionOf,
+  TargetError,
+  type DiffLine,
+  type PendingWrite,
+} from "@veriflow/export";
 import type { Store } from "@veriflow/store";
 
 export const PRD_CONTRACT_VERSION = 1;
@@ -67,6 +76,15 @@ export interface PrdRegistryEntry {
   /** Present only on detail reads; the file remains canonical and is read at request time. */
   source?: string;
   history?: Array<{ fingerprint: string; path: string; firstSeenAt: string }>;
+  edits?: Array<{
+    proposalId: string;
+    fromFingerprint: string;
+    toFingerprint: string;
+    author: string;
+    reason: string;
+    appliedAt: string;
+    bytesWritten: number;
+  }>;
 }
 
 export class PrdValidationError extends Error {
@@ -76,6 +94,55 @@ export class PrdValidationError extends Error {
   ) {
     super(message);
   }
+}
+
+export class PrdUpdateError extends Error {
+  constructor(
+    message: string,
+    readonly diagnostics: PrdDiagnostic[] = [],
+  ) {
+    super(message);
+  }
+}
+
+export class PrdUpdateConflictError extends PrdUpdateError {
+  constructor(
+    message: string,
+    readonly expectedRevision: string,
+    readonly currentRevision: string | undefined,
+    readonly draft: string,
+    readonly current: string | undefined,
+  ) {
+    super(message);
+  }
+}
+
+export interface PrdUpdateProposal {
+  contractVersion: typeof PRD_CONTRACT_VERSION;
+  proposalId: string;
+  prdId: string;
+  targetPath: string;
+  expectedRevision: string;
+  candidateRevision: string;
+  diff: DiffLine[];
+  diagnostics: PrdDiagnostic[];
+  createdAt: string;
+  expiresAt: string;
+  appliedAt?: string;
+}
+
+export interface PrdUpdateResult {
+  contractVersion: typeof PRD_CONTRACT_VERSION;
+  proposalId: string;
+  prdId: string;
+  targetPath: string;
+  previousRevision: string;
+  revision: string;
+  author: string;
+  reason: string;
+  appliedAt: string;
+  bytesWritten: number;
+  idempotent: boolean;
 }
 
 const DOCUMENT_ID = /^PRD-[A-Z0-9][A-Z0-9-]*$/;
@@ -369,6 +436,234 @@ export function getPrd(
   return row ? inspectPrdRow(store, root, documentationRoots, row, true) : undefined;
 }
 
+/**
+ * Validate and persist an immutable proposal, but do not create a temporary file or change the
+ * canonical Markdown. The id binds document, path, base revision and exact candidate bytes.
+ */
+export function preparePrdUpdate(
+  store: Store,
+  root: string,
+  projectId: string,
+  documentationRoots: readonly string[],
+  input: { prdId: string; markdown: string; expectedRevision: string },
+  options: { now?: string; ttlMs?: number } = {},
+): PrdUpdateProposal {
+  if (!input.expectedRevision.trim()) {
+    throw new PrdUpdateError("preparing a PRD update requires expectedRevision");
+  }
+  const current = getPrd(store, root, projectId, documentationRoots, input.prdId);
+  if (!current) throw new PrdUpdateError(`no registered PRD with id or unique prefix "${input.prdId}"`);
+  if (!current.source || !current.currentFingerprint) {
+    throw new PrdUpdateError(`PRD ${current.id} cannot be edited while its canonical file is ${current.state}`);
+  }
+  if (current.currentFingerprint !== input.expectedRevision) {
+    throw new PrdUpdateConflictError(
+      `${current.path} changed after revision ${input.expectedRevision}; the draft was preserved`,
+      input.expectedRevision,
+      current.currentFingerprint,
+      input.markdown,
+      current.source,
+    );
+  }
+
+  // Re-resolve even though getPrd already inspected it: this function is the shared write boundary,
+  // so callers cannot broaden it by constructing a registry row outside a documentation root.
+  resolvePrdTarget(root, documentationRoots, current.path);
+  const parsed = validatePrdMarkdown(store, input.markdown);
+  const errors = parsed.diagnostics.filter((item) => item.severity === "error");
+  if (!parsed.document || errors.length > 0) {
+    throw new PrdUpdateError(`${current.path} is not a valid PRD`, parsed.diagnostics);
+  }
+  if (parsed.document.id !== current.id) {
+    throw new PrdUpdateError(
+      `prepared Markdown is ${parsed.document.id}, but proposal target is ${current.id}; PRD updates cannot retarget`,
+      [diagnostic("document.id.retarget", `document id must remain ${current.id}`)],
+    );
+  }
+
+  const candidateRevision = fingerprintPrd(input.markdown);
+  const proposalId = proposalIdentity(
+    projectId,
+    current.id,
+    current.path,
+    input.expectedRevision,
+    candidateRevision,
+  );
+  const createdAt = options.now ?? new Date().toISOString();
+  const expiresAt = new Date(Date.parse(createdAt) + (options.ttlMs ?? 15 * 60 * 1000)).toISOString();
+  const row = store.savePrdUpdateProposal({
+    id: proposalId,
+    projectId,
+    documentId: current.id,
+    targetPath: current.path,
+    expectedRevision: input.expectedRevision,
+    candidateRevision,
+    markdown: input.markdown,
+    diff: diffLines(current.source, input.markdown),
+    diagnostics: parsed.diagnostics,
+    createdAt,
+    expiresAt,
+  });
+  return proposalFromRow(row);
+}
+
+/** Apply only the candidate and target bound into a prior proposal. No caller supplies a path. */
+export function applyPrdUpdate(
+  store: Store,
+  root: string,
+  projectId: string,
+  documentationRoots: readonly string[],
+  input: { proposalId: string; expectedRevision: string; author: string; reason: string },
+  now = new Date().toISOString(),
+): PrdUpdateResult {
+  const author = input.author.trim();
+  const reason = input.reason.trim();
+  if (!author || !reason) throw new PrdUpdateError("applying a PRD update requires author and reason");
+  const row = store.readPrdUpdateProposal(input.proposalId);
+  if (!row || String(row["project_id"]) !== projectId) {
+    throw new PrdUpdateError(`no prepared PRD update ${input.proposalId}`);
+  }
+  const proposal = proposalFromRow(row);
+  const markdown = String(row["markdown"]);
+  if (
+    proposal.proposalId !==
+    proposalIdentity(
+      projectId,
+      proposal.prdId,
+      proposal.targetPath,
+      proposal.expectedRevision,
+      proposal.candidateRevision,
+    )
+  ) {
+    throw new PrdUpdateError(`proposal ${proposal.proposalId} does not match its content-addressed identity`);
+  }
+  if (input.expectedRevision !== proposal.expectedRevision) {
+    throw new PrdUpdateConflictError(
+      `proposal ${proposal.proposalId} was prepared for ${proposal.expectedRevision}, not ${input.expectedRevision}`,
+      input.expectedRevision,
+      proposal.expectedRevision,
+      markdown,
+      undefined,
+    );
+  }
+  if (row["result_json"]) {
+    return { ...(JSON.parse(String(row["result_json"])) as PrdUpdateResult), idempotent: true };
+  }
+  if (Date.parse(now) > Date.parse(proposal.expiresAt)) {
+    throw new PrdUpdateError(`proposal ${proposal.proposalId} expired at ${proposal.expiresAt}`);
+  }
+
+  const current = getPrd(store, root, projectId, documentationRoots, proposal.prdId);
+  if (!current?.source || !current.currentFingerprint) {
+    throw new PrdUpdateConflictError(
+      `PRD ${proposal.prdId} cannot be applied because its canonical file is ${current?.state ?? "missing"}`,
+      proposal.expectedRevision,
+      current?.currentFingerprint,
+      markdown,
+      current?.source,
+    );
+  }
+  if (current.path !== proposal.targetPath) {
+    throw new PrdUpdateError(
+      `proposal target is ${proposal.targetPath}, but ${proposal.prdId} is registered at ${current.path}; refusing retarget`,
+    );
+  }
+  if (current.currentFingerprint !== proposal.expectedRevision) {
+    throw new PrdUpdateConflictError(
+      `${current.path} changed after proposal ${proposal.proposalId}; the draft and current file were preserved`,
+      proposal.expectedRevision,
+      current.currentFingerprint,
+      markdown,
+      current.source,
+    );
+  }
+
+  const parsed = validatePrdMarkdown(store, markdown);
+  if (
+    !parsed.document ||
+    parsed.document.id !== proposal.prdId ||
+    parsed.diagnostics.some((item) => item.severity === "error") ||
+    fingerprintPrd(markdown) !== proposal.candidateRevision
+  ) {
+    throw new PrdUpdateError("prepared PRD content no longer validates against its bound identity", parsed.diagnostics);
+  }
+
+  let pending: PendingWrite;
+  try {
+    pending = prepareWrite(
+      root,
+      documentationRoots,
+      {
+        answerId: proposal.proposalId,
+        targetPath: proposal.targetPath,
+        mode: "update",
+        expectedRevision: revisionOf(current.source),
+      },
+      markdown,
+    );
+  } catch (error) {
+    if (error instanceof ConflictError) {
+      const latest = getPrd(store, root, projectId, documentationRoots, proposal.prdId);
+      throw new PrdUpdateConflictError(
+        `${proposal.targetPath} changed while proposal ${proposal.proposalId} was being applied`,
+        proposal.expectedRevision,
+        latest?.currentFingerprint,
+        markdown,
+        latest?.source,
+      );
+    }
+    throw error;
+  }
+  let written: ReturnType<typeof pending.commit>;
+  try {
+    written = pending.commit();
+  } catch (error) {
+    pending.abort();
+    throw error;
+  }
+
+  store.registerPrd({
+    projectId,
+    id: proposal.prdId,
+    path: proposal.targetPath,
+    fingerprint: proposal.candidateRevision,
+    seenAt: now,
+  });
+  const result: PrdUpdateResult = {
+    contractVersion: PRD_CONTRACT_VERSION,
+    proposalId: proposal.proposalId,
+    prdId: proposal.prdId,
+    targetPath: proposal.targetPath,
+    previousRevision: proposal.expectedRevision,
+    revision: proposal.candidateRevision,
+    author,
+    reason,
+    appliedAt: now,
+    bytesWritten: written.bytesWritten,
+    idempotent: false,
+  };
+  store.recordPrdEdit({
+    proposalId: proposal.proposalId,
+    projectId,
+    documentId: proposal.prdId,
+    path: proposal.targetPath,
+    fromFingerprint: proposal.expectedRevision,
+    toFingerprint: proposal.candidateRevision,
+    author,
+    reason,
+    appliedAt: now,
+    bytesWritten: written.bytesWritten,
+  });
+  store.completePrdUpdateProposal(proposal.proposalId, result, now);
+  return result;
+}
+
+export function validatePrdMarkdown(store: Store, markdown: string): ParsedPrd {
+  const parsed = parsePrd(markdown);
+  validateKnownAnchors(store, parsed, parsed.diagnostics);
+  return parsed;
+}
+
 function inspectPrdRow(
   store: Store,
   root: string,
@@ -395,7 +690,7 @@ function inspectPrdRow(
       ...base,
       state: "out-of-root",
       diagnostics: [diagnostic("path.out-of-root", error instanceof Error ? error.message : String(error))],
-      ...(detail ? { history: historyOf(store, String(row["project_id"]), id) } : {}),
+      ...(detail ? detailHistory(store, String(row["project_id"]), id) : {}),
     };
   }
   if (!existsSync(target.absolute) || !statSync(target.absolute).isFile()) {
@@ -403,7 +698,7 @@ function inspectPrdRow(
       ...base,
       state: "missing",
       diagnostics: [diagnostic("file.missing", `${path} is missing`)],
-      ...(detail ? { history: historyOf(store, String(row["project_id"]), id) } : {}),
+      ...(detail ? detailHistory(store, String(row["project_id"]), id) : {}),
     };
   }
   const source = readFileSync(target.absolute, "utf8");
@@ -417,7 +712,7 @@ function inspectPrdRow(
     currentFingerprint,
     document: parsed.document,
     diagnostics: parsed.diagnostics,
-    ...(detail ? { source, history: historyOf(store, String(row["project_id"]), id) } : {}),
+    ...(detail ? { source, ...detailHistory(store, String(row["project_id"]), id) } : {}),
   };
 }
 
@@ -446,6 +741,49 @@ function historyOf(store: Store, projectId: string, documentId: string) {
     path: String(row["path"]),
     firstSeenAt: String(row["first_seen_at"]),
   }));
+}
+
+function detailHistory(store: Store, projectId: string, documentId: string) {
+  return {
+    history: historyOf(store, projectId, documentId),
+    edits: store.prdEditHistory(projectId, documentId).map((row) => ({
+      proposalId: String(row["proposal_id"]),
+      fromFingerprint: String(row["from_fingerprint"]),
+      toFingerprint: String(row["to_fingerprint"]),
+      author: String(row["author"]),
+      reason: String(row["reason"]),
+      appliedAt: String(row["applied_at"]),
+      bytesWritten: Number(row["bytes_written"]),
+    })),
+  };
+}
+
+function proposalFromRow(row: Record<string, unknown>): PrdUpdateProposal {
+  return {
+    contractVersion: PRD_CONTRACT_VERSION,
+    proposalId: String(row["id"]),
+    prdId: String(row["document_id"]),
+    targetPath: String(row["target_path"]),
+    expectedRevision: String(row["expected_revision"]),
+    candidateRevision: String(row["candidate_revision"]),
+    diff: JSON.parse(String(row["diff_json"])) as DiffLine[],
+    diagnostics: JSON.parse(String(row["diagnostics_json"])) as PrdDiagnostic[],
+    createdAt: String(row["created_at"]),
+    expiresAt: String(row["expires_at"]),
+    ...(row["applied_at"] ? { appliedAt: String(row["applied_at"]) } : {}),
+  };
+}
+
+function proposalIdentity(
+  projectId: string,
+  prdId: string,
+  targetPath: string,
+  expectedRevision: string,
+  candidateRevision: string,
+): string {
+  return `prd-update-${createHash("sha256")
+    .update(JSON.stringify([projectId, prdId, targetPath, expectedRevision, candidateRevision]))
+    .digest("hex")}`;
 }
 
 function emptyScope(): PrdScopeAnchors {

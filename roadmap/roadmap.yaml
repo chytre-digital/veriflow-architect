@@ -530,7 +530,7 @@ features:
     title: Revision-safe PRD editing in browser and MCP
     spec: ../docs/product/m8-controlled-context-plan.md
     iteration: M8-controlled-context
-    status: planned
+    status: shipped
     dependsOn: [F006, F010, F033]
     outcome: >-
       Web and explicitly enabled interactive MCP editors share one diff-previewed, attributed,

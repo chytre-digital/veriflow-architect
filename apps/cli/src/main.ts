@@ -45,7 +45,7 @@ import {
   type ApprovedPlanSaved,
 } from "@veriflow/agent-integration";
 import { proposedModulesOf } from "@veriflow/flow-answer";
-import { serveRead, serveRun } from "@veriflow/mcp-server";
+import { servePrdEditor, serveRead, serveRun } from "@veriflow/mcp-server";
 import {
   CHANGE_IMPACT_METHOD,
   DRIFT_WINDOW,
@@ -1095,6 +1095,22 @@ program
     // No lock, no banner, no provider: this process speaks MCP on stdio, so any stray stdout would
     // corrupt the protocol, and it serves stored data rather than re-deriving anything.
     await serveRead({ root });
+  });
+
+/* --------------------------------------------------------- opt-in PRD editor MCP */
+
+program
+  .command("mcp-prd-editor")
+  .argument("[path]")
+  .description("serve the explicitly enabled, revision-safe interactive PRD editor over MCP")
+  .action(async (pathArg: string | undefined) => {
+    const root = resolve(pathArg ?? process.cwd());
+    if (!existsSync(join(root, ".veriflow", "veriflow.db"))) {
+      fail(`no VeriFlow workspace at ${root} - run: veriflow init`);
+    }
+    // This command is the capability boundary: neither `mcp` nor `mcp-run` registers the apply
+    // tool. As with every stdio server, stdout must contain MCP frames and nothing else.
+    await servePrdEditor({ root });
   });
 
 /* ------------------------------------------------------------------ ask */

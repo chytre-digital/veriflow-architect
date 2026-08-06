@@ -27,6 +27,8 @@ export const CORE_TABLES = [
   "projects",
   "prd_documents",
   "prd_revisions",
+  "prd_update_proposals",
+  "prd_edits",
   "declared_architecture_revisions",
   "declared_architecture_heads",
   "snapshots",

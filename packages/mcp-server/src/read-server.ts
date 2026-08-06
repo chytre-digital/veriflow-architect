@@ -35,7 +35,7 @@ import {
   type ToolResponseEnvelope,
 } from "@veriflow/answers";
 import { FUNCTION_RULES, METRIC_RULES, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from "@veriflow/metrics";
-import { getPrd, listPrds } from "@veriflow/prd";
+import { getPrd, listPrds, preparePrdUpdate } from "@veriflow/prd";
 import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
 
 /**
@@ -189,6 +189,34 @@ export function createReadServer(options: ReadServerOptions): McpServer {
       return entry
         ? projectOr(() => ({ data: { prd: entry } }))
         : refuse(`no registered PRD with id or unique prefix "${prdId}"`);
+    },
+  );
+
+  server.registerTool(
+    "prepare_prd_update",
+    {
+      title: "Validate and preview a PRD update",
+      description:
+        "Validate complete Markdown against one registered PRD and its opened revision. Returns a " +
+        "content-addressed proposal and exact saved-file diff. It does not change the canonical " +
+        "Markdown; applying is available only on the separately enabled PRD editor capability.",
+      inputSchema: {
+        prdId: z.string(),
+        markdown: z.string(),
+        expectedRevision: z.string(),
+      },
+    },
+    async ({ prdId, markdown, expectedRevision }) => {
+      try {
+        const proposal = preparePrdUpdate(store, root, projectId, documentationRoots, {
+          prdId,
+          markdown,
+          expectedRevision,
+        });
+        return projectOr(() => ({ data: { proposal } }));
+      } catch (error) {
+        return refuse(error instanceof Error ? error.message : String(error));
+      }
     },
   );
 

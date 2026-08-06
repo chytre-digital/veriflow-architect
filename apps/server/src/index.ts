@@ -45,7 +45,14 @@ import { layoutCallMap } from "@veriflow/diagram";
 import { isSecretPath } from "@veriflow/snapshot";
 import { Store } from "@veriflow/store";
 import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
-import { getPrd, listPrds } from "@veriflow/prd";
+import {
+  applyPrdUpdate,
+  getPrd,
+  listPrds,
+  preparePrdUpdate,
+  PrdUpdateConflictError,
+  PrdUpdateError,
+} from "@veriflow/prd";
 import { RunRegistry, type RunStatus } from "./runs.js";
 import {
   answersPage,
@@ -121,6 +128,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
   const config = readConfig(root);
   const projectName = config?.project.name ?? basename(root);
   const projectId = config?.project.id ?? basename(root).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const documentationRoots = config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
   const defaultProfile = agentRunProfile({
     clientId: options.client?.id ?? "claude-code",
     model: options.client?.model,
@@ -866,14 +874,14 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
-  /* ------------------------------------------------ product requirements (F033) */
+  /* ------------------------------------------- product requirements (F033/F034) */
 
   app.get("/prds", (c) =>
     withStore((store) =>
       c.html(
         prdsPage(
           chromeOf(store, "prds"),
-          listPrds(store, root, projectId, config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots),
+          listPrds(store, root, projectId, documentationRoots),
         ),
       ),
     ),
@@ -885,11 +893,17 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
         store,
         root,
         projectId,
-        config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots,
+        documentationRoots,
         c.req.param("id"),
       );
       return entry
-        ? c.html(prdPage(chromeOf(store, "prd"), entry))
+        ? c.html(
+            prdPage(chromeOf(store, "prd"), entry, {
+              mode: ["source", "preview", "edit"].includes(c.req.query("mode") ?? "")
+                ? (c.req.query("mode") as "source" | "preview" | "edit")
+                : "source",
+            }),
+          )
         : c.html(
             notice(
               store,
@@ -902,11 +916,103 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  app.post("/prds/:id/prepare", async (c) => {
+    if (!sameOrigin(c.req.raw)) {
+      return withStore((store) =>
+        c.html(notice(store, "prds", "Forbidden", "PRD edit forms require the same local Origin as VeriFlow."), 403),
+      );
+    }
+    const body = await c.req.parseBody();
+    const markdown = formValue(body, "markdown");
+    const expectedRevision = formValue(body, "expectedRevision");
+    return withStore((store) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, c.req.param("id"));
+      if (!entry) return c.html(notice(store, "prds", "Not found", "No such registered PRD."), 404);
+      try {
+        const proposal = preparePrdUpdate(store, root, projectId, documentationRoots, {
+          prdId: entry.id,
+          markdown,
+          expectedRevision,
+        });
+        return c.html(prdPage(chromeOf(store, "prd"), entry, { mode: "diff", draft: markdown, proposal }));
+      } catch (error) {
+        if (error instanceof PrdUpdateConflictError) {
+          return c.html(
+            prdPage(chromeOf(store, "prd"), entry, {
+              mode: "edit",
+              conflict: true,
+              draft: error.draft,
+              current: error.current,
+              error: error.message,
+            }),
+            409,
+          );
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        return c.html(
+          prdPage(chromeOf(store, "prd"), entry, {
+            mode: "edit",
+            draft: markdown,
+            diagnostics: error instanceof PrdUpdateError ? error.diagnostics : [],
+            error: message,
+          }),
+          422,
+        );
+      }
+    });
+  });
+
+  app.post("/prds/:id/apply", async (c) => {
+    if (!sameOrigin(c.req.raw)) {
+      return withStore((store) =>
+        c.html(notice(store, "prds", "Forbidden", "PRD edit forms require the same local Origin as VeriFlow."), 403),
+      );
+    }
+    const body = await c.req.parseBody();
+    return withStore((store) => {
+      const id = c.req.param("id");
+      const before = getPrd(store, root, projectId, documentationRoots, id);
+      if (!before) return c.html(notice(store, "prds", "Not found", "No such registered PRD."), 404);
+      try {
+        const saved = applyPrdUpdate(store, root, projectId, documentationRoots, {
+          proposalId: formValue(body, "proposalId"),
+          expectedRevision: formValue(body, "expectedRevision"),
+          author: formValue(body, "author"),
+          reason: formValue(body, "reason"),
+        });
+        const entry = getPrd(store, root, projectId, documentationRoots, id)!;
+        return c.html(prdPage(chromeOf(store, "prd"), entry, { mode: "source", saved }));
+      } catch (error) {
+        const entry = getPrd(store, root, projectId, documentationRoots, id) ?? before;
+        if (error instanceof PrdUpdateConflictError) {
+          return c.html(
+            prdPage(chromeOf(store, "prd"), entry, {
+              mode: "edit",
+              conflict: true,
+              draft: error.draft,
+              current: error.current,
+              error: error.message,
+            }),
+            409,
+          );
+        }
+        return c.html(
+          prdPage(chromeOf(store, "prd"), entry, {
+            mode: "edit",
+            error: error instanceof Error ? error.message : String(error),
+            diagnostics: error instanceof PrdUpdateError ? error.diagnostics : [],
+          }),
+          422,
+        );
+      }
+    });
+  });
+
   app.get("/api/prds", (c) =>
     withStore((store) =>
       c.json({
         contractVersion: 1,
-        prds: listPrds(store, root, projectId, config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots),
+        prds: listPrds(store, root, projectId, documentationRoots),
       }),
     ),
   );
@@ -917,7 +1023,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
         store,
         root,
         projectId,
-        config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots,
+        documentationRoots,
         c.req.param("id"),
       );
       return entry ? c.json({ contractVersion: 1, prd: entry }) : c.json({ error: "prd-not-found" }, 404);
@@ -1408,6 +1514,11 @@ function sameOrigin(request: Request): boolean {
   } catch {
     return false;
   }
+}
+
+function formValue(body: Record<string, string | File | string[]>, key: string): string {
+  const raw = body[key];
+  return Array.isArray(raw) ? String(raw[0] ?? "") : raw instanceof File ? "" : String(raw ?? "");
 }
 
 function correctionRequest(
