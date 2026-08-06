@@ -1,7 +1,7 @@
 ---
 status: proposal
 owner: TODO
-last-reviewed: 2026-08-04
+last-reviewed: 2026-08-05
 promoted: M7-plan-overlay
 ---
 
@@ -439,9 +439,34 @@ also the cheapest path to the languages VeriFlow currently cannot see.
 | 4 | **F026 · plan-source adapter protocol** (`markdown`, `claude-code`, `speckit`, `git-branch`) | Generalises input only after one Markdown path works end to end. | small | high |
 | 5 | **F027 · `install-agent` + approved-plan handoff** | Makes the F025 outcome automatic where the client exposes a stable hook and visibly manual elsewhere. | small | unlocks adoption |
 | 6 | **F028 · the question queue** | Fixes cold start after the graphical plan path exists; converts uncovered plan areas into explicit next questions. | small | high |
-| 7 | **candidate · context pack + `cost` receipt** | Makes the token claim measurable and the surface cheaper without delaying the plan overlay. | small | high |
-| 8 | **candidate · options matrix** | The decision tool. It depends on cheap proposals-from-documents and should follow real use of the plan screen. | medium | high, later |
-| 9 | **candidate · decisions with freshness / exposure** | Valuable and the most likely to drift toward the banned score; keep it last and read-only. | medium | medium |
+| 7 | **candidate · project-declared architecture discovery** | Lets an unconventional codebase declare its entry points and feature/module boundaries in `.veriflow/config.yaml` instead of requiring another hard-coded detector. | small–medium | high for framework coverage |
+| 8 | **candidate · context pack + `cost` receipt** | Makes the token claim measurable and the surface cheaper without delaying the plan overlay. | small | high |
+| 9 | **candidate · options matrix** | The decision tool. It depends on cheap proposals-from-documents and should follow real use of the plan screen. | medium | high, later |
+| 10 | **candidate · decisions with freshness / exposure** | Valuable and the most likely to drift toward the banned score; keep it last and read-only. | medium | medium |
+
+### TODO · Project-declared entry points and feature boundaries
+
+Producing the architecture for the .NET Kvesteros codebase required adding product code for two
+repository-specific conventions: ASP.NET Minimal API entry points and `Features/*` module boundaries.
+That made the architecture work, but it is not the sustainable extension path. A user should be able
+to describe equivalent project conventions in the committed `.veriflow/config.yaml` without changing
+and rebuilding VeriFlow itself.
+
+Explore a declarative `analysis` section that can add:
+
+- explicit entry points, identified by repository-relative path plus symbol or source location, with
+  their kind and human label;
+- feature/module boundary rules, expressed as path patterns with the segment that supplies the stable
+  module root and label;
+- optional precedence (`augment` automatic detection by default, explicit `replace` only when named),
+  so configuration does not silently erase entry points VeriFlow can already prove.
+
+Configured discoveries must carry `configured` provenance beside convention-, manifest-, and
+framework-derived results. A path, symbol, or pattern that matches nothing is a diagnostic from
+`veriflow doctor`, `index`, and `entrypoints`, never a silently ignored declaration. Keep the format
+data-only: no project scripts or arbitrary code loaded from `.veriflow/`. The built-in detectors remain
+the zero-config default; the configuration is the escape hatch for repository conventions that do not
+justify extending the whole tool.
 
 F022 has shipped independently; none of the above depends on it. F021's correction UI gives ordinary
 review work the path that writes attributed rows to `answer_corrections`, while F022 makes follow-ups,
