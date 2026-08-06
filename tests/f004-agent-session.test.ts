@@ -402,13 +402,15 @@ describe("agent session", () => {
 
 describe("client adapters", () => {
   it("probes a real client's capabilities instead of assuming them", async () => {
-    const capabilities = await new ClaudeCodeAdapter().probe();
-    if (!capabilities) return; // Not installed on this machine; nothing to assert.
-    expect(capabilities.id).toBe("claude-code");
-    expect(capabilities.version).toMatch(/\d+\.\d+/);
-    expect(["stream-json", "pty"]).toContain(capabilities.transport);
-    // A client that offers a read-only mode must be launched in it.
-    if (capabilities.supportsPermissionMode) expect(capabilities.readOnlyMode).toBeDefined();
+    for (const adapter of [new ClaudeCodeAdapter(), new CodexAdapter()]) {
+      const capabilities = await adapter.probe();
+      if (!capabilities) continue; // Not installed on this machine; nothing to assert.
+      expect(capabilities.id).toBe(adapter.id);
+      expect(capabilities.version).toMatch(/\d+\.\d+/);
+      expect(["stream-json", "pty"]).toContain(capabilities.transport);
+      // A client that offers a read-only mode must be launched in it.
+      if (capabilities.supportsPermissionMode) expect(capabilities.readOnlyMode).toBeDefined();
+    }
   });
 
   it("reports an uninstalled client as unavailable rather than throwing", async () => {

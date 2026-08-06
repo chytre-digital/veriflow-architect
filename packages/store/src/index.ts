@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -176,6 +176,27 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    to: 7,
+    summary: "requested and effective agent run profiles as immutable provenance",
+    statements: [
+      `ALTER TABLE runs ADD COLUMN run_profile_version INTEGER`,
+      `ALTER TABLE runs ADD COLUMN requested_client_id TEXT`,
+      `ALTER TABLE runs ADD COLUMN requested_model TEXT`,
+      `ALTER TABLE runs ADD COLUMN requested_reasoning_effort TEXT`,
+      `ALTER TABLE runs ADD COLUMN effective_client_id TEXT`,
+      `ALTER TABLE runs ADD COLUMN effective_client_version TEXT`,
+      `ALTER TABLE runs ADD COLUMN effective_model TEXT`,
+      `ALTER TABLE runs ADD COLUMN effective_reasoning_effort TEXT`,
+      `UPDATE runs SET
+         run_profile_version = 1,
+         requested_client_id = client_id,
+         effective_client_id = client_id,
+         effective_client_version = client_version,
+         effective_model = 'client-default',
+         effective_reasoning_effort = 'client-default'`,
+    ],
+  },
 ];
 
 /** Tables a migration is expected to preserve, counted before and after. */
@@ -202,6 +223,13 @@ export interface MigrationReport {
   applied: Array<{ to: number; summary: string }>;
   /** Where the pre-migration file was copied, when one was taken. */
   backup?: string;
+}
+
+/** Structural store representation of the F029 contract, kept dependency-free for read surfaces. */
+export interface StoredRunProfile {
+  contractVersion: number;
+  requested: { clientId: string; model?: string; reasoningEffort?: string };
+  effective: { clientId: string; clientVersion: string; model: string; reasoningEffort: string };
 }
 
 /**
@@ -306,6 +334,14 @@ CREATE TABLE IF NOT EXISTS runs (
   snapshot_id TEXT NOT NULL,
   client_id TEXT NOT NULL,
   client_version TEXT NOT NULL,
+  run_profile_version INTEGER,
+  requested_client_id TEXT,
+  requested_model TEXT,
+  requested_reasoning_effort TEXT,
+  effective_client_id TEXT,
+  effective_client_version TEXT,
+  effective_model TEXT,
+  effective_reasoning_effort TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT,
   status TEXT NOT NULL,
@@ -668,7 +704,7 @@ export class Store {
       if (migration.rebuildsReferencedTable) this.db.exec("PRAGMA foreign_keys = OFF;");
       this.db.exec("BEGIN");
       try {
-        for (const statement of migration.statements) this.db.exec(statement);
+        for (const statement of migration.statements) this.execMigrationStatement(statement);
         this.db
           .prepare("UPDATE meta SET value = ? WHERE key = 'schemaVersion'")
           .run(String(migration.to));
@@ -698,6 +734,23 @@ export class Store {
     }
 
     return report;
+  }
+
+  /**
+   * The current bootstrap schema creates tables that did not exist in very old databases before
+   * migrations run. An additive column migration must therefore tolerate the column already being
+   * present on that freshly bootstrapped table, while still adding it to databases that did have
+   * the older table shape.
+   */
+  private execMigrationStatement(statement: string): void {
+    const add = /^ALTER TABLE\s+([A-Za-z_][A-Za-z0-9_]*)\s+ADD COLUMN\s+([A-Za-z_][A-Za-z0-9_]*)\b/i.exec(
+      statement.trim(),
+    );
+    if (add) {
+      const columns = this.db.prepare(`PRAGMA table_info(${add[1]})`).all() as Array<{ name: string }>;
+      if (columns.some((column) => column.name === add[2])) return;
+    }
+    this.db.exec(statement);
   }
 
   private rowCounts(): Record<string, number> {
@@ -1055,14 +1108,38 @@ export class Store {
     snapshotId: string;
     clientId: string;
     clientVersion: string;
+    profile?: {
+      contractVersion: number;
+      requested: { clientId: string; model?: string; reasoningEffort?: string };
+      effective: { clientId: string; clientVersion: string; model: string; reasoningEffort: string };
+    };
     startedAt: string;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO runs (id, question_id, snapshot_id, client_id, client_version, started_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'running')`,
+        `INSERT INTO runs
+           (id, question_id, snapshot_id, client_id, client_version,
+            run_profile_version, requested_client_id, requested_model, requested_reasoning_effort,
+            effective_client_id, effective_client_version, effective_model, effective_reasoning_effort,
+            started_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')`,
       )
-      .run(run.id, run.questionId, run.snapshotId, run.clientId, run.clientVersion, run.startedAt);
+      .run(
+        run.id,
+        run.questionId,
+        run.snapshotId,
+        run.clientId,
+        run.clientVersion,
+        run.profile?.contractVersion ?? 1,
+        run.profile?.requested.clientId ?? run.clientId,
+        run.profile?.requested.model ?? null,
+        run.profile?.requested.reasoningEffort ?? null,
+        run.profile?.effective.clientId ?? run.clientId,
+        run.profile?.effective.clientVersion ?? run.clientVersion,
+        run.profile?.effective.model ?? "client-default",
+        run.profile?.effective.reasoningEffort ?? "client-default",
+        run.startedAt,
+      );
   }
 
   appendRunEvents(
@@ -1106,6 +1183,30 @@ export class Store {
     return this.db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as
       | Record<string, unknown>
       | undefined;
+  }
+
+  /** Requested and effective values are read from the immutable manifest, never reconstructed. */
+  readRunProfile(runId: string): StoredRunProfile | undefined {
+    const row = this.readRun(runId);
+    if (!row) return undefined;
+    const requestedClient = String(row["requested_client_id"] ?? row["client_id"] ?? "");
+    const effectiveClient = String(row["effective_client_id"] ?? row["client_id"] ?? requestedClient);
+    return {
+      contractVersion: Number(row["run_profile_version"] ?? 1),
+      requested: {
+        clientId: requestedClient,
+        ...(row["requested_model"] ? { model: String(row["requested_model"]) } : {}),
+        ...(row["requested_reasoning_effort"]
+          ? { reasoningEffort: String(row["requested_reasoning_effort"]) }
+          : {}),
+      },
+      effective: {
+        clientId: effectiveClient,
+        clientVersion: String(row["effective_client_version"] ?? row["client_version"] ?? ""),
+        model: String(row["effective_model"] ?? "client-default"),
+        reasoningEffort: String(row["effective_reasoning_effort"] ?? "client-default"),
+      },
+    };
   }
 
   /* ------------------------------------------------- ask_user, across processes */

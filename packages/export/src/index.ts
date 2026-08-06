@@ -91,6 +91,7 @@ export function prepareAnswerExport(store: Store, root: string, options: Prepare
     citations: stored.citations,
     snapshot: stored.snapshot,
     freshness: stored.freshness,
+    runProfile: stored.runProfile,
     kind: stored.kind,
     decisions: decisionsOf(stored.corrections),
     ...(parent && overlayDiff ? { overlay: { base: parent.answer, matching: overlayDiff.steps } } : {}),

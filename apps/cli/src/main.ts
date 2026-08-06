@@ -13,7 +13,17 @@ import {
 } from "@veriflow/callgraph";
 import { layoutCallMap } from "@veriflow/diagram";
 import { createProvider } from "@veriflow/providers";
-import { ClaudeCodeAdapter, CodexAdapter } from "@veriflow/agent-session";
+import {
+  ClaudeCodeAdapter,
+  CodexAdapter,
+  agentRunProfile,
+  prepareAgentRunProfile,
+  runProvenance,
+  type AgentClientAdapter,
+  type AgentRunProfile,
+  type AgentRunProvenance,
+  type ClientCapabilities,
+} from "@veriflow/agent-session";
 import {
   answersFromRun,
   applySupersede,
@@ -243,6 +253,63 @@ function probePython(): { available: boolean; version?: string } {
     }
   }
   return { available: false };
+}
+
+interface RunProfileOptions {
+  client: string;
+  clientCommand?: string;
+  model?: string;
+  effort?: string;
+}
+
+function requestedProfile(options: RunProfileOptions): AgentRunProfile {
+  try {
+    return agentRunProfile({
+      clientId: options.client,
+      model: options.model,
+      reasoningEffort: options.effort,
+    });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function adapterFor(profile: AgentRunProfile, command?: string): AgentClientAdapter {
+  return profile.clientId === "codex" ? new CodexAdapter(command) : new ClaudeCodeAdapter(command);
+}
+
+async function probeRunProfile(
+  profile: AgentRunProfile,
+  command?: string,
+): Promise<{
+  client: AgentClientAdapter;
+  capabilities: ClientCapabilities;
+  provenance: AgentRunProvenance;
+}> {
+  const client = adapterFor(profile, command);
+  const capabilities = await client.probe();
+  if (!capabilities) {
+    fail(
+      `agent client "${profile.clientId}" is not available on this machine - ` +
+        `if it is installed, give the executable directly with --client-command <path>`,
+    );
+  }
+  let provenance: AgentRunProvenance;
+  try {
+    provenance = await prepareAgentRunProfile(client, profile, capabilities);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  return { client, capabilities, provenance };
+}
+
+function profileLabel(
+  profile: AgentRunProfile,
+  capabilities: ClientCapabilities,
+  prepared?: AgentRunProvenance,
+): string {
+  const effective = (prepared ?? runProvenance(profile, capabilities)).effective;
+  return `${effective.clientId} ${effective.clientVersion} - model ${effective.model}, effort ${effective.reasoningEffort}`;
 }
 
 function integrationLauncher(): AgentLauncher {
@@ -1086,6 +1153,8 @@ program
   .option("--next", "preview the top evidence-backed suggestion, then explicitly confirm the run")
   .option("--client <id>", "agent client", "claude-code")
   .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--model <id>", "client-native model; blank means the client default")
+  .option("--effort <level>", "client-native reasoning effort; blank means the client default")
   .option("--timeout <ms>", "run timeout in milliseconds", "900000")
   .option("--entry <id>", "force an entry point instead of ranking")
   .option("--force", "run even when the question looks like a location question")
@@ -1098,6 +1167,8 @@ program
       next?: boolean;
       client: string;
       clientCommand?: string;
+      model?: string;
+      effort?: string;
       timeout: string;
       entry?: string;
       force?: boolean;
@@ -1122,6 +1193,7 @@ program
     if (!options.next && !question?.trim()) {
       fail("a question is required, or use: veriflow ask --next");
     }
+    const profile = requestedProfile(options);
 
     const ctx = open(targetPath, { touchProject: !options.next });
     let queueEntryPoint: string | undefined;
@@ -1199,23 +1271,10 @@ program
     }
     if (!plan.chosen) log(`  ranking is ambiguous - the agent picks, and says so in the transcript`);
 
-    const client =
-      options.client === "codex"
-        ? new CodexAdapter(options.clientCommand)
-        : new ClaudeCodeAdapter(options.clientCommand);
-    const capabilities = await client.probe();
-    if (!capabilities) {
-      ctx.close();
-      // An npm shim on Windows is a .ps1 or .cmd, which cannot be spawned directly. Rather than
-      // guess at every packaging layout, say where to point us.
-      fail(
-        `agent client "${options.client}" is not available on this machine - ` +
-          `if it is installed, give the executable directly with --client-command <path>`,
-      );
-    }
+    const { client, capabilities, provenance } = await probeRunProfile(profile, options.clientCommand);
 
     log(``);
-    log(`${capabilities.id} ${capabilities.version} - ${capabilities.transport}`);
+    log(`${profileLabel(profile, capabilities, provenance)} - ${capabilities.transport}`);
     log(`permission mode: ${capabilities.readOnlyMode ?? "client default"}  -  cwd: ${ctx.root}`);
     log(`snapshot ${snapshot.id.slice(0, 8)}${snapshot.dirty ? " (dirty tree)" : ""}`);
     log(``);
@@ -1226,6 +1285,9 @@ program
       projectId: ctx.projectId,
       plan,
       client,
+      profile,
+      capabilities,
+      profileProvenance: provenance,
       timeoutMs: Number(options.timeout),
       sink: {
         onEvent(event) {
@@ -1303,14 +1365,17 @@ program
   .argument("[path]")
   .option("--client <id>", "agent client", "claude-code")
   .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--model <id>", "client-native model; blank means the client default")
+  .option("--effort <level>", "client-native reasoning effort; blank means the client default")
   .option("--timeout <ms>", "run timeout in milliseconds", "900000")
   .description("design a change to a stored flow — a second answer describing what it would become")
   .action(async (
     answerArg: string,
     change: string,
     pathArg: string | undefined,
-    options: { client: string; clientCommand?: string; timeout: string },
+    options: { client: string; clientCommand?: string; model?: string; effort?: string; timeout: string },
   ) => {
+    const profile = requestedProfile(options);
     const ctx = open(pathArg);
 
     // Resolved before anything is spent. A proposal is a change to a flow that exists, so the flow
@@ -1343,18 +1408,7 @@ program
       fail(error instanceof Error ? error.message : String(error));
     }
 
-    const client =
-      options.client === "codex"
-        ? new CodexAdapter(options.clientCommand)
-        : new ClaudeCodeAdapter(options.clientCommand);
-    const capabilities = await client.probe();
-    if (!capabilities) {
-      ctx.close();
-      fail(
-        `agent client "${options.client}" is not available on this machine - ` +
-          `if it is installed, give the executable directly with --client-command <path>`,
-      );
-    }
+    const { client, capabilities, provenance } = await probeRunProfile(profile, options.clientCommand);
 
     log(`Proposing against ${parent.row.id.slice(0, 8)} - ${parent.answer.title}`);
     // The parent's freshness is stated before the run, not after it: designing against a flow whose
@@ -1362,7 +1416,7 @@ program
     log(`  ${parent.freshness.state.toUpperCase()}  ${thresholdOf(parent.freshness.state)}`);
     log(`  ${parent.citations.length} citation(s) on the parent, ${parent.row.review_state}`);
     log(``);
-    log(`${capabilities.id} ${capabilities.version} - ${capabilities.transport}`);
+    log(`${profileLabel(profile, capabilities, provenance)} - ${capabilities.transport}`);
     log(`snapshot ${plan.snapshot.id.slice(0, 8)}${plan.snapshot.dirty ? " (dirty tree)" : ""}`);
     log(``);
 
@@ -1372,6 +1426,9 @@ program
       projectId: ctx.projectId,
       plan,
       client,
+      profile,
+      capabilities,
+      profileProvenance: provenance,
       timeoutMs: Number(options.timeout),
       proposal: {
         parentAnswerId: parent.row.id,
@@ -1446,10 +1503,21 @@ program
   .description("replay a stored run exactly as it happened")
   .action((runId: string, pathArg: string | undefined) => {
     const ctx = open(pathArg);
+    const profile = ctx.store.readRunProfile(runId);
     const events = ctx.store.readRunEvents(runId);
     if (events.length === 0) {
       ctx.close();
       fail(`no transcript for run ${runId}`);
+    }
+    if (profile) {
+      log(
+        `profile      requested ${profile.requested.clientId} / ${profile.requested.model ?? "client-default"} / ` +
+          `${profile.requested.reasoningEffort ?? "client-default"}`,
+      );
+      log(
+        `             effective ${profile.effective.clientId} ${profile.effective.clientVersion} / ` +
+          `${profile.effective.model} / ${profile.effective.reasoningEffort}`,
+      );
     }
     for (const event of events) {
       log(`${String(event.seq).padStart(4)} ${event.channel.padEnd(12)} ${JSON.stringify(event.payload).slice(0, 160)}`);
@@ -1464,7 +1532,10 @@ program
   .description("list stored answers")
   .action((pathArg: string | undefined, options: { json?: boolean }) => {
     const ctx = open(pathArg);
-    const answers = listEffectiveAnswerRows(ctx.store, ctx.root);
+    const answers = listEffectiveAnswerRows(ctx.store, ctx.root).map((answer): Record<string, unknown> => ({
+      ...answer,
+      runProfile: ctx.store.readRunProfile(String(answer["run_id"] ?? "")),
+    }));
     if (options.json) {
       log(JSON.stringify({ contractVersion: 1, answers }, null, 2));
     } else if (answers.length === 0) {
@@ -1478,6 +1549,13 @@ program
         // on a proposal means accepted — there is no third review state, on purpose.
         const proposed = kindOf(a) === "proposed";
         log(`${String(a["id"]).slice(0, 8)}  ${proposed ? "[proposal] " : ""}${a["title"]}`);
+        const profile = a["runProfile"] as ReturnType<Store["readRunProfile"]>;
+        if (profile) {
+          log(
+            `          ${profile.effective.clientId} ${profile.effective.clientVersion} · ` +
+              `model ${profile.effective.model} · effort ${profile.effective.reasoningEffort}`,
+          );
+        }
         log(
           `          ${a["verified"]}/${total} verified` +
             `${intent ? ` - ${intent} intent` : ""} - ${undecidedInRow(a)} open` +
@@ -2115,14 +2193,17 @@ program
   .argument("[path]")
   .option("--client <id>", "agent client", "claude-code")
   .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--model <id>", "client-native model; blank means the client default")
+  .option("--effort <level>", "client-native reasoning effort; blank means the client default")
   .option("--timeout <ms>", "run timeout in milliseconds", "900000")
   .description("translate a saved plan into a proposed FlowAnswer without repository exploration")
   .action(async (
     planArg: string,
     answerArg: string,
     pathArg: string | undefined,
-    options: { client: string; clientCommand?: string; timeout: string },
+    options: { client: string; clientCommand?: string; model?: string; effort?: string; timeout: string },
   ) => {
+    const profile = requestedProfile(options);
     const ctx = open(pathArg);
     const saved = loadStoredPlan(ctx.store, planArg);
     if (!saved || saved.projectId !== ctx.projectId) {
@@ -2155,22 +2236,12 @@ program
       fail(error instanceof Error ? error.message : String(error));
     }
 
-    const client = options.client === "codex"
-      ? new CodexAdapter(options.clientCommand)
-      : new ClaudeCodeAdapter(options.clientCommand);
-    const capabilities = await client.probe();
-    if (!capabilities) {
-      ctx.close();
-      fail(
-        `agent client "${options.client}" is not available on this machine - ` +
-          `if it is installed, give the executable directly with --client-command <path>`,
-      );
-    }
+    const { client, capabilities, provenance } = await probeRunProfile(profile, options.clientCommand);
 
     log(`Translating ${saved.id.slice(0, 13)} — ${saved.sourceRef}`);
     log(`  against ${parent.row.id.slice(0, 8)} — ${parent.answer.title}`);
     log(`  bounded tools: saved plan · observed parent · module registry · submit`);
-    log(`${capabilities.id} ${capabilities.version} - ${capabilities.transport}`);
+    log(`${profileLabel(profile, capabilities, provenance)} - ${capabilities.transport}`);
     log(`snapshot ${runPlan.snapshot.id.slice(0, 8)}${runPlan.snapshot.dirty ? " (dirty tree)" : ""}\n`);
 
     const { session } = createAskRun({
@@ -2179,6 +2250,9 @@ program
       projectId: ctx.projectId,
       plan: runPlan,
       client,
+      profile,
+      capabilities,
+      profileProvenance: provenance,
       timeoutMs: Number(options.timeout),
       proposal: {
         parentAnswerId: parent.row.id,

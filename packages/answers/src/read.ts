@@ -1,5 +1,5 @@
 import { FlowAnswerSchema, type AnswerKind, type FlowAnswer } from "@veriflow/flow-answer";
-import type { Store } from "@veriflow/store";
+import type { Store, StoredRunProfile } from "@veriflow/store";
 import { applyCorrections, type Correction } from "./corrections.js";
 import {
   fileStates,
@@ -71,6 +71,8 @@ export interface StoredAnswer {
   kind: AnswerKind;
   /** Of `citations`, how many name code that does not exist yet. */
   intent: number;
+  /** Immutable requested/effective profile of the run that produced this answer. */
+  runProfile?: StoredRunProfile;
 }
 
 /**
@@ -133,6 +135,7 @@ export function loadStoredAnswer(store: Store, root: string, idOrPrefix: string)
     freshness: preferVerification(store, row.id, estimate),
     kind: kindOf(row),
     intent: intentCitations(citations).length,
+    ...(row.run_id ? { runProfile: store.readRunProfile(row.run_id) } : {}),
   };
 }
 
@@ -250,6 +253,8 @@ export interface ToolResponseEnvelope<T> {
   review: ReviewFacts;
   /** Present on answer-scoped responses. Absent on project-scoped ones, which describe no answer. */
   kind?: AnswerKind;
+  /** Present on answer-scoped responses when the producing run is stored. */
+  runProfile?: StoredRunProfile;
   data: T;
   truncated?: Truncation;
 }
@@ -267,6 +272,7 @@ export function answerEnvelope<T>(stored: StoredAnswer, data: T, truncated?: Tru
       corrections: stored.corrections.length,
     },
     kind: stored.kind,
+    ...(stored.runProfile ? { runProfile: stored.runProfile } : {}),
     data,
     ...(truncated ? { truncated } : {}),
   };

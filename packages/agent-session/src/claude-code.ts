@@ -1,8 +1,10 @@
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   AgentUnavailableError,
+  runProvenance,
   type AgentClientAdapter,
   type AgentRunHandle,
   type AgentRunRequest,
@@ -50,6 +52,9 @@ export class ClaudeCodeAdapter implements AgentClientAdapter {
       transport: supportsStreamJson ? "stream-json" : "pty",
       supportsMcpConfig,
       supportsPermissionMode,
+      supportsModel: help.includes("--model"),
+      supportsReasoningEffort: help.includes("--effort"),
+      reasoningEffortValues: effortValues(help),
       supportsToolLists,
       // An explicit allow/deny list, not a coarse mode. `plan` looks like the right answer and is
       // not: it blocks every MCP call, so the agent cannot reach ask_user or submit_flow_answer and
@@ -59,25 +64,13 @@ export class ClaudeCodeAdapter implements AgentClientAdapter {
   }
 
   async start(request: AgentRunRequest): Promise<AgentRunHandle> {
-    const capabilities = await this.probe();
+    const capabilities = request.capabilities ?? await this.probe();
     if (!capabilities) {
       throw new AgentUnavailableError(`${this.command} is not available`, this.id);
     }
 
-    const args = ["--print", request.prompt];
-    if (capabilities.transport === "stream-json") {
-      args.push("--output-format", "stream-json", "--verbose");
-    }
-    if (request.mcpConfigPath && capabilities.supportsMcpConfig) {
-      args.push("--mcp-config", request.mcpConfigPath);
-    }
-    if (capabilities.supportsToolLists) {
-      // Read the repository, reach VeriFlow, and nothing else. Naming what is allowed is stricter
-      // than naming what is forbidden, and it leaves the MCP surface reachable.
-      args.push("--allowedTools", [...READ_TOOLS, "mcp__veriflow"].join(","));
-      args.push("--disallowedTools", WRITE_TOOLS.join(","));
-      args.push("--permission-mode", "dontAsk");
-    }
+    runProvenance(request.profile, capabilities);
+    const args = buildClaudeCodeArgs(request, capabilities);
 
     const child = spawn(this.command, args, {
       cwd: request.cwd,
@@ -88,6 +81,29 @@ export class ClaudeCodeAdapter implements AgentClientAdapter {
 
     return driveChild(child, request, capabilities);
   }
+}
+
+/** Pure argument rendering, shared by the adapter and contract tests. */
+export function buildClaudeCodeArgs(request: AgentRunRequest, capabilities: ClientCapabilities): string[] {
+  runProvenance(request.profile, capabilities);
+  const args = ["--print"];
+  if (request.profile.model) args.push("--model", request.profile.model);
+  if (request.profile.reasoningEffort) args.push("--effort", request.profile.reasoningEffort);
+  if (capabilities.transport === "stream-json") {
+    args.push("--output-format", "stream-json", "--verbose");
+  }
+  if (request.mcpConfigPath && capabilities.supportsMcpConfig) {
+    args.push("--mcp-config", request.mcpConfigPath);
+  }
+  if (capabilities.supportsToolLists) {
+    // Read the repository, reach VeriFlow, and nothing else. Naming what is allowed is stricter
+    // than naming what is forbidden, and it leaves the MCP surface reachable.
+    args.push("--allowedTools", [...READ_TOOLS, "mcp__veriflow"].join(","));
+    args.push("--disallowedTools", WRITE_TOOLS.join(","));
+    args.push("--permission-mode", "dontAsk");
+  }
+  args.push(request.prompt);
+  return args;
 }
 
 /** Codex adapter — the second client, which is what proves the abstraction is real. */
@@ -121,37 +137,25 @@ export class CodexAdapter implements AgentClientAdapter {
       // look for is -c, not a flag named after the file Claude Code happens to read.
       supportsMcpConfig: /-c, --config|--config <key=value>/.test(help),
       supportsPermissionMode: /--sandbox|--ask-for-approval/.test(help),
+      supportsModel: /-m, --model|--model <MODEL>/.test(help),
+      // Codex exposes this through its typed config rather than a dedicated exec flag.
+      supportsReasoningEffort: /-c, --config|--config <key=value>/.test(help),
+      // No closed list: current Codex accepts provider/model-defined native effort strings.
+      reasoningEffortValues: undefined,
       readOnlyMode: /read-only/.test(help) ? "read-only" : undefined,
     };
   }
 
   async start(request: AgentRunRequest): Promise<AgentRunHandle> {
-    const capabilities = await this.probe();
+    const capabilities = request.capabilities ?? await this.probe();
     if (!capabilities) {
       throw new AgentUnavailableError(
         `${this.command} is not available — pass its path with --client-command if it is installed behind a shim`,
         this.id,
       );
     }
-    const args = ["exec"];
-    if (capabilities.transport === "stream-json") args.push("--json");
-    if (capabilities.readOnlyMode) args.push("--sandbox", "read-only");
-    if (capabilities.supportsMcpConfig && request.mcpServers) {
-      for (const [name, server] of Object.entries(request.mcpServers)) {
-        args.push("-c", `mcp_servers.${name}.command=${toml(server.command)}`);
-        args.push("-c", `mcp_servers.${name}.args=[${server.args.map(toml).join(",")}]`);
-        // Codex starts MCP servers in the session workdir — the repository under analysis. A server
-        // that resolves its own dependencies would die there, so it says where it lives.
-        if (server.cwd) args.push("-c", `mcp_servers.${name}.cwd=${toml(server.cwd)}`);
-        // Codex asks before every MCP call, and an unattended run has nobody to ask, so each call
-        // comes back "user cancelled MCP tool call" and the agent concludes its own tools are
-        // broken. `approve` pre-approves this server's tools; `auto` and `writes` do not — measured
-        // against a one-tool server, not read off the flag name. These are VeriFlow's read tools,
-        // the same surface Claude Code gets through --allowedTools, so this widens nothing.
-        args.push("-c", `mcp_servers.${name}.default_tools_approval_mode="approve"`);
-      }
-    }
-    args.push("--color", "never", request.prompt);
+    runProvenance(request.profile, capabilities);
+    const args = buildCodexArgs(request, capabilities);
 
     const child = spawn(this.command, args, {
       cwd: request.cwd,
@@ -165,6 +169,35 @@ export class CodexAdapter implements AgentClientAdapter {
 
     return driveChild(child, request, capabilities);
   }
+}
+
+/** Pure argument rendering, shared by the adapter and contract tests. */
+export function buildCodexArgs(request: AgentRunRequest, capabilities: ClientCapabilities): string[] {
+  runProvenance(request.profile, capabilities);
+  const args = ["exec"];
+  if (capabilities.transport === "stream-json") args.push("--json");
+  if (capabilities.readOnlyMode) args.push("--sandbox", "read-only");
+  if (request.profile.model) args.push("-m", request.profile.model);
+  if (request.profile.reasoningEffort) {
+    args.push("-c", `model_reasoning_effort=${toml(request.profile.reasoningEffort)}`);
+  }
+  if (capabilities.supportsMcpConfig && request.mcpServers) {
+    for (const [name, server] of Object.entries(request.mcpServers)) {
+      args.push("-c", `mcp_servers.${name}.command=${toml(server.command)}`);
+      args.push("-c", `mcp_servers.${name}.args=[${server.args.map(toml).join(",")}]`);
+      // Codex starts MCP servers in the session workdir — the repository under analysis. A server
+      // that resolves its own dependencies would die there, so it says where it lives.
+      if (server.cwd) args.push("-c", `mcp_servers.${name}.cwd=${toml(server.cwd)}`);
+      // Codex asks before every MCP call, and an unattended run has nobody to ask, so each call
+      // comes back "user cancelled MCP tool call" and the agent concludes its own tools are
+      // broken. `approve` pre-approves this server's tools; `auto` and `writes` do not — measured
+      // against a one-tool server, not read off the flag name. These are VeriFlow's read tools,
+      // the same surface Claude Code gets through --allowedTools, so this widens nothing.
+      args.push("-c", `mcp_servers.${name}.default_tools_approval_mode="approve"`);
+    }
+  }
+  args.push("--color", "never", request.prompt);
+  return args;
 }
 
 /** A TOML string literal. Codex parses each -c value as TOML before applying it. */
@@ -197,6 +230,7 @@ function driveChild(
     transport: capabilities.transport,
     permissionMode: capabilities.readOnlyMode ?? "client default",
     cwd: request.cwd,
+    profile: request.provenance ?? runProvenance(request.profile, capabilities),
   });
 
   const emitLine = (line: string): void => {
@@ -282,6 +316,13 @@ function driveChild(
     },
     result,
   };
+}
+
+function effortValues(help: string): string[] | undefined {
+  const match = /--effort[^\r\n]*[\r\n]+\s*\(([^)]+)\)/.exec(help);
+  if (!match) return undefined;
+  const values = match[1]!.split(",").map((value) => value.trim()).filter(Boolean);
+  return values.length ? values : undefined;
 }
 
 /** Map a Claude Code stream-json message onto the normalized channels. */
@@ -404,7 +445,12 @@ function killTree(child: ChildProcessWithoutNullStreams): void {
 }
 
 export function resolveCommand(name: string): string {
-  const candidates = [name, join(homedir(), ".local", "bin", name), join(homedir(), ".local", "bin", `${name}.exe`)];
+  const candidates = [
+    ...(name === "codex" ? nativeWindowsCodexCandidates() : []),
+    name,
+    join(homedir(), ".local", "bin", name),
+    join(homedir(), ".local", "bin", `${name}.exe`),
+  ];
   for (const candidate of candidates) {
     try {
       execFileSync(candidate, ["--version"], { stdio: "ignore" });
@@ -414,4 +460,35 @@ export function resolveCommand(name: string): string {
     }
   }
   return name;
+}
+
+/**
+ * The Windows npm shim is a `.cmd` file, which Node cannot execute through `spawn` without a shell.
+ * Enabling a shell would make the prompt part of shell syntax, so resolve the native executable the
+ * official `@openai/codex` package ships instead. PATH entries cover non-default npm prefixes.
+ */
+function nativeWindowsCodexCandidates(): string[] {
+  if (process.platform !== "win32") return [];
+  const variant = process.arch === "arm64" ? "arm64" : "x64";
+  const target = process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc";
+  const pathRoots = (process.env["PATH"] ?? "").split(";").filter(Boolean);
+  const appData = process.env["APPDATA"];
+  const roots = [...(appData ? [join(appData, "npm")] : []), ...pathRoots];
+  return [...new Set(roots)]
+    .map((root) =>
+      join(
+        root,
+        "node_modules",
+        "@openai",
+        "codex",
+        "node_modules",
+        "@openai",
+        `codex-win32-${variant}`,
+        "vendor",
+        target,
+        "bin",
+        "codex.exe",
+      ),
+    )
+    .filter(existsSync);
 }

@@ -4,8 +4,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   AgentUnavailableError,
+  agentRunProfile,
+  prepareAgentRunProfile,
   type AgentClientAdapter,
   type AgentRunOutcome,
+  type AgentRunProfile,
+  type AgentRunProvenance,
+  type ClientCapabilities,
   type PendingQuestion,
   type RunEvent,
 } from "./contracts.js";
@@ -34,12 +39,19 @@ export interface RunPersistence {
     snapshotId: string;
     clientId: string;
     clientVersion: string;
+    profile: AgentRunProvenance;
     startedAt: string;
   }): void;
 }
 
 export interface SessionOptions {
   client: AgentClientAdapter;
+  /** Defaults only for legacy/test callers; product entry points always pass this explicitly. */
+  profile?: AgentRunProfile;
+  /** Already probed by a UI/CLI preflight. */
+  capabilities?: ClientCapabilities;
+  /** Already accepted by that same adapter before any persistence was opened. */
+  profileProvenance?: AgentRunProvenance;
   cwd: string;
   prompt: string;
   questionId: string;
@@ -75,10 +87,17 @@ export class AgentSession {
     const { client, sink, persistence } = this.options;
     const runId = this.options.runId ?? randomUUID();
 
-    const capabilities = await client.probe();
+    const capabilities = this.options.capabilities ?? (await client.probe());
     if (!capabilities) {
       throw new AgentUnavailableError(`agent client ${client.id} is not available`, client.id);
     }
+
+    const profile = this.options.profile ?? agentRunProfile({
+      clientId: client.id === "codex" ? "codex" : "claude-code",
+    });
+    // Validation and effective-value resolution happen before the immutable run row is created.
+    const profileProvenance =
+      this.options.profileProvenance ?? (await prepareAgentRunProfile(client, profile, capabilities));
 
     const mcpConfigPath = this.writeMcpConfig();
 
@@ -88,6 +107,7 @@ export class AgentSession {
       snapshotId: this.options.snapshotId,
       clientId: capabilities.id,
       clientVersion: capabilities.version,
+      profile: profileProvenance,
       startedAt: new Date().toISOString(),
     });
 
@@ -95,6 +115,9 @@ export class AgentSession {
       runId,
       cwd: resolve(this.options.cwd),
       prompt: this.options.prompt,
+      profile,
+      capabilities,
+      provenance: profileProvenance,
       mcpConfigPath,
       ...(this.options.mcpServers ? { mcpServers: this.options.mcpServers } : {}),
       timeoutMs: this.options.timeoutMs,

@@ -1,4 +1,7 @@
 import {
+  runProvenance,
+  type AgentRunProfile,
+  type AgentRunProvenance,
   type AgentClientAdapter,
   type AgentRunHandle,
   type AgentRunOutcome,
@@ -22,6 +25,11 @@ export interface FakeClientScript {
   capabilities?: Partial<ClientCapabilities>;
   /** Simulate a client that cannot be found. */
   unavailable?: boolean;
+  /** Optional native-profile preflight used to script rejection or reported effective values. */
+  prepareRunProfile?: (
+    profile: AgentRunProfile,
+    capabilities: ClientCapabilities,
+  ) => AgentRunProvenance | Promise<AgentRunProvenance>;
 }
 
 /**
@@ -29,9 +37,12 @@ export interface FakeClientScript {
  * CI must never invoke a real agent.
  */
 export class FakeClient implements AgentClientAdapter {
-  readonly id = "fake";
+  readonly id: string;
 
-  constructor(private readonly script: FakeClientScript) {}
+  constructor(private readonly script: FakeClientScript) {
+    // A fake stands in for a real adapter rather than adding a third product client id.
+    this.id = script.capabilities?.id ?? "claude-code";
+  }
 
   async probe(): Promise<ClientCapabilities | undefined> {
     if (this.script.unavailable) return undefined;
@@ -42,9 +53,18 @@ export class FakeClient implements AgentClientAdapter {
       transport: "stream-json",
       supportsMcpConfig: true,
       supportsPermissionMode: true,
+      supportsModel: true,
+      supportsReasoningEffort: true,
       readOnlyMode: "plan",
       ...this.script.capabilities,
     };
+  }
+
+  async prepareRunProfile(
+    profile: AgentRunProfile,
+    capabilities: ClientCapabilities,
+  ): Promise<AgentRunProvenance> {
+    return this.script.prepareRunProfile?.(profile, capabilities) ?? runProvenance(profile, capabilities);
   }
 
   async start(request: AgentRunRequest): Promise<AgentRunHandle> {
@@ -59,7 +79,7 @@ export class FakeClient implements AgentClientAdapter {
       resolveResult = resolve;
     });
 
-    const capabilities = (await this.probe())!;
+    const capabilities = request.capabilities ?? (await this.probe())!;
     stream.emit("status", {
       state: "started",
       client: capabilities.id,
@@ -67,6 +87,7 @@ export class FakeClient implements AgentClientAdapter {
       transport: capabilities.transport,
       permissionMode: capabilities.readOnlyMode,
       cwd: request.cwd,
+      profile: request.provenance ?? runProvenance(request.profile, capabilities),
     });
 
     const timer =

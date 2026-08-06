@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AgentSession, type AgentClientAdapter, type RunSink } from "@veriflow/agent-session";
+import {
+  AgentSession,
+  type AgentClientAdapter,
+  type AgentRunProfile,
+  type AgentRunProvenance,
+  type ClientCapabilities,
+  type RunSink,
+} from "@veriflow/agent-session";
 import { kindOf, undecidedInRow } from "@veriflow/answers";
 import type { AnswerKind } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
@@ -30,6 +37,11 @@ export interface AskRunOptions {
   projectId: string;
   plan: AskPlan;
   client: AgentClientAdapter;
+  /** Explicit on profile-aware entry points; legacy browser callers fall back to the adapter id. */
+  profile?: AgentRunProfile;
+  /** Reuse the caller's preflight rather than probing or accepting the profile twice. */
+  capabilities?: ClientCapabilities;
+  profileProvenance?: AgentRunProvenance;
   sink: RunSink;
   timeoutMs?: number;
   /** Overrides the resolved CLI entry point; a test points this at a stub. */
@@ -64,11 +76,13 @@ export function createAskRun(options: AskRunOptions): AskRun {
   const { store, plan } = options;
   const questionId = randomUUID();
   const runId = randomUUID();
-  store.createQuestion(questionId, options.projectId, plan.question);
 
   const proposal = options.proposal;
   const session = new AgentSession({
     client: options.client,
+    profile: options.profile,
+    capabilities: options.capabilities,
+    profileProvenance: options.profileProvenance,
     cwd: options.root,
     prompt: proposal
       ? proposal.planId
@@ -103,7 +117,12 @@ export function createAskRun(options: AskRunOptions): AskRun {
     },
     sink: options.sink,
     persistence: {
-      startRun: (run) => store.startRun(run),
+      // The session probes and validates the complete profile first. Keeping question creation in
+      // this hook guarantees a refused profile leaves no question, run or answer row behind.
+      startRun: (run) => {
+        store.createQuestion(questionId, options.projectId, plan.question);
+        store.startRun(run);
+      },
       appendEvents: (id, events) => store.appendRunEvents(id, events),
       finishRun: (id, outcome) => store.finishRun(id, outcome),
       // The submit tool runs inside the MCP server, a child of the agent in its own process, so the

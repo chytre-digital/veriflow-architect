@@ -1,5 +1,6 @@
 import type { Freshness, QuestionDecision, SnapshotFacts, StoredCitation } from "@veriflow/answers";
 import type { AnswerKind, FlowAnswer } from "@veriflow/flow-answer";
+import type { StoredRunProfile } from "@veriflow/store";
 import { proposedModulesOf } from "@veriflow/flow-answer";
 import { buildFlowOverlay, type OverlayMatching } from "@veriflow/diagram";
 import { OVERLAY_MARKER_NOTE, renderMermaid } from "./mermaid.js";
@@ -17,6 +18,8 @@ export interface DocumentInput {
   citations: readonly StoredCitation[];
   snapshot: SnapshotFacts;
   freshness: Freshness;
+  /** Immutable profile of the run that produced the stored answer. */
+  runProfile?: StoredRunProfile;
   /** Overrides the body's own `kind`. Falls back to it, then to `observed`. */
   kind?: AnswerKind;
   /**
@@ -97,6 +100,17 @@ export function renderDocument(input: DocumentInput): Document {
   }
 
   out.push(`**Question asked** — ${input.question}`, "");
+
+  if (input.runProfile) {
+    const requested = input.runProfile.requested;
+    const effective = input.runProfile.effective;
+    out.push(
+      `**Agent run** — requested \`${requested.clientId}\`, model \`${requested.model ?? "client-default"}\`, ` +
+        `effort \`${requested.reasoningEffort ?? "client-default"}\`; effective \`${effective.clientId} ` +
+        `${effective.clientVersion}\`, model \`${effective.model}\`, effort \`${effective.reasoningEffort}\`.`,
+      "",
+    );
+  }
 
   const f = input.freshness;
   out.push(

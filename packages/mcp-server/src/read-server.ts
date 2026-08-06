@@ -225,6 +225,7 @@ export function createReadServer(options: ReadServerOptions): McpServer {
           },
           // Per answer, because "which of these can I still trust" is the question a list is for.
           freshness: stored?.freshness,
+          runProfile: store.readRunProfile(String(a["run_id"] ?? "")),
           createdAt: a["created_at"],
         };
       });
