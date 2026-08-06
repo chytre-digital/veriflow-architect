@@ -3,6 +3,8 @@ import type {
   PrdRegistryEntry,
   PrdUpdateProposal,
   PrdUpdateResult,
+  StoredFlowRelevance,
+  StoredRequirementAssessment,
 } from "@veriflow/prd";
 import { esc, screenHead, shell, type Chrome } from "./views.js";
 
@@ -40,6 +42,17 @@ export function prdsPage(chrome: Chrome, entries: readonly PrdRegistryEntry[]): 
   );
 }
 
+export interface AssessedFlowView {
+  answerId: string;
+  relevance: string;
+  prdFingerprint: string;
+  aligned: number;
+  violated: number;
+  unknownCount: number;
+  notApplicable: number;
+  createdAt: string;
+}
+
 export interface PrdPageState {
   mode?: "source" | "preview" | "edit" | "diff";
   draft?: string;
@@ -49,6 +62,8 @@ export interface PrdPageState {
   saved?: PrdUpdateResult;
   error?: string;
   conflict?: boolean;
+  /** F036: every observed flow checked against this PRD. Never a blended score. */
+  assessedFlows?: AssessedFlowView[];
 }
 
 export function prdPage(chrome: Chrome, entry: PrdRegistryEntry, state: PrdPageState = {}): string {
@@ -105,6 +120,23 @@ export function prdPage(chrome: Chrome, entry: PrdRegistryEntry, state: PrdPageS
         .map((edit) => `<tr><td>${esc(edit.appliedAt)}</td><td><b>${esc(edit.author)}</b><div class="dim">${esc(edit.reason)}</div></td><td><code>${esc(edit.toFingerprint)}</code><div class="dim">from ${esc(edit.fromFingerprint)}</div></td></tr>`)
         .join("")}</tbody></table></section>`
     : "";
+  const assessedFlows = state.assessedFlows?.length
+    ? `<section><h2 class="section">Assessed flows (F036)</h2>
+        <p class="dim">Relevance and requirement conformance are comparison against product intent, not enforcement — never a blended score.</p>
+        <table class="grid"><thead><tr><th>Answer</th><th>Relevance</th><th>Requirement states</th><th>Checked against</th></tr></thead><tbody>${state.assessedFlows
+          .map(
+            (flow) => `<tr>
+              <td><a href="/answers/${esc(flow.answerId)}/prd-conformance">${esc(flow.answerId)}</a></td>
+              <td>${relevancePill(flow.relevance)}</td>
+              <td>${flow.aligned} aligned · ${flow.violated} violated · ${flow.unknownCount} unknown · ${flow.notApplicable} n/a</td>
+              <td><code>${esc(flow.prdFingerprint.slice(0, 12))}</code>${
+                flow.prdFingerprint !== entry.currentFingerprint ? `<div class="dim">PRD has since changed</div>` : ""
+              }</td>
+            </tr>`,
+          )
+          .join("")}</tbody></table>
+      </section>`
+    : "";
   return shell(
     chrome,
     entry.id,
@@ -122,7 +154,113 @@ export function prdPage(chrome: Chrome, entry: PrdRegistryEntry, state: PrdPageS
         <div><b>current fingerprint</b> <code>${esc(entry.currentFingerprint ?? "unavailable")}</code></div>
         <div><b>canonical source</b> repository-relative Markdown; no body is stored in SQLite</div>
       </div>
-      ${notice}${tabs}${conflict}${diagnostics}${requirements}${source}${edits}${history}
+      ${notice}${tabs}${conflict}${diagnostics}${requirements}${source}${assessedFlows}${edits}${history}
+    </section>`,
+  );
+}
+
+function relevancePill(relevance: string): string {
+  const style = relevance === "relevant" ? "good" : relevance === "not-relevant" ? "" : "warn";
+  return `<span class="pill ${style}">${esc(relevance)}</span>`;
+}
+
+/* --------------------------------------------------- F036 flow/PRD conformance */
+
+function anchorList(anchors: { entryPoints: string[]; modules: string[]; paths: string[]; requirements: string[] }): string {
+  const parts = [
+    ...anchors.entryPoints.map((a) => `entry point ${a}`),
+    ...anchors.modules.map((a) => `module ${a}`),
+    ...anchors.paths.map((a) => `path ${a}`),
+    ...anchors.requirements.map((a) => `requirement ${a}`),
+  ];
+  return parts.length ? parts.map((p) => esc(p)).join(", ") : "none";
+}
+
+const REQUIREMENT_STATE_CLASS: Record<string, string> = {
+  aligned: "good",
+  violated: "bad",
+  unknown: "warn",
+  "not-applicable": "",
+};
+
+/**
+ * One observed flow against every PRD it was checked on submission. Relevance (explicit-anchor
+ * matching) and requirement conformance (evidence-backed states) are shown as separate sections —
+ * this page never folds either into a single score.
+ */
+export function prdConformancePage(
+  chrome: Chrome,
+  answer: { id: string; title: string },
+  relevance: readonly StoredFlowRelevance[],
+  requirements: readonly StoredRequirementAssessment[],
+): string {
+  const relevanceRows = relevance
+    .map(
+      (r) => `<tr>
+        <td><a href="/prds/${esc(r.prdId)}">${esc(r.prdId)}</a></td>
+        <td>${relevancePill(r.relevance)}</td>
+        <td>${r.relevance === "not-relevant" ? anchorList(r.excludingAnchors) : anchorList(r.matchedAnchors)}</td>
+        <td><code>${esc(r.prdFingerprint.slice(0, 12))}</code></td>
+      </tr>`,
+    )
+    .join("");
+
+  const byPrd = new Map<string, StoredRequirementAssessment[]>();
+  for (const req of requirements) {
+    const list = byPrd.get(req.prdId) ?? [];
+    list.push(req);
+    byPrd.set(req.prdId, list);
+  }
+  const requirementSections = [...byPrd.entries()]
+    .map(
+      ([prdId, reqs]) => `<section><h3>${esc(prdId)}</h3><div class="cards">${reqs
+        .map(
+          (req) => `<article class="card">
+            <div class="eyebrow">${esc(req.requirementId)}</div>
+            <h4><span class="pill ${REQUIREMENT_STATE_CLASS[req.state] ?? ""}">${esc(req.state)}</span>${
+              req.normalized ? `<span class="pill warn">normalized${req.normalizedReason ? `: ${esc(req.normalizedReason)}` : ""}</span>` : ""
+            }</h4>
+            <p>${esc(req.explanation)}</p>
+            ${
+              req.citations.length
+                ? `<ul>${req.citations
+                    .map(
+                      (c) => `<li><span class="pill ${c.state === "verified" ? "good" : "bad"}">${esc(c.state)}</span>
+                        ${esc(c.role)} — <a href="/source?path=${encodeURIComponent(c.path)}&line=${c.line}#L${c.line}">${esc(c.path)}:${c.line}</a>${
+                          c.reason ? `<div class="dim">${esc(c.reason)}</div>` : ""
+                        }</li>`,
+                    )
+                    .join("")}</ul>`
+                : `<div class="dim">no citations</div>`
+            }
+          </article>`,
+        )
+        .join("")}</div></section>`,
+    )
+    .join("");
+
+  return shell(
+    chrome,
+    `PRD conformance — ${answer.title}`,
+    `<section class="screen">
+      ${screenHead({
+        eyebrow: "Flow / PRD conformance",
+        title: "Does this flow align with product intent",
+        lede: "Comparison against product intent, not enforcement. A contradiction does not by itself decide whether the code or the PRD is wrong.",
+        meta: `<span class="pill">${relevance.length} PRD${relevance.length === 1 ? "" : "s"} checked</span>`,
+      })}
+      <section><h2 class="section">Relevance</h2>
+        ${
+          relevanceRows
+            ? `<table class="grid"><thead><tr><th>PRD</th><th>Relevance</th><th>Anchors</th><th>Checked at fingerprint</th></tr></thead><tbody>${relevanceRows}</tbody></table>`
+            : `<div class="note">No PRDs were registered when this flow was submitted.</div>`
+        }
+      </section>
+      ${
+        requirementSections
+          ? `<h2 class="section">Requirement conformance</h2>${requirementSections}`
+          : `<div class="note">No relevant PRD had a requirement assessed for this flow.</div>`
+      }
     </section>`,
   );
 }

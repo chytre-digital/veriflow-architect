@@ -697,6 +697,7 @@ export type NavId =
   | "impact"
   | "prds"
   | "prd"
+  | "prd-conformance"
   | "plans"
   | "plan"
   | "run";
@@ -743,6 +744,7 @@ const ANSWER_VIEWS: Array<{ id: NavId; label: string; hint: string; path: (id: s
   { id: "modules", label: "Modules", hint: "boundaries and contracts", path: (id) => `/answers/${id}/modules` },
   { id: "freshness", label: "Freshness", hint: "does it still locate", path: (id) => `/answers/${id}/freshness` },
   { id: "metrics", label: "Metrics", hint: "debt and coverage of this flow", path: (id) => `/answers/${id}/metrics` },
+  { id: "prd-conformance", label: "PRD conformance", hint: "relevance and requirement states, F036", path: (id) => `/answers/${id}/prd-conformance` },
 ];
 
 const PROJECT_VIEWS: Array<{ id: NavId; label: string; hint: string; href: string }> = [
@@ -776,6 +778,7 @@ const NAV_LABEL: Record<NavId, string> = {
   impact: "Impact",
   prds: "Product requirements",
   prd: "Product requirement",
+  "prd-conformance": "PRD conformance",
   plans: "Plans",
   plan: "Plan review",
   run: "Run",

@@ -89,6 +89,7 @@ import {
 import {
   getPrd,
   listPrds,
+  loadFlowPrdConformance,
   prepareGuidedPrdDraft,
   prdIntakeQuestions,
   registerPrd,
@@ -1077,10 +1078,11 @@ program
   .requiredOption("--snapshot <id>")
   .option("--parent <answerId>", "the observed answer this run proposes a change to (veriflow propose)")
   .option("--plan <planId>", "the saved plan this bounded translation run may read")
+  .option("--entry-point <id>", "the entry point this run resolved, seeding F036 PRD relevance")
   .description("MCP server exposed to the agent for one run (launched by veriflow ask)")
   .action(async (
     pathArg: string | undefined,
-    options: { run: string; question: string; snapshot: string; parent?: string; plan?: string },
+    options: { run: string; question: string; snapshot: string; parent?: string; plan?: string; entryPoint?: string },
   ) => {
     // No lock and no banner: this process is a child of the agent and speaks MCP on stdio, so any
     // stray stdout would corrupt the protocol.
@@ -1091,6 +1093,7 @@ program
       snapshotId: options.snapshot,
       ...(options.parent ? { parentAnswerId: options.parent } : {}),
       ...(options.plan ? { planId: options.plan } : {}),
+      ...(options.entryPoint ? { entryPointId: options.entryPoint } : {}),
     });
   });
 
@@ -3064,7 +3067,7 @@ prdCommand
       fail(`no registered PRD with id or unique prefix "${id}"`);
     }
     if (options.json) log(JSON.stringify(entry, null, 2));
-    else printPrd(entry);
+    else printPrd(entry, ctx.store.listFlowsAssessedForPrd(ctx.projectId, entry.id));
     ctx.close();
   });
 
@@ -3085,12 +3088,46 @@ prdCommand
       fail(`no registered PRD with id or unique prefix "${id}"`);
     }
     if (options.json) log(JSON.stringify({ contractVersion: 1, prds: entries }, null, 2));
-    else for (const entry of entries) printPrd(entry);
+    else for (const entry of entries) printPrd(entry, ctx.store.listFlowsAssessedForPrd(ctx.projectId, entry.id));
     if (entries.some((entry) => entry.state !== "valid")) process.exitCode = 1;
     ctx.close();
   });
 
-function printPrd(entry: PrdRegistryEntry): void {
+prdCommand
+  .command("conformance")
+  .argument("<answerId>")
+  .argument("[path]")
+  .option("--json", "machine-readable output")
+  .description("show F036 PRD relevance and requirement conformance for one observed flow answer")
+  .action((answerId: string, pathArg: string | undefined, options: { json?: boolean }) => {
+    const ctx = open(pathArg);
+    const stored = loadStoredAnswer(ctx.store, ctx.root, answerId);
+    if (!stored) {
+      ctx.close();
+      fail(`no stored answer with id or prefix "${answerId}"`);
+    }
+    const conformance = loadFlowPrdConformance(ctx.store, stored!.row.id);
+    if (options.json) {
+      log(JSON.stringify({ answerId: stored!.row.id, ...conformance }, null, 2));
+    } else {
+      log(`PRD conformance for answer ${stored!.row.id}`);
+      if (conformance.relevance.length === 0) log(`  no PRD was relevant to this flow's citations`);
+      for (const row of conformance.relevance) {
+        log(`  ${row.prdId}  ${row.relevance}  (fingerprint ${row.prdFingerprint.slice(0, 12)})`);
+      }
+      for (const row of conformance.requirements) {
+        log(`    ${row.prdId} / ${row.requirementId}  ${row.state}${row.normalized ? " (normalized)" : ""}`);
+        log(`      ${row.explanation}`);
+        for (const citation of row.citations) {
+          log(`      ${citation.role} ${citation.state} ${citation.path}:${citation.line}`);
+        }
+      }
+      log(`  This is comparison against product intent, not enforcement.`);
+    }
+    ctx.close();
+  });
+
+function printPrd(entry: PrdRegistryEntry, assessedFlows?: Array<Record<string, unknown>>): void {
   log(`${entry.id}  ${entry.state}`);
   log(`  path         ${entry.path}`);
   log(`  registered   ${entry.registeredFingerprint}`);
@@ -3103,6 +3140,13 @@ function printPrd(entry: PrdRegistryEntry): void {
   }
   for (const item of entry.diagnostics) {
     log(`  ${item.severity.padEnd(7)} ${item.code}${item.line ? `:${item.line}` : ""}  ${item.message}`);
+  }
+  if (assessedFlows && assessedFlows.length > 0) {
+    const sum = (key: string) => assessedFlows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
+    log(
+      `  assessed against ${assessedFlows.length} flow${assessedFlows.length === 1 ? "" : "s"} — ` +
+        `${sum("aligned")} aligned, ${sum("violated")} violated, ${sum("unknown_count")} unknown`,
+    );
   }
 }
 

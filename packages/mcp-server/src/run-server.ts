@@ -31,6 +31,12 @@ import {
   validateStructure,
   verifyCitations,
 } from "@veriflow/flow-answer";
+import {
+  assessPrdRelevance,
+  isRejectedAssessment,
+  normalizeRequirementAssessment,
+} from "@veriflow/prd";
+import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
 
 /**
  * The MCP server VeriFlow exposes to the agent for the duration of one run.
@@ -56,6 +62,11 @@ export interface RunServerOptions {
   parentAnswerId?: string;
   /** F024: when present, expose only the saved plan, parent, module registry and submit tool. */
   planId?: string;
+  /**
+   * F036: the entry point this run resolved, when it has one. Seeds `get_relevant_prds`' candidate
+   * search — an operator/ranking decision, never inferred from citation content.
+   */
+  entryPointId?: string;
   /** How long an ask_user call waits for a person before giving up. */
   answerTimeoutMs?: number;
   pollMs?: number;
@@ -85,9 +96,24 @@ export function createRunServer(options: RunServerOptions): McpServer {
   const snapshotId = options.snapshotId;
   const planMode = Boolean(options.planId);
   const sourcePlan = options.planId ? loadStoredPlan(store, options.planId) : undefined;
+  const config = readConfig(options.root);
+  const projectId = config?.project.id ?? "";
+  const documentationRoots = config?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
   const ok = (data: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
   });
+  const evidenceReader = {
+    read: (p: string) => {
+      const safe = safeJoin(options.root, p);
+      if (!safe || isSecretPath(p)) return undefined;
+      try {
+        return readFileSync(safe, "utf8");
+      } catch {
+        return undefined;
+      }
+    },
+  };
+  const evidenceRanges = { rangeOf: (path: string, symbol: string) => store.symbolRange(snapshotId, path, symbol) };
 
   server.registerTool(
     "get_architecture",
@@ -137,6 +163,37 @@ export function createRunServer(options: RunServerOptions): McpServer {
       inputSchema: {},
     },
     async () => ok({ snapshotId, entryPoints: store.readEntryPoints(snapshotId) }),
+  );
+
+  // F036: a starting point only. The authoritative relevance is recomputed from the answer's own
+  // citations at submit_flow_answer time — this tool cannot be trusted to gate anything by itself.
+  if (!planMode) server.registerTool(
+    "get_relevant_prds",
+    {
+      title: "PRD requirements this flow may need to check",
+      description:
+        "Candidate PRDs matched by this run's entry point and any requirement ids you already know " +
+        "about, explicit anchors only — never keyword similarity. This is a starting point: the " +
+        "relevance you see here is recomputed from your answer's own citations when you submit it, " +
+        "so a PRD absent from this list can still turn out relevant. Comparison against product " +
+        "intent, not enforcement — nothing here blocks your answer.",
+      inputSchema: {
+        requirementHints: z
+          .array(z.string())
+          .optional()
+          .describe("Requirement ids (e.g. PRD-PAY-001) you already know apply — never inferred, only explicit"),
+      },
+    },
+    async ({ requirementHints }) => {
+      const entryPointRow = options.entryPointId
+        ? store.readEntryPoints(snapshotId).find((e) => String(e["id"]) === options.entryPointId)
+        : undefined;
+      const candidates = assessPrdRelevance(store, options.root, projectId, documentationRoots, snapshotId, {
+        paths: entryPointRow ? [String(entryPointRow["path"])] : [],
+        requirementHints,
+      });
+      return ok({ snapshotId, prds: candidates });
+    },
   );
 
   if (!planMode) server.registerTool(
@@ -347,6 +404,29 @@ export function createRunServer(options: RunServerOptions): McpServer {
           .array(OpenQuestionSchema)
           .optional()
           .describe("Anything the repository cannot answer. A legitimate outcome, not a failure"),
+        prdAssessments: z
+          .array(
+            z.object({
+              prdId: z.string(),
+              prdFingerprint: z.string().describe("The PRD's currentFingerprint, exactly as get_relevant_prds reported it"),
+              requirements: z.array(
+                z.object({
+                  requirementId: z.string(),
+                  state: z.enum(["aligned", "violated", "unknown", "not-applicable"]),
+                  explanation: z.string(),
+                  citations: z
+                    .array(z.object({ path: z.string(), line: z.number().int().positive(), symbol: z.string().optional() }))
+                    .optional()
+                    .describe("Required for aligned/violated; each is verified against the tree, unverified ones don't count"),
+                }),
+              ),
+            }),
+          )
+          .optional()
+          .describe(
+            "Only for kind='observed'. Per-requirement conformance for PRDs get_relevant_prds returned as " +
+              "relevant. This is comparison against product intent, not a gate on this answer's acceptance.",
+          ),
       },
     },
     async (answer) => {
@@ -434,21 +514,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
       }
 
       const parsed = FlowAnswerSchema.parse(resolved);
-      const summary = verifyCitations(
-        parsed,
-        {
-          read: (p) => {
-            const safe = safeJoin(options.root, p);
-            if (!safe || isSecretPath(p)) return undefined;
-            try {
-              return readFileSync(safe, "utf8");
-            } catch {
-              return undefined;
-            }
-          },
-        },
-        { rangeOf: (path, symbol) => store.symbolRange(snapshotId, path, symbol) },
-      );
+      const summary = verifyCitations(parsed, evidenceReader, evidenceRanges);
 
       const answerId = randomUUID();
       const planLinks = sourcePlan ? linkPlanSteps(parsed, sourcePlan.analysis) : undefined;
@@ -488,6 +554,96 @@ export function createRunServer(options: RunServerOptions): McpServer {
         })),
       });
 
+      // F036: every newly submitted observed answer is checked against candidate PRDs, whether or
+      // not the agent chose to assess any requirement — relevance is automatic, not agent-optional.
+      // A proposed answer has no observed evidence to ground aligned/violated in, so it is skipped
+      // rather than silently accepted with unverifiable claims.
+      const nowIso = new Date().toISOString();
+      let prdConformance: Record<string, unknown> | undefined;
+      if (kind === "observed") {
+        const citedPaths = summary.citations
+          .filter((c) => c.state !== "intent")
+          .map((c) => c.citation.path);
+        const candidates = assessPrdRelevance(store, options.root, projectId, documentationRoots, snapshotId, {
+          paths: citedPaths,
+        });
+        if (candidates.length > 0) {
+          store.saveFlowPrdRelevance(
+            candidates.map((c) => ({
+              answerId,
+              prdId: c.prdId,
+              projectId,
+              snapshotId,
+              prdFingerprint: c.fingerprint,
+              relevance: c.relevance,
+              matchedAnchors: c.matchedAnchors,
+              excludingAnchors: c.excludingAnchors,
+              createdAt: nowIso,
+            })),
+          );
+        }
+        const submittedAssessments = Array.isArray(submitted["prdAssessments"])
+          ? (submitted["prdAssessments"] as Array<{
+              prdId: string;
+              prdFingerprint: string;
+              requirements: Array<{
+                requirementId: string;
+                state: "aligned" | "violated" | "unknown" | "not-applicable";
+                explanation: string;
+                citations?: Array<{ path: string; line: number; symbol?: string }>;
+              }>;
+            }>)
+          : [];
+        const requirementResults: unknown[] = [];
+        const rejectedAssessments: unknown[] = [];
+        for (const group of submittedAssessments) {
+          for (const requirement of group.requirements ?? []) {
+            const normalized = normalizeRequirementAssessment(
+              candidates,
+              {
+                prdId: group.prdId,
+                prdFingerprint: group.prdFingerprint,
+                requirementId: requirement.requirementId,
+                state: requirement.state,
+                explanation: requirement.explanation,
+                citations: requirement.citations,
+              },
+              evidenceReader,
+              evidenceRanges,
+            );
+            if (isRejectedAssessment(normalized)) {
+              rejectedAssessments.push(normalized);
+              continue;
+            }
+            store.saveRequirementAssessment({
+              answerId,
+              prdId: normalized.prdId,
+              requirementId: normalized.requirementId,
+              projectId,
+              snapshotId,
+              prdFingerprint: group.prdFingerprint,
+              state: normalized.state,
+              explanation: normalized.explanation,
+              normalized: normalized.normalized,
+              normalizedReason: normalized.normalizedReason,
+              createdAt: nowIso,
+              citations: normalized.citations,
+            });
+            requirementResults.push(normalized);
+          }
+        }
+        prdConformance = {
+          relevance: candidates,
+          ...(requirementResults.length ? { requirements: requirementResults } : {}),
+          ...(rejectedAssessments.length ? { rejected: rejectedAssessments } : {}),
+        };
+      } else if (submitted["prdAssessments"]) {
+        prdConformance = {
+          skipped: true,
+          reason: "PRD conformance assessments apply only to kind='observed' answers",
+        };
+      }
+
       const proposedModules = kind === "proposed" ? proposedModulesOf(parsed, store.readModules(snapshotId).map((m) => String(m["id"]))) : [];
 
       return ok({
@@ -497,6 +653,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
         verified: summary.verified,
         unverified: summary.unverified,
         intent: summary.intent,
+        ...(prdConformance ? { prdConformance } : {}),
         ...(sourcePlan && planLinks
           ? {
               sourcePlan: {

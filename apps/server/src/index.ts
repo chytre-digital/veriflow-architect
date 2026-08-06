@@ -49,6 +49,7 @@ import {
   applyPrdUpdate,
   getPrd,
   listPrds,
+  loadFlowPrdConformance,
   preparePrdUpdate,
   PrdUpdateConflictError,
   PrdUpdateError,
@@ -85,7 +86,7 @@ import {
 import { callGraphPage, type CallGraphEdge, type CallGraphNode } from "./callgraph-page.js";
 import { correctionPreviewPage, correctionReviewPage } from "./correction-page.js";
 import { planPage, plansPage, planArtifactHtml, type PlanListRow } from "./plan-page.js";
-import { prdPage, prdsPage } from "./prd-page.js";
+import { prdConformancePage, prdPage, prdsPage, type AssessedFlowView } from "./prd-page.js";
 import type { TrafficCell } from "@veriflow/contracts";
 
 /**
@@ -819,6 +820,22 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  app.get("/answers/:id/prd-conformance", (c) =>
+    withStore((store) => {
+      const found = loadStoredAnswer(store, root, c.req.param("id"));
+      if (!found) return c.html(notice(store, "prd-conformance", "Not found", "No such answer."), 404);
+      const conformance = loadFlowPrdConformance(store, found.row.id);
+      return c.html(
+        prdConformancePage(
+          chromeOf(store, "prd-conformance", { id: found.row.id, title: found.answer.title }),
+          { id: found.row.id, title: found.answer.title },
+          conformance.relevance,
+          conformance.requirements,
+        ),
+      );
+    }),
+  );
+
   /* ------------------------------------- the project as its answers (F011) */
 
   app.get("/project", (c) =>
@@ -902,6 +919,7 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
               mode: ["source", "preview", "edit"].includes(c.req.query("mode") ?? "")
                 ? (c.req.query("mode") as "source" | "preview" | "edit")
                 : "source",
+              assessedFlows: assessedFlowsFor(store, projectId, entry.id),
             }),
           )
         : c.html(
@@ -1495,6 +1513,14 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
     }),
   );
 
+  app.get("/api/answers/:id/prd-conformance", (c) =>
+    withStore((store) => {
+      const found = loadAnswer(store, root, c.req.param("id"));
+      if (!found) return c.json({ error: "not found" }, 404);
+      return c.json({ contractVersion: 1, answerId: found.row.id, ...loadFlowPrdConformance(store, found.row.id) });
+    }),
+  );
+
   return app;
 }
 
@@ -1504,6 +1530,20 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
  */
 function loadAnswer(store: Store, root: string, id: string): StoredAnswer | undefined {
   return loadStoredAnswer(store, root, id);
+}
+
+/** F036: per-PRD rollup for the "assessed flows" section — never a blended score. */
+function assessedFlowsFor(store: Store, projectId: string, prdId: string): AssessedFlowView[] {
+  return store.listFlowsAssessedForPrd(projectId, prdId).map((row) => ({
+    answerId: String(row["answer_id"]),
+    relevance: String(row["relevance"]),
+    prdFingerprint: String(row["prd_fingerprint"]),
+    aligned: Number(row["aligned"] ?? 0),
+    violated: Number(row["violated"] ?? 0),
+    unknownCount: Number(row["unknown_count"] ?? 0),
+    notApplicable: Number(row["not_applicable"] ?? 0),
+    createdAt: String(row["created_at"]),
+  }));
 }
 
 function sameOrigin(request: Request): boolean {

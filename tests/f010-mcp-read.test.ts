@@ -329,6 +329,8 @@ function callsFor(answerId: string): Record<string, Record<string, unknown>> {
         },
       },
     },
+    get_prd_conformance: { answerId },
+    list_prd_conformance: { prdId: "PRD-PAY" },
     get_flow_answer: { answerId },
     get_flow_steps: { answerId },
     get_flow_paths: { answerId },

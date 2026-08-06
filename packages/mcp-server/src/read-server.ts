@@ -38,6 +38,7 @@ import { FUNCTION_RULES, METRIC_RULES, SPAGHETTI_BANDS, SPAGHETTI_FORMULA } from
 import {
   getPrd,
   listPrds,
+  loadFlowPrdConformance,
   prepareGuidedPrdDraft,
   preparePrdUpdate,
 } from "@veriflow/prd";
@@ -294,6 +295,45 @@ export function createReadServer(options: ReadServerOptions): McpServer {
         return refuse(error instanceof Error ? error.message : String(error));
       }
     },
+  );
+
+  /* ------------------------------------------------------------ F036 conformance */
+
+  server.registerTool(
+    "get_prd_conformance",
+    {
+      title: "PRD relevance and requirement conformance for one flow",
+      description:
+        "Every PRD checked against one observed answer's own citations: relevance " +
+        "(relevant/not-relevant/unknown) with matched/excluding anchors, and for relevant PRDs, " +
+        "per-requirement aligned/violated/unknown/not-applicable state with the citations behind " +
+        "it. Comparison against product intent, not enforcement — a violation does not by itself " +
+        "decide whether the code or the PRD is wrong.",
+      inputSchema: { answerId: z.string() },
+    },
+    async ({ answerId }) => {
+      const stored = answerOr(answerId);
+      if (typeof stored === "string") return refuse(stored);
+      // Empty is a legitimate result — no PRD was registered, or none matched this flow's anchors —
+      // and is served with the ordinary envelope rather than refused, the same way an answer with no
+      // open questions still returns a (empty) list rather than an error.
+      const conformance = loadFlowPrdConformance(store, stored.row.id);
+      return ok(answerEnvelope(stored, { answerId: stored.row.id, ...conformance }));
+    },
+  );
+
+  server.registerTool(
+    "list_prd_conformance",
+    {
+      title: "Flows assessed against one PRD",
+      description:
+        "Every observed flow checked against one PRD: its relevance, the PRD fingerprint it was " +
+        "checked against, and per-requirement-state counts. Relevance and conformance are always " +
+        "shown separately — there is no blended score.",
+      inputSchema: { prdId: z.string() },
+    },
+    async ({ prdId }) =>
+      projectOr(() => ({ data: { prdId, flows: store.listFlowsAssessedForPrd(projectId, prdId) } })),
   );
 
   /* ---------------------------------------------------------------- answers */

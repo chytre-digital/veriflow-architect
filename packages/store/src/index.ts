@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -289,6 +289,56 @@ const MIGRATIONS: readonly Migration[] = [
       `ALTER TABLE prd_update_proposals_v2 RENAME TO prd_update_proposals`,
     ],
   },
+  {
+    to: 11,
+    summary: "flow-to-PRD relevance and per-requirement conformance assessments (F036)",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS prd_flow_relevance (
+         answer_id TEXT NOT NULL REFERENCES answers(id),
+         prd_id TEXT NOT NULL,
+         project_id TEXT NOT NULL,
+         snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+         prd_fingerprint TEXT NOT NULL,
+         relevance TEXT NOT NULL,
+         matched_anchors_json TEXT NOT NULL,
+         excluding_anchors_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         PRIMARY KEY (answer_id, prd_id)
+       )`,
+      `CREATE INDEX IF NOT EXISTS prd_flow_relevance_by_prd
+         ON prd_flow_relevance(project_id, prd_id, created_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS prd_requirement_assessments (
+         answer_id TEXT NOT NULL,
+         prd_id TEXT NOT NULL,
+         requirement_id TEXT NOT NULL,
+         project_id TEXT NOT NULL,
+         snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+         prd_fingerprint TEXT NOT NULL,
+         state TEXT NOT NULL,
+         explanation TEXT NOT NULL,
+         normalized INTEGER NOT NULL DEFAULT 0,
+         normalized_reason TEXT,
+         created_at TEXT NOT NULL,
+         PRIMARY KEY (answer_id, prd_id, requirement_id)
+       )`,
+      `CREATE INDEX IF NOT EXISTS prd_requirement_assessments_by_prd
+         ON prd_requirement_assessments(project_id, prd_id, requirement_id, created_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS prd_requirement_citations (
+         answer_id TEXT NOT NULL,
+         prd_id TEXT NOT NULL,
+         requirement_id TEXT NOT NULL,
+         seq INTEGER NOT NULL,
+         role TEXT NOT NULL,
+         path TEXT NOT NULL,
+         line INTEGER NOT NULL,
+         symbol TEXT,
+         state TEXT NOT NULL,
+         line_hash TEXT,
+         reason TEXT,
+         PRIMARY KEY (answer_id, prd_id, requirement_id, seq)
+       )`,
+    ],
+  },
 ];
 
 /** Tables a migration is expected to preserve, counted before and after. */
@@ -303,6 +353,9 @@ const COUNTED_TABLES = [
   "prd_revisions",
   "prd_update_proposals",
   "prd_edits",
+  "prd_flow_relevance",
+  "prd_requirement_assessments",
+  "prd_requirement_citations",
   "snapshots",
   "answers",
   "answer_citations",
@@ -743,6 +796,58 @@ CREATE INDEX IF NOT EXISTS prd_edits_by_document
   ON prd_edits(project_id, document_id, applied_at DESC);
 `;
 
+/**
+ * Assessments are immutable historical records keyed by prd_id + prd_fingerprint, not live
+ * references — deliberately no FK to prd_documents, so an assessment stays readable even if the
+ * PRD document is later renamed or removed from the registry.
+ */
+const PRD_CONFORMANCE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS prd_flow_relevance (
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  prd_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+  prd_fingerprint TEXT NOT NULL,
+  relevance TEXT NOT NULL,
+  matched_anchors_json TEXT NOT NULL,
+  excluding_anchors_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (answer_id, prd_id)
+);
+CREATE INDEX IF NOT EXISTS prd_flow_relevance_by_prd
+  ON prd_flow_relevance(project_id, prd_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS prd_requirement_assessments (
+  answer_id TEXT NOT NULL,
+  prd_id TEXT NOT NULL,
+  requirement_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+  prd_fingerprint TEXT NOT NULL,
+  state TEXT NOT NULL,
+  explanation TEXT NOT NULL,
+  normalized INTEGER NOT NULL DEFAULT 0,
+  normalized_reason TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (answer_id, prd_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS prd_requirement_assessments_by_prd
+  ON prd_requirement_assessments(project_id, prd_id, requirement_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS prd_requirement_citations (
+  answer_id TEXT NOT NULL,
+  prd_id TEXT NOT NULL,
+  requirement_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  path TEXT NOT NULL,
+  line INTEGER NOT NULL,
+  symbol TEXT,
+  state TEXT NOT NULL,
+  line_hash TEXT,
+  reason TEXT,
+  PRIMARY KEY (answer_id, prd_id, requirement_id, seq)
+);
+`;
+
 export interface OpenOptions {
   /** Absolute path to veriflow.db. Parent directories are created. */
   file: string;
@@ -773,6 +878,7 @@ export class Store {
       this.db.exec(RUNTIME_COVERAGE_SCHEMA);
       this.db.exec(PLAN_SCHEMA);
       this.db.exec(PRD_SCHEMA);
+      this.db.exec(PRD_CONFORMANCE_SCHEMA);
       this.db
         .prepare("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)")
         .run(String(SCHEMA_VERSION));
@@ -793,6 +899,7 @@ export class Store {
       this.db.exec(RUNTIME_COVERAGE_SCHEMA);
       this.db.exec(PLAN_SCHEMA);
       this.db.exec(PRD_SCHEMA);
+      this.db.exec(PRD_CONFORMANCE_SCHEMA);
       return;
     }
 
@@ -1204,6 +1311,180 @@ export class Store {
          ORDER BY applied_at DESC, proposal_id`,
       )
       .all(projectId, documentId) as Array<Record<string, unknown>>;
+  }
+
+  /* ------------------------------------------------ flow/PRD conformance (F036) */
+
+  /**
+   * Every candidate PRD an observed answer was checked against, written once per answer/PRD pair.
+   * Relevance is immutable — a later re-check of the same answer is a new answer, not a rewrite.
+   */
+  saveFlowPrdRelevance(
+    rows: Array<{
+      answerId: string;
+      prdId: string;
+      projectId: string;
+      snapshotId: string;
+      prdFingerprint: string;
+      relevance: string;
+      matchedAnchors: unknown;
+      excludingAnchors: unknown;
+      createdAt: string;
+    }>,
+  ): void {
+    if (rows.length === 0) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const stmt = this.db.prepare(
+        `INSERT OR IGNORE INTO prd_flow_relevance
+           (answer_id, prd_id, project_id, snapshot_id, prd_fingerprint, relevance,
+            matched_anchors_json, excluding_anchors_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const row of rows) {
+        stmt.run(
+          row.answerId,
+          row.prdId,
+          row.projectId,
+          row.snapshotId,
+          row.prdFingerprint,
+          row.relevance,
+          JSON.stringify(row.matchedAnchors),
+          JSON.stringify(row.excludingAnchors),
+          row.createdAt,
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  readFlowPrdRelevance(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT answer_id, prd_id, project_id, snapshot_id, prd_fingerprint, relevance,
+                matched_anchors_json, excluding_anchors_json, created_at
+         FROM prd_flow_relevance WHERE answer_id = ? ORDER BY prd_id`,
+      )
+      .all(answerId) as Array<Record<string, unknown>>;
+  }
+
+  /** One requirement assessment plus its supporting/contradicting citations, in one transaction. */
+  saveRequirementAssessment(input: {
+    answerId: string;
+    prdId: string;
+    requirementId: string;
+    projectId: string;
+    snapshotId: string;
+    prdFingerprint: string;
+    state: string;
+    explanation: string;
+    normalized: boolean;
+    normalizedReason?: string;
+    createdAt: string;
+    citations: Array<{
+      role: string;
+      path: string;
+      line: number;
+      symbol?: string;
+      state: string;
+      lineHash?: string;
+      reason?: string;
+    }>;
+  }): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO prd_requirement_assessments
+             (answer_id, prd_id, requirement_id, project_id, snapshot_id, prd_fingerprint,
+              state, explanation, normalized, normalized_reason, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.answerId,
+          input.prdId,
+          input.requirementId,
+          input.projectId,
+          input.snapshotId,
+          input.prdFingerprint,
+          input.state,
+          input.explanation,
+          input.normalized ? 1 : 0,
+          input.normalizedReason ?? null,
+          input.createdAt,
+        );
+      const citationStmt = this.db.prepare(
+        `INSERT OR IGNORE INTO prd_requirement_citations
+           (answer_id, prd_id, requirement_id, seq, role, path, line, symbol, state, line_hash, reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      input.citations.forEach((citation, seq) => {
+        citationStmt.run(
+          input.answerId,
+          input.prdId,
+          input.requirementId,
+          seq,
+          citation.role,
+          citation.path,
+          citation.line,
+          citation.symbol ?? null,
+          citation.state,
+          citation.lineHash ?? null,
+          citation.reason ?? null,
+        );
+      });
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  readRequirementAssessments(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT answer_id, prd_id, requirement_id, project_id, snapshot_id, prd_fingerprint,
+                state, explanation, normalized, normalized_reason, created_at
+         FROM prd_requirement_assessments WHERE answer_id = ? ORDER BY prd_id, requirement_id`,
+      )
+      .all(answerId) as Array<Record<string, unknown>>;
+  }
+
+  readRequirementAssessmentCitations(
+    answerId: string,
+    prdId: string,
+    requirementId: string,
+  ): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT answer_id, prd_id, requirement_id, seq, role, path, line, symbol, state, line_hash, reason
+         FROM prd_requirement_citations
+         WHERE answer_id = ? AND prd_id = ? AND requirement_id = ? ORDER BY seq`,
+      )
+      .all(answerId, prdId, requirementId) as Array<Record<string, unknown>>;
+  }
+
+  /** Every flow assessed against one PRD, with its per-requirement state counts — for the PRD page. */
+  listFlowsAssessedForPrd(projectId: string, prdId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT r.answer_id, r.relevance, r.prd_fingerprint, r.created_at,
+                (SELECT COUNT(*) FROM prd_requirement_assessments a
+                   WHERE a.answer_id = r.answer_id AND a.prd_id = r.prd_id AND a.state = 'aligned') AS aligned,
+                (SELECT COUNT(*) FROM prd_requirement_assessments a
+                   WHERE a.answer_id = r.answer_id AND a.prd_id = r.prd_id AND a.state = 'violated') AS violated,
+                (SELECT COUNT(*) FROM prd_requirement_assessments a
+                   WHERE a.answer_id = r.answer_id AND a.prd_id = r.prd_id AND a.state = 'unknown') AS unknown_count,
+                (SELECT COUNT(*) FROM prd_requirement_assessments a
+                   WHERE a.answer_id = r.answer_id AND a.prd_id = r.prd_id AND a.state = 'not-applicable') AS not_applicable
+         FROM prd_flow_relevance r
+         WHERE r.project_id = ? AND r.prd_id = ?
+         ORDER BY r.created_at DESC`,
+      )
+      .all(projectId, prdId) as Array<Record<string, unknown>>;
   }
 
   /* ----------------------------------------------------------- saved plans (F023/F024) */

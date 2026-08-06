@@ -112,6 +112,9 @@ export function createAskRun(options: AskRunOptions): AskRun {
           plan.snapshot.id,
           ...(proposal ? ["--parent", proposal.parentAnswerId] : []),
           ...(proposal?.planId ? ["--plan", proposal.planId] : []),
+          // F036: the entry point planAsk already resolved (auto-ranked or --entry-forced), passed
+          // through so a bounded run can seed PRD relevance without a second CLI flag.
+          ...(plan.chosen?.id ? ["--entry-point", plan.chosen.id] : []),
         ],
       },
     },

@@ -13,6 +13,8 @@ import {
 } from "@veriflow/export";
 import type { Store } from "@veriflow/store";
 
+export * from "./conformance.js";
+
 export const PRD_CONTRACT_VERSION = 1;
 
 export type PrdStatus = "draft" | "active" | "deprecated";

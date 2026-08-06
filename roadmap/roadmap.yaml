@@ -548,7 +548,7 @@ features:
     title: Flow relevance and PRD conformance
     spec: ../docs/product/m8-controlled-context-plan.md
     iteration: M8-controlled-context
-    status: planned
+    status: shipped
     dependsOn: [F005, F007, F010, F018, F033]
     outcome: >-
       Observed flows carry revision-pinned PRD relevance and per-requirement aligned, violated,

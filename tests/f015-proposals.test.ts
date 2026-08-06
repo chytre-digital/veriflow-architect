@@ -849,7 +849,10 @@ describe("what a proposal is deliberately not", () => {
 
     // Nothing enforces a proposal against the code. The absence is the assertion: the moment one of
     // these exists, VeriFlow has become the expected-vs-actual enforcement §10 rules out.
-    expect(names.some((n) => /enforce|gate|violat|conform|comply|approve|rule/i.test(n))).toBe(false);
+    // "conform" is excluded here on purpose: F036 adds get_prd_conformance/list_prd_conformance,
+    // explicit *comparison* against product intent, not code-vs-proposal enforcement — the milestone
+    // spec requires the two stay distinguishable, not that "conform" never appear on this surface.
+    expect(names.some((n) => /enforce|gate|violat|comply|approve|rule/i.test(n))).toBe(false);
     expect(names.some((n) => /propose|submit|write|create/i.test(n))).toBe(false);
     // And it is still readable, so this is an absence by design rather than by omission.
     expect(names).toContain("get_flow_answer");

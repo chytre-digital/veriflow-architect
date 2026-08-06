@@ -33,6 +33,38 @@ export interface DocumentInput {
   command?: string;
   /** The observed parent and matcher output when a proposal should be reviewed as one overlay. */
   overlay?: { base: FlowAnswer; matching: OverlayMatching };
+  /** F036: PRDs this flow was checked against at submit time, when any were. */
+  prdConformance?: DocumentPrdConformance;
+}
+
+export interface DocumentPrdAnchorMatch {
+  entryPoints: string[];
+  modules: string[];
+  paths: string[];
+  requirements: string[];
+}
+
+export interface DocumentPrdRelevance {
+  prdId: string;
+  relevance: string;
+  prdFingerprint: string;
+  matchedAnchors: DocumentPrdAnchorMatch;
+  excludingAnchors: DocumentPrdAnchorMatch;
+}
+
+export interface DocumentPrdRequirement {
+  prdId: string;
+  requirementId: string;
+  state: string;
+  explanation: string;
+  normalized: boolean;
+  normalizedReason?: string;
+  citations: Array<{ role: string; path: string; line: number; symbol?: string; state: string; reason?: string }>;
+}
+
+export interface DocumentPrdConformance {
+  relevance: DocumentPrdRelevance[];
+  requirements: DocumentPrdRequirement[];
 }
 
 export interface Document {
@@ -309,6 +341,39 @@ export function renderDocument(input: DocumentInput): Document {
       out.push(`| ${where} | ${reference.symbol ? `\`${reference.symbol}\`` : "—"} | ${reference.state} |`);
     }
     out.push("");
+  }
+
+  /* ---------------------------------------------------------- PRD conformance (F036) */
+
+  if (input.prdConformance) {
+    out.push("## Product requirement conformance", "");
+    out.push(
+      `Comparison against product intent, not enforcement — a contradiction here does not by itself`,
+      `decide whether the code or the PRD is wrong.`,
+      "",
+    );
+    const { relevance, requirements } = input.prdConformance;
+    if (relevance.length === 0) {
+      out.push("No PRD was registered when this flow was submitted.", "");
+    } else {
+      out.push("| PRD | Relevance | Checked at fingerprint |", "|---|---|---|");
+      for (const r of relevance) {
+        out.push(`| \`${r.prdId}\` | ${r.relevance} | \`${r.prdFingerprint.slice(0, 12)}\` |`);
+      }
+      out.push("");
+      const byPrd = new Map<string, DocumentPrdRequirement[]>();
+      for (const req of requirements) byPrd.set(req.prdId, [...(byPrd.get(req.prdId) ?? []), req]);
+      for (const [prdId, reqs] of byPrd) {
+        out.push(`### ${prdId}`, "");
+        out.push("| Requirement | State | Explanation |", "|---|---|---|");
+        for (const req of reqs) {
+          out.push(
+            `| \`${req.requirementId}\` | ${req.state}${req.normalized ? " *(normalized)*" : ""} | ${tableCell(req.explanation)} |`,
+          );
+        }
+        out.push("");
+      }
+    }
   }
 
   out.push("---", "");

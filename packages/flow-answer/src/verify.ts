@@ -54,6 +54,65 @@ export interface SymbolRanges {
   rangeOf(path: string, symbol: string): { start: number; end: number } | undefined;
 }
 
+export interface OneCitationResult {
+  state: CitationState;
+  lineHash?: string;
+  reason?: string;
+}
+
+/**
+ * The per-citation check `verifyCitations` runs for every citation on an answer, extracted so other
+ * evidence-citation surfaces (F036 requirement assessments, F037 proposal citations) can apply the
+ * exact same rule to a single citation without pulling in a whole `FlowAnswer`.
+ */
+export function verifyOneCitation(
+  citation: Citation,
+  reader: FileReader,
+  ranges?: SymbolRanges,
+): OneCitationResult {
+  // Skipped, not failed. There is no line to read and no file to read it from; the reason names
+  // the module the step would live in, which is the only thing that can honestly be said.
+  if (isIntentCitation(citation)) {
+    const moduleId = intentModuleOf(citation);
+    return {
+      state: "intent",
+      reason: moduleId
+        ? `code that does not exist yet, in ${moduleId} at ${citation.plannedPath ?? citation.path}`
+        : `code that does not exist yet, at ${citation.plannedPath ?? citation.path}`,
+    };
+  }
+  const line = citation.line!;
+  const text = reader.read(citation.path);
+  const lines = text === undefined ? undefined : text.split(/\r?\n/);
+  if (!lines) {
+    return { state: "unverified", reason: `file not found: ${citation.path}` };
+  }
+  const lineText = lines[line - 1];
+  if (lineText === undefined) {
+    return {
+      state: "unverified",
+      reason: `${citation.path} has ${lines.length} lines, citation points at ${line}`,
+    };
+  }
+  if (citation.symbol) {
+    const declared = ranges?.rangeOf(citation.path, citation.symbol);
+    const insideDeclaredRange =
+      declared !== undefined && line >= declared.start && line <= declared.end;
+    if (!insideDeclaredRange && !nearbyContains(lines, line, citation.symbol)) {
+      return {
+        state: "unverified",
+        reason:
+          `symbol ${citation.symbol} is neither at, around, nor inside a declared range ` +
+          `at ${citation.path}:${line}`,
+      };
+    }
+  }
+  return {
+    state: "verified",
+    lineHash: createHash("sha256").update(lineText.trim()).digest("hex").slice(0, 16),
+  };
+}
+
 /**
  * Verification labels; it does not gate.
  *
@@ -67,69 +126,18 @@ export function verifyCitations(
   ranges?: SymbolRanges,
 ): VerificationSummary {
   const citations: VerifiedCitation[] = [];
-  const lineCache = new Map<string, string[] | undefined>();
-
-  const linesOf = (path: string): string[] | undefined => {
-    if (!lineCache.has(path)) {
-      const text = reader.read(path);
-      lineCache.set(path, text === undefined ? undefined : text.split(/\r?\n/));
-    }
-    return lineCache.get(path);
+  const textCache = new Map<string, string | undefined>();
+  const cachedReader: FileReader = {
+    read: (path) => {
+      if (!textCache.has(path)) textCache.set(path, reader.read(path));
+      return textCache.get(path);
+    },
   };
 
   const check = (
     subject: VerifiedCitation["subject"],
     citation: Citation,
-  ): VerifiedCitation => {
-    // Skipped, not failed. There is no line to read and no file to read it from; the reason names
-    // the module the step would live in, which is the only thing that can honestly be said.
-    if (isIntentCitation(citation)) {
-      const moduleId = intentModuleOf(citation);
-      return {
-        subject,
-        citation,
-        state: "intent",
-        reason: moduleId
-          ? `code that does not exist yet, in ${moduleId} at ${citation.plannedPath ?? citation.path}`
-          : `code that does not exist yet, at ${citation.plannedPath ?? citation.path}`,
-      };
-    }
-    const line = citation.line!;
-    const lines = linesOf(citation.path);
-    if (!lines) {
-      return { subject, citation, state: "unverified", reason: `file not found: ${citation.path}` };
-    }
-    const text = lines[line - 1];
-    if (text === undefined) {
-      return {
-        subject,
-        citation,
-        state: "unverified",
-        reason: `${citation.path} has ${lines.length} lines, citation points at ${line}`,
-      };
-    }
-    if (citation.symbol) {
-      const declared = ranges?.rangeOf(citation.path, citation.symbol);
-      const insideDeclaredRange =
-        declared !== undefined && line >= declared.start && line <= declared.end;
-      if (!insideDeclaredRange && !nearbyContains(lines, line, citation.symbol)) {
-        return {
-          subject,
-          citation,
-          state: "unverified",
-          reason:
-            `symbol ${citation.symbol} is neither at, around, nor inside a declared range ` +
-            `at ${citation.path}:${line}`,
-        };
-      }
-    }
-    return {
-      subject,
-      citation,
-      state: "verified",
-      lineHash: createHash("sha256").update(text.trim()).digest("hex").slice(0, 16),
-    };
-  };
+  ): VerifiedCitation => ({ subject, citation, ...verifyOneCitation(citation, cachedReader, ranges) });
 
   for (const step of allSteps(answer)) {
     for (const citation of step.citations) {

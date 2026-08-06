@@ -1,6 +1,6 @@
 import { decisionsOf, diffAnswers, loadStoredAnswer, type StoredAnswer } from "@veriflow/answers";
 import type { Store } from "@veriflow/store";
-import { renderDocument, slugify, type Document } from "./markdown.js";
+import { renderDocument, slugify, type Document, type DocumentPrdConformance } from "./markdown.js";
 import { ExportError } from "./mermaid.js";
 import { prepareWrite, revisionOf, ConflictError, type ExportRequest, type PendingWrite } from "./write.js";
 
@@ -96,6 +96,7 @@ export function prepareAnswerExport(store: Store, root: string, options: Prepare
     decisions: decisionsOf(stored.corrections),
     ...(parent && overlayDiff ? { overlay: { base: parent.answer, matching: overlayDiff.steps } } : {}),
     frontmatter: { ...options.documentation.frontmatter, ...options.frontmatter },
+    prdConformance: flowPrdConformanceOf(store, stored.row.id),
   });
 
   const decided = decideMode(store, root, stored.row.id, targetPath, options);
@@ -169,6 +170,42 @@ export function commitExport(store: Store, prepared: PreparedExport, now = new D
     freshness: prepared.stored.freshness.state,
   });
   return result;
+}
+
+/**
+ * The same shape `@veriflow/prd`'s `loadFlowPrdConformance` builds, reimplemented from raw store
+ * rows rather than imported: `@veriflow/prd` already depends on this package for the write
+ * primitives (`prepareWrite`, `diffLines`), so importing it back here would be a cycle.
+ */
+function flowPrdConformanceOf(store: Store, answerId: string): DocumentPrdConformance {
+  const relevance = store.readFlowPrdRelevance(answerId).map((row) => ({
+    prdId: String(row["prd_id"]),
+    relevance: String(row["relevance"]),
+    prdFingerprint: String(row["prd_fingerprint"]),
+    matchedAnchors: JSON.parse(String(row["matched_anchors_json"])),
+    excludingAnchors: JSON.parse(String(row["excluding_anchors_json"])),
+  }));
+  const requirements = store.readRequirementAssessments(answerId).map((row) => {
+    const prdId = String(row["prd_id"]);
+    const requirementId = String(row["requirement_id"]);
+    return {
+      prdId,
+      requirementId,
+      state: String(row["state"]),
+      explanation: String(row["explanation"]),
+      normalized: Boolean(row["normalized"]),
+      normalizedReason: row["normalized_reason"] ? String(row["normalized_reason"]) : undefined,
+      citations: store.readRequirementAssessmentCitations(answerId, prdId, requirementId).map((c) => ({
+        role: String(c["role"]),
+        path: String(c["path"]),
+        line: Number(c["line"]),
+        symbol: c["symbol"] ? String(c["symbol"]) : undefined,
+        state: String(c["state"]),
+        reason: c["reason"] ? String(c["reason"]) : undefined,
+      })),
+    };
+  });
+  return { relevance, requirements };
 }
 
 function questionOf(store: Store, stored: StoredAnswer): string {
