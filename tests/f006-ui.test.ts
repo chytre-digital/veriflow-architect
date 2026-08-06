@@ -229,6 +229,19 @@ describe("the local server", () => {
     expect(html).not.toContain("customer → api");
   });
 
+  it("loads arrow evidence in place so selecting a deep step does not reset the page scroll", async () => {
+    const { root } = project();
+    const app = createApp(root);
+    const html = await (await app.request("/answers/a-1")).text();
+
+    expect(html).toContain('id="flow-evidence-scope"');
+    expect(html).toContain('id="flow-evidence-panel"');
+    expect(html).toContain('target.closest("svg a[data-step]")');
+    expect(html).toContain('event.preventDefault()');
+    expect(html).toContain('panel.innerHTML = nextPanel.innerHTML');
+    expect(html).toContain('history.replaceState(null, "", expected.href)');
+  });
+
   it("lists every alternative outcome with the invariant it protects", async () => {
     const { root } = project();
     const app = createApp(root);

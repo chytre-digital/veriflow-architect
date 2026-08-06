@@ -1202,6 +1202,61 @@ function variantChips(answer: FlowAnswer, id: string, selected?: string): string
   return `<div class="chips">${chips.join("")}</div>`;
 }
 
+/**
+ * Selecting evidence is a local inspection action, so it must not throw the reader back to the top
+ * of a tall diagram. The real link remains underneath for no-JS and failed-request fallback; the
+ * enhancement swaps only the server-rendered panel and keeps the shareable `?step=` URL current.
+ */
+function flowEvidenceScript(): string {
+  return `<script>
+(function(){
+  var scope = document.getElementById("flow-evidence-scope");
+  var panel = document.getElementById("flow-evidence-panel");
+  if (!scope || !panel) return;
+  var request = 0;
+
+  scope.addEventListener("click", function(event){
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var link = target.closest("svg a[data-step]");
+    if (!link || !scope.contains(link)) return;
+    var href = link.getAttribute("href");
+    var step = link.getAttribute("data-step");
+    if (!href || !step) return;
+
+    event.preventDefault();
+    var expected = new URL(href, location.href);
+    var ownRequest = ++request;
+    panel.setAttribute("aria-busy", "true");
+    fetch(expected.href)
+      .then(function(response){
+        if (!response.ok) throw new Error("evidence request failed");
+        return response.text();
+      })
+      .then(function(html){
+        if (ownRequest !== request) return;
+        var next = new DOMParser().parseFromString(html, "text/html");
+        var nextPanel = next.getElementById("flow-evidence-panel");
+        if (!nextPanel) throw new Error("evidence panel missing");
+        panel.innerHTML = nextPanel.innerHTML;
+        var arrows = scope.querySelectorAll("svg [data-step]");
+        for (var i = 0; i < arrows.length; i++) {
+          arrows[i].classList.toggle("is-selected", arrows[i].getAttribute("data-step") === step);
+        }
+        history.replaceState(null, "", expected.href);
+      })
+      .catch(function(){
+        if (ownRequest === request) location.assign(expected.href);
+      })
+      .finally(function(){
+        if (ownRequest === request) panel.removeAttribute("aria-busy");
+      });
+  });
+})();
+</script>`;
+}
+
 export function flowPage(input: FlowPageInput): string {
   const { answer, row, citations, freshness } = input;
 
@@ -1409,7 +1464,7 @@ export function flowPage(input: FlowPageInput): string {
               Faded steps are what this outcome skips. Protects: ${esc(layout.variant.invariant)}</p>`
            : ""
        }
-       <div class="split">
+       <div class="split" id="flow-evidence-scope">
        <div><div class="scroll">${svg}</div>
          <p class="legend">${
            input.overlay
@@ -1417,8 +1472,8 @@ export function flowPage(input: FlowPageInput): string {
              : ""
          }Dotted arrow: no citation. Amber evidence label: at least one citation did not verify.
          Click a step for its evidence.</p></div>
-       <aside>${panel}</aside>
-     </div></section>`,
+       <aside id="flow-evidence-panel" aria-live="polite">${panel}</aside>
+     </div>${flowEvidenceScript()}</section>`,
   );
 }
 
@@ -3186,7 +3241,7 @@ export function runPage(input: RunPageInput): string {
      <div id="pending">${pending}</div>
      <div id="console">${transcript}</div>
      <div id="answers">${answers}</div>
-     <script>${runScript(input.runId, lastSeq)}</script>`,
+     ${input.state === "running" ? `<script>${runScript(input.runId, lastSeq)}</script>` : ""}`,
   );
 }
 

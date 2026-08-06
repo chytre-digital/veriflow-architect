@@ -211,6 +211,7 @@ describe("the run console", () => {
     expect(html).toContain("Reading the checkout route");
     expect(html).toContain("get_architecture");
     expect(html).toContain("Jak funguje rezervace lekce?");
+    expect(html).not.toContain("new EventSource");
   });
 
   it("replays from the store, so a console opened late shows what it missed", async () => {
@@ -282,6 +283,7 @@ describe("answering the agent", () => {
     }, "the agent to park on its question");
     expect(parked).toContain("The agent is waiting on you");
     expect(parked).toContain("waiting on you");
+    expect(parked).toContain("new EventSource");
 
     const answered = await app.request(`/runs/${runId}/answer`, {
       method: "POST",
