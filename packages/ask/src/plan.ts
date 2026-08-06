@@ -74,3 +74,14 @@ export function planAsk(
 
   return { question: text, classification: classifyQuestion(text), ranking, chosen, snapshot };
 }
+
+/**
+ * F037: a PRD-proposal run targets a named PRD and answer directly — there is no question to rank
+ * entry points against. This gives `createAskRun` the snapshot it needs without inventing a second
+ * run-building path; `question`/`classification`/`ranking`/`chosen` go unused for this run kind.
+ */
+export function planForPrdProposal(store: Store, projectId: string): AskPlan {
+  const snapshot = store.latestSnapshot(projectId);
+  if (!snapshot) throw new AskError("no snapshot yet - run: veriflow index", "no-snapshot");
+  return { question: "", classification: classifyQuestion(""), ranking: rankEntryPoints("", []), snapshot };
+}

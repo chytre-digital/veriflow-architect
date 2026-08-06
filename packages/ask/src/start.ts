@@ -13,7 +13,7 @@ import { kindOf, undecidedInRow } from "@veriflow/answers";
 import type { AnswerKind } from "@veriflow/flow-answer";
 import type { Store } from "@veriflow/store";
 import type { AskPlan } from "./plan.js";
-import { buildFlowPrompt, buildPlanProposalPrompt, buildProposalPrompt } from "./prompt.js";
+import { buildFlowPrompt, buildPlanProposalPrompt, buildPrdProposalPrompt, buildProposalPrompt } from "./prompt.js";
 
 /**
  * Where VeriFlow itself lives — not where the analysed project lives.
@@ -59,6 +59,15 @@ export interface AskRunOptions {
     planId?: string;
     planSourceRef?: string;
   };
+  /**
+   * F037: set by `veriflow prd propose-update` and by nothing else. Restricts the run's MCP surface
+   * to `get_target_prd`/`get_source_answer`/`propose_prd_update` — mutually exclusive with `proposal`.
+   */
+  prdProposal?: {
+    prdId: string;
+    answerId: string;
+    answerTitle: string;
+  };
 }
 
 export interface AskRun {
@@ -78,17 +87,20 @@ export function createAskRun(options: AskRunOptions): AskRun {
   const runId = randomUUID();
 
   const proposal = options.proposal;
+  const prdProposal = options.prdProposal;
   const session = new AgentSession({
     client: options.client,
     profile: options.profile,
     capabilities: options.capabilities,
     profileProvenance: options.profileProvenance,
     cwd: options.root,
-    prompt: proposal
-      ? proposal.planId
-        ? buildPlanProposalPrompt(proposal.parentTitle, proposal.planId, proposal.planSourceRef ?? proposal.planId)
-        : buildProposalPrompt(proposal.parentTitle, proposal.change)
-      : buildFlowPrompt(plan.question, plan.chosen?.label),
+    prompt: prdProposal
+      ? buildPrdProposalPrompt(prdProposal.prdId, prdProposal.answerTitle)
+      : proposal
+        ? proposal.planId
+          ? buildPlanProposalPrompt(proposal.parentTitle, proposal.planId, proposal.planSourceRef ?? proposal.planId)
+          : buildProposalPrompt(proposal.parentTitle, proposal.change)
+        : buildFlowPrompt(plan.question, plan.chosen?.label),
     questionId,
     snapshotId: plan.snapshot.id,
     runId,
@@ -115,6 +127,7 @@ export function createAskRun(options: AskRunOptions): AskRun {
           // F036: the entry point planAsk already resolved (auto-ranked or --entry-forced), passed
           // through so a bounded run can seed PRD relevance without a second CLI flag.
           ...(plan.chosen?.id ? ["--entry-point", plan.chosen.id] : []),
+          ...(prdProposal ? ["--target-prd", prdProposal.prdId, "--target-answer", prdProposal.answerId] : []),
         ],
       },
     },

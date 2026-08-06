@@ -1,5 +1,5 @@
-export { AskError, planAsk, type AskErrorCode, type AskPlan, type PlanOptions } from "./plan.js";
-export { buildFlowPrompt, buildPlanProposalPrompt, buildProposalPrompt } from "./prompt.js";
+export { AskError, planAsk, planForPrdProposal, type AskErrorCode, type AskPlan, type PlanOptions } from "./plan.js";
+export { buildFlowPrompt, buildPlanProposalPrompt, buildPrdProposalPrompt, buildProposalPrompt } from "./prompt.js";
 export {
   answersFromRun,
   applySupersede,

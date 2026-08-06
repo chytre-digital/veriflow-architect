@@ -101,3 +101,31 @@ export function buildPlanProposalPrompt(parentTitle: string, planId: string, sou
     `step with no matching reference remains explicitly unanchored.`,
   ].join("\n");
 }
+
+/**
+ * F037 — a bounded run that proposes a PRD update instead of describing a flow. Only two read tools
+ * exist: the target PRD and the source answer. There is no read_evidence, so a citation the answer
+ * never made cannot be proposed here regardless of what the prompt says.
+ */
+export function buildPrdProposalPrompt(prdId: string, answerTitle: string): string {
+  return [
+    `You are proposing a reviewable update to one PRD for VeriFlow, grounded only in one observed`,
+    `flow's own citations. You are not exploring the repository.`,
+    ``,
+    `Target PRD: ${prdId}`,
+    `Grounding flow: ${answerTitle}`,
+    ``,
+    `Call get_target_prd for the PRD's current Markdown, scope and requirements. Call`,
+    `get_source_answer for the flow's own content and its own stored citations - that is the`,
+    `complete, closed set: every citation you cite in this proposal must be an exact path and line`,
+    `from that list. There is no tool to read anything else.`,
+    ``,
+    `Submit once with propose_prd_update: the complete candidate Markdown for the whole document`,
+    `(not a diff), plus one entry per change with a requirementId when it targets one, a changeKind,`,
+    `the citations from get_source_answer that ground it, and a justification explaining the`,
+    `product-significant behaviour the flow observed. Do not propose a change you cannot cite.`,
+    ``,
+    `This produces a reviewable proposal for a person to resolve as change-code, update-prd, or`,
+    `unresolved-deviation. It does not write the PRD, and this run cannot apply it.`,
+  ].join("\n");
+}

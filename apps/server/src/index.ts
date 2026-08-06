@@ -47,10 +47,14 @@ import { Store } from "@veriflow/store";
 import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
 import {
   applyPrdUpdate,
+  getEvidenceProposal,
   getPrd,
+  listEvidenceProposalsForPrd,
   listPrds,
   loadFlowPrdConformance,
   preparePrdUpdate,
+  resolveEvidenceProposal,
+  EvidenceProposalError,
   PrdUpdateConflictError,
   PrdUpdateError,
 } from "@veriflow/prd";
@@ -86,7 +90,14 @@ import {
 import { callGraphPage, type CallGraphEdge, type CallGraphNode } from "./callgraph-page.js";
 import { correctionPreviewPage, correctionReviewPage } from "./correction-page.js";
 import { planPage, plansPage, planArtifactHtml, type PlanListRow } from "./plan-page.js";
-import { prdConformancePage, prdPage, prdsPage, type AssessedFlowView } from "./prd-page.js";
+import {
+  evidenceProposalPage,
+  evidenceProposalsPage,
+  prdConformancePage,
+  prdPage,
+  prdsPage,
+  type AssessedFlowView,
+} from "./prd-page.js";
 import type { TrafficCell } from "@veriflow/contracts";
 
 /**
@@ -1025,6 +1036,142 @@ export function createApp(root: string, options: AppOptions = {}): Hono {
       }
     });
   });
+
+  /* --------------------------------------- evidence-backed PRD update proposals (F037) */
+
+  app.get("/prds/:id/evidence-proposals", (c) =>
+    withStore((store) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, c.req.param("id"));
+      if (!entry) return c.html(notice(store, "prds", "Not found", "No such registered PRD."), 404);
+      return c.html(
+        evidenceProposalsPage(chromeOf(store, "prd"), entry, listEvidenceProposalsForPrd(store, projectId, entry.id)),
+      );
+    }),
+  );
+
+  app.get("/prds/:id/evidence-proposals/:proposalId", (c) =>
+    withStore((store) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, c.req.param("id"));
+      if (!entry) return c.html(notice(store, "prds", "Not found", "No such registered PRD."), 404);
+      const proposal = getEvidenceProposal(store, c.req.param("proposalId"));
+      if (!proposal || proposal.prdId !== entry.id) {
+        return c.html(notice(store, "prds", "Not found", "No such evidence proposal for this PRD."), 404);
+      }
+      return c.html(evidenceProposalPage(chromeOf(store, "prd"), entry, proposal));
+    }),
+  );
+
+  app.post("/prds/:id/evidence-proposals/:proposalId/resolve", async (c) => {
+    if (!sameOrigin(c.req.raw)) {
+      return withStore((store) =>
+        c.html(notice(store, "prds", "Forbidden", "PRD edit forms require the same local Origin as VeriFlow."), 403),
+      );
+    }
+    const body = await c.req.parseBody();
+    return withStore((store) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, c.req.param("id"));
+      if (!entry) return c.html(notice(store, "prds", "Not found", "No such registered PRD."), 404);
+      const proposalId = c.req.param("proposalId");
+      try {
+        const resolution = formValue(body, "resolution");
+        if (resolution !== "change-code" && resolution !== "unresolved-deviation") {
+          throw new EvidenceProposalError(
+            `resolution must be change-code or unresolved-deviation, not "${resolution}"`,
+            "resolution.invalid",
+          );
+        }
+        resolveEvidenceProposal(store, proposalId, resolution, formValue(body, "author"));
+        return c.html(evidenceProposalPage(chromeOf(store, "prd"), entry, getEvidenceProposal(store, proposalId)!));
+      } catch (error) {
+        const proposal = getEvidenceProposal(store, proposalId);
+        if (!proposal) return c.html(notice(store, "prds", "Not found", "No such evidence proposal for this PRD."), 404);
+        return c.html(
+          evidenceProposalPage(chromeOf(store, "prd"), entry, proposal, {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+          422,
+        );
+      }
+    });
+  });
+
+  app.post("/prds/:id/evidence-proposals/:proposalId/prepare", async (c) => {
+    if (!sameOrigin(c.req.raw)) {
+      return withStore((store) =>
+        c.html(notice(store, "prds", "Forbidden", "PRD edit forms require the same local Origin as VeriFlow."), 403),
+      );
+    }
+    const body = await c.req.parseBody();
+    return withStore((store) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, c.req.param("id"));
+      if (!entry) return c.html(notice(store, "prds", "Not found", "No such registered PRD."), 404);
+      const proposalId = c.req.param("proposalId");
+      const evidence = getEvidenceProposal(store, proposalId);
+      if (!evidence || evidence.prdId !== entry.id) {
+        return c.html(notice(store, "prds", "Not found", "No such evidence proposal for this PRD."), 404);
+      }
+      if (evidence.resolution) {
+        return c.html(
+          evidenceProposalPage(chromeOf(store, "prd"), entry, evidence, {
+            error: `already resolved as ${evidence.resolution}`,
+          }),
+          409,
+        );
+      }
+      try {
+        // `expectedRevision` is the proposal's own base fingerprint, not whatever is on disk right
+        // now — `preparePrdUpdate` re-reads the current file itself, so a PRD edited after this
+        // proposal was formed surfaces as the ordinary conflict below, not a silent overwrite.
+        const proposal = preparePrdUpdate(store, root, projectId, documentationRoots, {
+          prdId: entry.id,
+          markdown: evidence.candidateMarkdown,
+          expectedRevision: evidence.baseFingerprint,
+        });
+        resolveEvidenceProposal(store, proposalId, "update-prd", formValue(body, "author"));
+        store.linkEvidenceProposalPrdUpdate(proposalId, proposal.proposalId);
+        return c.html(
+          prdPage(chromeOf(store, "prd"), entry, { mode: "diff", draft: evidence.candidateMarkdown, proposal }),
+        );
+      } catch (error) {
+        if (error instanceof PrdUpdateConflictError) {
+          return c.html(
+            evidenceProposalPage(chromeOf(store, "prd"), entry, evidence, {
+              error: `${error.message} — the PRD changed since this proposal was formed.`,
+            }),
+            409,
+          );
+        }
+        return c.html(
+          evidenceProposalPage(chromeOf(store, "prd"), entry, evidence, {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+          422,
+        );
+      }
+    });
+  });
+
+  app.get("/api/prds/:id/evidence-proposals", (c) =>
+    withStore((store) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, c.req.param("id"));
+      if (!entry) return c.json({ error: "not found" }, 404);
+      return c.json({
+        contractVersion: 1,
+        prdId: entry.id,
+        proposals: listEvidenceProposalsForPrd(store, projectId, entry.id),
+      });
+    }),
+  );
+
+  app.get("/api/prds/:id/evidence-proposals/:proposalId", (c) =>
+    withStore((store) => {
+      const entry = getPrd(store, root, projectId, documentationRoots, c.req.param("id"));
+      if (!entry) return c.json({ error: "not found" }, 404);
+      const proposal = getEvidenceProposal(store, c.req.param("proposalId"));
+      if (!proposal || proposal.prdId !== entry.id) return c.json({ error: "not found" }, 404);
+      return c.json({ contractVersion: 1, proposal });
+    }),
+  );
 
   app.get("/api/prds", (c) =>
     withStore((store) =>

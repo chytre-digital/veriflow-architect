@@ -33,8 +33,11 @@ import {
 } from "@veriflow/flow-answer";
 import {
   assessPrdRelevance,
+  getPrd,
   isRejectedAssessment,
   normalizeRequirementAssessment,
+  prepareEvidenceProposal,
+  EvidenceProposalError,
 } from "@veriflow/prd";
 import { DEFAULT_DOCUMENTATION, readConfig } from "@veriflow/workspace";
 
@@ -67,6 +70,12 @@ export interface RunServerOptions {
    * search — an operator/ranking decision, never inferred from citation content.
    */
   entryPointId?: string;
+  /**
+   * F037: when present, this run produces a reviewable PRD patch instead of a FlowAnswer. Every
+   * ordinary tool is suppressed, including `get_architecture` and `submit_flow_answer` — only
+   * `get_target_prd`, `get_source_answer` and `propose_prd_update` are registered.
+   */
+  prdProposal?: { prdId: string; answerId: string };
   /** How long an ask_user call waits for a person before giving up. */
   answerTimeoutMs?: number;
   pollMs?: number;
@@ -95,6 +104,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
 
   const snapshotId = options.snapshotId;
   const planMode = Boolean(options.planId);
+  const prdProposalMode = Boolean(options.prdProposal);
   const sourcePlan = options.planId ? loadStoredPlan(store, options.planId) : undefined;
   const config = readConfig(options.root);
   const projectId = config?.project.id ?? "";
@@ -115,7 +125,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
   };
   const evidenceRanges = { rangeOf: (path: string, symbol: string) => store.symbolRange(snapshotId, path, symbol) };
 
-  server.registerTool(
+  if (!prdProposalMode) server.registerTool(
     "get_architecture",
     {
       title: "Project architecture",
@@ -155,7 +165,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     },
   );
 
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "get_entry_points",
     {
       title: "Entry points",
@@ -167,7 +177,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
 
   // F036: a starting point only. The authoritative relevance is recomputed from the answer's own
   // citations at submit_flow_answer time — this tool cannot be trusted to gate anything by itself.
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "get_relevant_prds",
     {
       title: "PRD requirements this flow may need to check",
@@ -196,7 +206,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     },
   );
 
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "search_symbols",
     {
       title: "Search symbols",
@@ -206,7 +216,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     async ({ query, limit }) => ok({ snapshotId, symbols: store.searchSymbols(snapshotId, query, limit ?? 50) }),
   );
 
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "get_callers",
     {
       title: "Callers of a symbol",
@@ -216,7 +226,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     async ({ symbolId }) => ok({ snapshotId, callers: store.readCallers(snapshotId, symbolId) }),
   );
 
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "get_callees",
     {
       title: "Callees of a symbol",
@@ -226,7 +236,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     async ({ symbolId }) => ok({ snapshotId, callees: store.readCallees(snapshotId, symbolId) }),
   );
 
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "read_evidence",
     {
       title: "Read a source excerpt",
@@ -268,7 +278,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
 
   // Only on a design run. On an ordinary run there is no parent flow, and a tool that answers
   // "there isn't one" on every call is a tool the agent has to learn to stop calling.
-  if (options.parentAnswerId) {
+  if (options.parentAnswerId && !prdProposalMode) {
     server.registerTool(
       "get_parent_flow",
       {
@@ -299,7 +309,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     );
   }
 
-  if (options.planId) {
+  if (options.planId && !prdProposalMode) {
     server.registerTool(
       "get_plan",
       {
@@ -323,7 +333,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     );
   }
 
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "ask_user",
     {
       title: "Ask the person running VeriFlow",
@@ -347,7 +357,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     },
   );
 
-  if (!planMode) server.registerTool(
+  if (!planMode && !prdProposalMode) server.registerTool(
     "record_open_question",
     {
       title: "Record what nothing can answer",
@@ -364,7 +374,7 @@ export function createRunServer(options: RunServerOptions): McpServer {
     },
   );
 
-  server.registerTool(
+  if (!prdProposalMode) server.registerTool(
     "submit_flow_answer",
     {
       title: "Submit the flow answer",
@@ -685,6 +695,119 @@ export function createRunServer(options: RunServerOptions): McpServer {
       });
     },
   );
+
+  // F037: bounded to exactly these three tools, the same `if (!planMode) server.registerTool`
+  // pattern F024 established — reusing run-server.ts rather than a new file is what keeps store
+  // lifecycle, Windows close-handling, safeJoin and CLI-spawn scaffolding from being duplicated.
+  // `apply_prd_update`/`prepare_prd_update` are never registered here, only in
+  // `prd-editor-server.ts` — this run's MCP surface stays structurally unable to apply its own patch.
+  if (prdProposalMode) {
+    const { prdId, answerId } = options.prdProposal!;
+
+    server.registerTool(
+      "get_target_prd",
+      {
+        title: "The PRD this proposal targets",
+        description:
+          "The named PRD's current Markdown, scope, requirements and fingerprint, read fresh at " +
+          "call time. This is the document a candidate patch would replace.",
+        inputSchema: {},
+      },
+      async () => {
+        const entry = getPrd(store, options.root, projectId, documentationRoots, prdId);
+        if (!entry || !entry.source || !entry.currentFingerprint) {
+          return ok({ error: `PRD ${prdId} is not currently readable` });
+        }
+        return ok({
+          id: entry.id,
+          path: entry.path,
+          status: entry.document?.status,
+          owner: entry.document?.owner,
+          scope: entry.document?.scope,
+          requirements: entry.document?.requirements,
+          currentFingerprint: entry.currentFingerprint,
+          markdown: entry.source,
+        });
+      },
+    );
+
+    server.registerTool(
+      "get_source_answer",
+      {
+        title: "The observed flow this proposal is grounded in",
+        description:
+          "The target answer's content and its own stored citations only — the exact set " +
+          "propose_prd_update's citations must match path and line against. There is no " +
+          "read_evidence tool in this run: a citation this answer never made cannot be proposed.",
+        inputSchema: {},
+      },
+      async () => {
+        const stored = loadStoredAnswer(store, options.root, answerId);
+        if (!stored) return ok({ error: `answer ${answerId} is no longer stored` });
+        const fitted = fitWholeAnswer(
+          {
+            id: stored.row.id,
+            kind: stored.kind,
+            reviewState: stored.row.review_state,
+            answer: stored.answer,
+            citations: stored.citations,
+          },
+          PARENT_BUDGET,
+        );
+        return ok({
+          freshness: stored.freshness,
+          snapshot: stored.snapshot,
+          ...fitted.data,
+          ...(fitted.truncated ? { truncated: fitted.truncated } : {}),
+        });
+      },
+    );
+
+    server.registerTool(
+      "propose_prd_update",
+      {
+        title: "Propose a reviewable PRD update",
+        description:
+          "Submit one complete candidate Markdown document for the whole PRD, plus the list of " +
+          "changes it makes — each with a justification and citations drawn only from " +
+          "get_source_answer's own citations. This produces a reviewable proposal for a person to " +
+          "resolve: it does not write the PRD, and this run cannot apply it.",
+        inputSchema: {
+          markdown: z.string(),
+          changes: z.array(
+            z.object({
+              requirementId: z.string().optional(),
+              changeKind: z.string().describe("What kind of change this is, e.g. add-requirement, clarify-scope"),
+              citations: z
+                .array(z.object({ path: z.string(), line: z.number().int().positive(), symbol: z.string().optional() }))
+                .default([]),
+              justification: z.string().describe("Why this change reflects product-significant behaviour the flow observed"),
+            }),
+          ),
+        },
+      },
+      async ({ markdown, changes }) => {
+        try {
+          const proposal = prepareEvidenceProposal(store, options.root, projectId, documentationRoots, options.runId, {
+            prdId,
+            answerId,
+            markdown,
+            changes,
+          });
+          return ok({ accepted: true, proposal });
+        } catch (error) {
+          if (error instanceof EvidenceProposalError) {
+            return ok({
+              accepted: false,
+              diagnostics: [{ code: error.code, message: error.message }],
+              ...(error.diagnostics.length ? { markdownDiagnostics: error.diagnostics } : {}),
+            });
+          }
+          throw error;
+        }
+      },
+    );
+  }
 
   return server;
 }

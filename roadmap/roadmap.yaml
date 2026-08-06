@@ -557,7 +557,7 @@ features:
     title: Evidence-backed PRD update proposals
     spec: ../docs/product/m8-controlled-context-plan.md
     iteration: M8-controlled-context
-    status: planned
+    status: shipped
     dependsOn: [F034, F036]
     outcome: >-
       A flow can propose a cited Markdown PRD patch for human review, while decline writes nothing,

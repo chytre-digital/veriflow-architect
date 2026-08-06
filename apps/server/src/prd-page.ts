@@ -3,6 +3,7 @@ import type {
   PrdRegistryEntry,
   PrdUpdateProposal,
   PrdUpdateResult,
+  StoredEvidenceProposal,
   StoredFlowRelevance,
   StoredRequirementAssessment,
 } from "@veriflow/prd";
@@ -261,6 +262,120 @@ export function prdConformancePage(
           ? `<h2 class="section">Requirement conformance</h2>${requirementSections}`
           : `<div class="note">No relevant PRD had a requirement assessed for this flow.</div>`
       }
+    </section>`,
+  );
+}
+
+/* --------------------------------------------------- F037 evidence-backed proposals */
+
+export function evidenceProposalsPage(
+  chrome: Chrome,
+  entry: { id: string },
+  proposals: readonly StoredEvidenceProposal[],
+): string {
+  const rows = proposals.length
+    ? `<table class="grid"><thead><tr><th>Proposal</th><th>Changes</th><th>Resolution</th><th>Created</th></tr></thead><tbody>${proposals
+        .map(
+          (p) => `<tr>
+            <td><a href="/prds/${esc(entry.id)}/evidence-proposals/${esc(p.id)}"><code>${esc(p.id.slice(0, 22))}</code></a></td>
+            <td>${p.changes.length}</td>
+            <td>${p.resolution ? `<span class="pill${p.resolution === "update-prd" ? " good" : ""}">${esc(p.resolution)}</span>` : `<span class="pill warn">unresolved</span>`}</td>
+            <td>${esc(p.createdAt)}</td>
+          </tr>`,
+        )
+        .join("")}</tbody></table>`
+    : `<div class="note">No evidence-backed proposal has been submitted for this PRD yet. Run
+       <code>veriflow prd propose-update ${esc(entry.id)} --from-answer &lt;answerId&gt;</code>.</div>`;
+  return shell(
+    chrome,
+    `Evidence proposals — ${entry.id}`,
+    `<section class="screen">
+      ${screenHead({
+        eyebrow: "PRD update proposals",
+        title: `Evidence-backed proposals for ${esc(entry.id)}`,
+        lede: "Every proposal a bounded run made from one observed flow's own citations, waiting on a person to resolve it.",
+        meta: `<span class="pill">${proposals.length} proposal${proposals.length === 1 ? "" : "s"}</span>`,
+      })}
+      ${rows}
+    </section>`,
+  );
+}
+
+export function evidenceProposalPage(
+  chrome: Chrome,
+  entry: { id: string },
+  proposal: StoredEvidenceProposal,
+  options: { error?: string } = {},
+): string {
+  const diff = proposal.diff.length
+    ? proposal.diff.map((line) => `${line.kind}${line.text}`).join("\n")
+    : "(no byte changes)";
+  const changes = proposal.changes
+    .map(
+      (change) => `<article class="card">
+        <div class="eyebrow">${change.requirementId ? esc(change.requirementId) : "document-level"} · ${esc(change.changeKind)}</div>
+        <p>${esc(change.justification)}</p>
+        ${
+          change.citations.length
+            ? `<ul>${change.citations
+                .map(
+                  (c) =>
+                    `<li><a href="/source?path=${encodeURIComponent(c.path)}&line=${c.line}#L${c.line}">${esc(c.path)}:${c.line}</a>${
+                      c.symbol ? ` <span class="dim">${esc(c.symbol)}</span>` : ""
+                    }</li>`,
+                )
+                .join("")}</ul>`
+            : `<div class="dim">no citations</div>`
+        }
+      </article>`,
+    )
+    .join("");
+  const resolved = proposal.resolution
+    ? `<div class="note"><b>Resolved as ${esc(proposal.resolution)}</b>${proposal.resolvedBy ? ` by ${esc(proposal.resolvedBy)}` : ""}${
+        proposal.resolvedAt ? ` at ${esc(proposal.resolvedAt)}` : ""
+      }${
+        proposal.prdUpdateProposalId
+          ? `<div class="dim">linked PRD update proposal <code>${esc(proposal.prdUpdateProposalId)}</code></div>`
+          : ""
+      }</div>`
+    : "";
+  const actions = proposal.resolution
+    ? ""
+    : `<section><h2 class="section">Resolve this proposal</h2>
+      <div class="row">
+        <form class="correction-form" method="post" action="/prds/${esc(entry.id)}/evidence-proposals/${esc(proposal.id)}/resolve">
+          <input type="hidden" name="resolution" value="change-code">
+          <label>Your name <input name="author" required autocomplete="name"></label>
+          <button class="primary" type="submit">Change the code instead</button>
+        </form>
+        <form class="correction-form" method="post" action="/prds/${esc(entry.id)}/evidence-proposals/${esc(proposal.id)}/prepare">
+          <label>Your name <input name="author" required autocomplete="name"></label>
+          <button class="primary" type="submit">Update the PRD</button>
+        </form>
+        <form class="correction-form" method="post" action="/prds/${esc(entry.id)}/evidence-proposals/${esc(proposal.id)}/resolve">
+          <input type="hidden" name="resolution" value="unresolved-deviation">
+          <label>Your name <input name="author" required autocomplete="name"></label>
+          <button class="quiet" type="submit">Leave as an unresolved deviation</button>
+        </form>
+      </div>
+    </section>`;
+  return shell(
+    chrome,
+    `Evidence proposal — ${entry.id}`,
+    `<section class="screen">
+      ${screenHead({
+        eyebrow: "PRD update proposal",
+        title: `Review a proposal for ${esc(entry.id)}`,
+        lede: "Grounded only in one observed flow's own citations — nothing here was read from the live repository. Choose how this gets resolved; declining writes nothing.",
+        meta: `<span class="pill mono">${esc(proposal.id.slice(0, 22))}</span>`,
+      })}
+      ${options.error ? `<div class="note bad">${esc(options.error)}</div>` : ""}
+      ${resolved}
+      <section><h2 class="section">Candidate Markdown diff against <code>${esc(proposal.baseFingerprint.slice(0, 12))}</code></h2>
+        <pre class="source"><code>${esc(diff)}</code></pre>
+      </section>
+      <section><h2 class="section">Changes and their evidence</h2><div class="cards">${changes}</div></section>
+      ${actions}
     </section>`,
   );
 }

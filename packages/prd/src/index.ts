@@ -14,6 +14,7 @@ import {
 import type { Store } from "@veriflow/store";
 
 export * from "./conformance.js";
+export * from "./evidence-proposal.js";
 
 export const PRD_CONTRACT_VERSION = 1;
 

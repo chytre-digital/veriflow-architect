@@ -11,7 +11,7 @@ import type { CallSite, FileHash, ModuleRecord, Snapshot, SymbolRecord } from "@
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 /**
  * Every step from an older database to this build's shape, in order, each one the whole of what
@@ -339,6 +339,33 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    to: 12,
+    summary: "evidence-backed PRD update proposals (F037)",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS prd_evidence_proposals (
+         id TEXT PRIMARY KEY,
+         project_id TEXT NOT NULL,
+         prd_id TEXT NOT NULL,
+         answer_id TEXT NOT NULL REFERENCES answers(id),
+         snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+         run_id TEXT NOT NULL,
+         base_fingerprint TEXT NOT NULL,
+         candidate_markdown TEXT NOT NULL,
+         diff_json TEXT NOT NULL,
+         changes_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         resolution TEXT,
+         resolved_at TEXT,
+         resolved_by TEXT,
+         prd_update_proposal_id TEXT
+       )`,
+      `CREATE INDEX IF NOT EXISTS prd_evidence_proposals_by_prd
+         ON prd_evidence_proposals(project_id, prd_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS prd_evidence_proposals_by_answer
+         ON prd_evidence_proposals(answer_id, created_at DESC)`,
+    ],
+  },
 ];
 
 /** Tables a migration is expected to preserve, counted before and after. */
@@ -356,6 +383,7 @@ const COUNTED_TABLES = [
   "prd_flow_relevance",
   "prd_requirement_assessments",
   "prd_requirement_citations",
+  "prd_evidence_proposals",
   "snapshots",
   "answers",
   "answer_citations",
@@ -848,6 +876,35 @@ CREATE TABLE IF NOT EXISTS prd_requirement_citations (
 );
 `;
 
+/**
+ * No FK to prd_documents, same rationale as PRD_CONFORMANCE_SCHEMA: a proposal is a historical
+ * record of what one bounded run proposed against a PRD at a given fingerprint, not a live
+ * reference — it must stay readable even if the PRD is later renamed or removed.
+ */
+const PRD_EVIDENCE_PROPOSAL_SCHEMA = `
+CREATE TABLE IF NOT EXISTS prd_evidence_proposals (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  prd_id TEXT NOT NULL,
+  answer_id TEXT NOT NULL REFERENCES answers(id),
+  snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+  run_id TEXT NOT NULL,
+  base_fingerprint TEXT NOT NULL,
+  candidate_markdown TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  changes_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  resolution TEXT,
+  resolved_at TEXT,
+  resolved_by TEXT,
+  prd_update_proposal_id TEXT
+);
+CREATE INDEX IF NOT EXISTS prd_evidence_proposals_by_prd
+  ON prd_evidence_proposals(project_id, prd_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS prd_evidence_proposals_by_answer
+  ON prd_evidence_proposals(answer_id, created_at DESC);
+`;
+
 export interface OpenOptions {
   /** Absolute path to veriflow.db. Parent directories are created. */
   file: string;
@@ -879,6 +936,7 @@ export class Store {
       this.db.exec(PLAN_SCHEMA);
       this.db.exec(PRD_SCHEMA);
       this.db.exec(PRD_CONFORMANCE_SCHEMA);
+      this.db.exec(PRD_EVIDENCE_PROPOSAL_SCHEMA);
       this.db
         .prepare("INSERT INTO meta (key, value) VALUES ('schemaVersion', ?)")
         .run(String(SCHEMA_VERSION));
@@ -900,6 +958,7 @@ export class Store {
       this.db.exec(PLAN_SCHEMA);
       this.db.exec(PRD_SCHEMA);
       this.db.exec(PRD_CONFORMANCE_SCHEMA);
+      this.db.exec(PRD_EVIDENCE_PROPOSAL_SCHEMA);
       return;
     }
 
@@ -1485,6 +1544,85 @@ export class Store {
          ORDER BY r.created_at DESC`,
       )
       .all(projectId, prdId) as Array<Record<string, unknown>>;
+  }
+
+  /* -------------------------------------------- evidence-backed PRD proposals (F037) */
+
+  /**
+   * Save one content-addressed evidence proposal. `INSERT OR IGNORE` on the id makes repeating the
+   * exact same proposal (same PRD, answer, base fingerprint and candidate Markdown) idempotent.
+   */
+  saveEvidenceProposal(input: {
+    id: string;
+    projectId: string;
+    prdId: string;
+    answerId: string;
+    snapshotId: string;
+    runId: string;
+    baseFingerprint: string;
+    candidateMarkdown: string;
+    diff: unknown;
+    changes: unknown;
+    createdAt: string;
+  }): Record<string, unknown> {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO prd_evidence_proposals
+           (id, project_id, prd_id, answer_id, snapshot_id, run_id, base_fingerprint,
+            candidate_markdown, diff_json, changes_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.projectId,
+        input.prdId,
+        input.answerId,
+        input.snapshotId,
+        input.runId,
+        input.baseFingerprint,
+        input.candidateMarkdown,
+        JSON.stringify(input.diff),
+        JSON.stringify(input.changes),
+        input.createdAt,
+      );
+    return this.readEvidenceProposal(input.id)!;
+  }
+
+  readEvidenceProposal(id: string): Record<string, unknown> | undefined {
+    return this.db.prepare("SELECT * FROM prd_evidence_proposals WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
+  }
+
+  /** One of the three explicit choices. `change-code`/`unresolved-deviation` never touch anything else. */
+  resolveEvidenceProposal(id: string, resolution: string, resolvedBy: string, resolvedAt: string): void {
+    this.db
+      .prepare(
+        `UPDATE prd_evidence_proposals SET resolution = ?, resolved_by = ?, resolved_at = ?
+         WHERE id = ? AND resolution IS NULL`,
+      )
+      .run(resolution, resolvedBy, resolvedAt, id);
+  }
+
+  /** Records which F034 update-proposal the "update-prd" choice routed through, once it prepared. */
+  linkEvidenceProposalPrdUpdate(id: string, prdUpdateProposalId: string): void {
+    this.db
+      .prepare(`UPDATE prd_evidence_proposals SET prd_update_proposal_id = ? WHERE id = ?`)
+      .run(prdUpdateProposalId, id);
+  }
+
+  listEvidenceProposalsForPrd(projectId: string, prdId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(
+        `SELECT * FROM prd_evidence_proposals WHERE project_id = ? AND prd_id = ? ORDER BY created_at DESC`,
+      )
+      .all(projectId, prdId) as Array<Record<string, unknown>>;
+  }
+
+  listEvidenceProposalsForAnswer(answerId: string): Array<Record<string, unknown>> {
+    return this.db
+      .prepare(`SELECT * FROM prd_evidence_proposals WHERE answer_id = ? ORDER BY created_at DESC`)
+      .all(answerId) as Array<Record<string, unknown>>;
   }
 
   /* ----------------------------------------------------------- saved plans (F023/F024) */

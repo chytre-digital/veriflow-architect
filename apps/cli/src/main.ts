@@ -29,6 +29,7 @@ import {
   applySupersede,
   createAskRun,
   planAsk,
+  planForPrdProposal,
   veriflowCliEntry,
   type AskPlan,
   type RunAnswerSummary,
@@ -88,6 +89,7 @@ import {
 } from "@veriflow/plan-source";
 import {
   getPrd,
+  listEvidenceProposalsForAnswer,
   listPrds,
   loadFlowPrdConformance,
   prepareGuidedPrdDraft,
@@ -1079,10 +1081,21 @@ program
   .option("--parent <answerId>", "the observed answer this run proposes a change to (veriflow propose)")
   .option("--plan <planId>", "the saved plan this bounded translation run may read")
   .option("--entry-point <id>", "the entry point this run resolved, seeding F036 PRD relevance")
+  .option("--target-prd <id>", "F037: restrict this run to proposing an update to this PRD")
+  .option("--target-answer <answerId>", "F037: the observed answer the PRD proposal is grounded in")
   .description("MCP server exposed to the agent for one run (launched by veriflow ask)")
   .action(async (
     pathArg: string | undefined,
-    options: { run: string; question: string; snapshot: string; parent?: string; plan?: string; entryPoint?: string },
+    options: {
+      run: string;
+      question: string;
+      snapshot: string;
+      parent?: string;
+      plan?: string;
+      entryPoint?: string;
+      targetPrd?: string;
+      targetAnswer?: string;
+    },
   ) => {
     // No lock and no banner: this process is a child of the agent and speaks MCP on stdio, so any
     // stray stdout would corrupt the protocol.
@@ -1094,6 +1107,9 @@ program
       ...(options.parent ? { parentAnswerId: options.parent } : {}),
       ...(options.plan ? { planId: options.plan } : {}),
       ...(options.entryPoint ? { entryPointId: options.entryPoint } : {}),
+      ...(options.targetPrd && options.targetAnswer
+        ? { prdProposal: { prdId: options.targetPrd, answerId: options.targetAnswer } }
+        : {}),
     });
   });
 
@@ -3123,6 +3139,98 @@ prdCommand
         }
       }
       log(`  This is comparison against product intent, not enforcement.`);
+    }
+    ctx.close();
+  });
+
+prdCommand
+  .command("propose-update")
+  .argument("<prd>", "the PRD id or unique prefix to propose an update to")
+  .argument("[path]")
+  .requiredOption("--from-answer <answerId>", "the observed flow this proposal is grounded in")
+  .option("--client <id>", "agent client", "claude-code")
+  .option("--client-command <path>", "path to the client executable, when it is behind a shim")
+  .option("--model <id>", "client-native model; blank means the client default")
+  .option("--effort <level>", "client-native reasoning effort; blank means the client default")
+  .option("--timeout <ms>", "run timeout in milliseconds", "900000")
+  .description("propose an evidence-backed PRD update from one observed flow, for human review (F037)")
+  .action(async (
+    prdArg: string,
+    pathArg: string | undefined,
+    options: { fromAnswer: string; client: string; clientCommand?: string; model?: string; effort?: string; timeout: string },
+  ) => {
+    const profile = requestedProfile(options);
+    const ctx = open(pathArg);
+    const roots = readConfig(ctx.root)?.documentation.roots ?? DEFAULT_DOCUMENTATION.roots;
+    const entry = getPrd(ctx.store, ctx.root, ctx.projectId, roots, prdArg);
+    if (!entry) {
+      ctx.close();
+      fail(`no registered PRD with id or unique prefix "${prdArg}"`);
+    }
+    if (!entry!.source || !entry!.currentFingerprint) {
+      ctx.close();
+      fail(`PRD ${entry!.id} cannot be proposed against while its canonical file is ${entry!.state}`);
+    }
+    const answer = loadStoredAnswer(ctx.store, ctx.root, options.fromAnswer);
+    if (!answer) {
+      ctx.close();
+      fail(`no stored answer with id or prefix "${options.fromAnswer}" - run: veriflow answers`);
+    }
+    if (answer!.kind !== "observed") {
+      ctx.close();
+      fail(`${answer!.row.id.slice(0, 8)} is a proposal; ground a PRD update proposal in an observed flow`);
+    }
+
+    let runPlan: AskPlan;
+    try {
+      runPlan = planForPrdProposal(ctx.store, ctx.projectId);
+    } catch (error) {
+      ctx.close();
+      fail(error instanceof Error ? error.message : String(error));
+    }
+
+    const { client, capabilities, provenance } = await probeRunProfile(profile, options.clientCommand);
+
+    log(`Proposing an update to ${entry!.id} — ${entry!.path}`);
+    log(`  grounded in ${answer!.row.id.slice(0, 8)} — ${answer!.answer.title}`);
+    log(`  bounded tools: target PRD · source answer · propose_prd_update`);
+    log(`${profileLabel(profile, capabilities, provenance)} - ${capabilities.transport}`);
+    log(`snapshot ${runPlan!.snapshot.id.slice(0, 8)}${runPlan!.snapshot.dirty ? " (dirty tree)" : ""}\n`);
+
+    const { session, runId } = createAskRun({
+      root: ctx.root,
+      store: ctx.store,
+      projectId: ctx.projectId,
+      plan: runPlan!,
+      client,
+      profile,
+      capabilities,
+      profileProvenance: provenance,
+      timeoutMs: Number(options.timeout),
+      prdProposal: { prdId: entry!.id, answerId: answer!.row.id, answerTitle: answer!.answer.title },
+      sink: {
+        onEvent(event) {
+          const payload = event.payload as Record<string, unknown>;
+          if (event.channel === "assistant" && typeof payload["text"] === "string") log(payload["text"] as string);
+          if (event.channel === "tool-call") log(`  -> ${String(payload["name"])}`);
+          if (event.channel === "stderr") log(`  ! ${String(payload["text"])}`);
+        },
+      },
+    });
+    process.once("SIGINT", () => void session.cancel("interrupted"));
+    const result = await session.run();
+    log(`\nRun ${result.runId.slice(0, 8)} - ${result.outcome.status} in ${(result.outcome.durationMs / 1000).toFixed(1)}s`);
+    const proposals = listEvidenceProposalsForAnswer(ctx.store, answer!.row.id).filter(
+      (p) => p.runId === runId && p.prdId === entry!.id,
+    );
+    if (proposals.length === 0) {
+      log("  No proposal was submitted.");
+    } else {
+      for (const proposal of proposals) {
+        log(`  proposal ${proposal.id.slice(0, 18)} - ${proposal.changes.length} change(s)`);
+        log(`    The Markdown was not written or approved.`);
+        log(`    Review it at /prds/${entry!.id}/evidence-proposals/${proposal.id}`);
+      }
     }
     ctx.close();
   });
